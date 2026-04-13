@@ -40,7 +40,6 @@ from src.environment.junction_info import JunctionInfo
 # ---------------------------------------------------------------------------
 
 GRID_CFG        = str(ROOT / "configs" / "grid_4x4" / "grid.sumocfg")
-GUI_SETTINGS    = str(ROOT / "configs" / "gui_settings.xml")
 
 # Vertical offset (metres) to place the label above the junction centre.
 _POI_Y_OFFSET   = 30.0
@@ -260,9 +259,7 @@ def _format_rewards(rewards: dict[str, float], switches: dict[str, bool]) -> str
 # ---------------------------------------------------------------------------
 
 def main(cfg: str, gui: bool, episode_length: int) -> None:
-    gui_settings = GUI_SETTINGS if gui else None
-    env    = TrafficEnv(cfg, gui=gui, episode_length=episode_length,
-                        gui_settings_file=gui_settings)
+    env     = TrafficEnv(cfg, gui=gui, episode_length=episode_length)
     expert  = GreedyExpert(env.junction_infos)
     overlay = RewardOverlay(env.junction_infos, env._net) if gui else None
 
@@ -270,6 +267,10 @@ def main(cfg: str, gui: bool, episode_length: int) -> None:
     print(f"  Expert controller — {len(env.junction_ids)} junctions")
     print(f"  Episode length: {episode_length} s")
     print(f"  GUI: {gui}")
+    if gui:
+        print(f"\n  Reward labels are drawn as POIs above each junction.")
+        print(f"  If labels are not visible, enable them once in SUMO-GUI:")
+        print(f"    View > Visualization Settings > POIs > tick 'Show name'")
     print(f"{'='*60}\n")
 
     env.reset()
