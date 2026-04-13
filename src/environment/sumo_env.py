@@ -107,10 +107,12 @@ class TrafficEnv:
         cfg_path: str,
         gui: bool = False,
         episode_length: int = 3600,
+        gui_settings_file: Optional[str] = None,
     ) -> None:
-        self.cfg_path       = cfg_path
-        self.gui            = gui
-        self.episode_length = episode_length
+        self.cfg_path          = cfg_path
+        self.gui               = gui
+        self.episode_length    = episode_length
+        self.gui_settings_file = gui_settings_file
 
         # Parse network statically (no simulation needed).
         net_path = _parse_net_path(cfg_path)
@@ -293,13 +295,15 @@ class TrafficEnv:
     # ------------------------------------------------------------------
 
     def _start_sumo(self) -> None:
-        binary  = sumolib.checkBinary("sumo-gui" if self.gui else "sumo")
+        binary = sumolib.checkBinary("sumo-gui" if self.gui else "sumo")
         cmd = [
             binary,
             "-c", self.cfg_path,
             "--no-step-log", "true",
             "--no-warnings",  "true",
         ]
+        if self.gui and self.gui_settings_file:
+            cmd += ["--gui-settings-file", self.gui_settings_file]
         traci.start(cmd)
         self._started = True
 

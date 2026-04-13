@@ -3,6 +3,16 @@
 Runs the canonical greedy expert (PLAN §8) through TrafficEnv and prints
 live per-junction rewards every decision step.  Pass --gui to open SUMO-GUI.
 
+With --gui, a RewardOverlay draws a colour-coded floating label above every
+junction in SUMO-GUI after each decision step:
+
+    green  = positive reward (queues clearing)
+    red    = negative reward (queues growing)
+    amber  = near-zero reward
+
+The label format is:  <junction_id> [>] <reward:+.2f>
+The ">" marker appears when the junction switched phase this step.
+
 Usage
 -----
     python scripts/run_expert_grid.py          # headless
@@ -21,7 +31,6 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 import traci
-import numpy as np
 
 from src.environment import TrafficEnv
 from src.environment.junction_info import JunctionInfo
@@ -30,7 +39,104 @@ from src.environment.junction_info import JunctionInfo
 # Config paths
 # ---------------------------------------------------------------------------
 
-GRID_CFG = str(ROOT / "configs" / "grid_4x4" / "grid.sumocfg")
+GRID_CFG        = str(ROOT / "configs" / "grid_4x4" / "grid.sumocfg")
+GUI_SETTINGS    = str(ROOT / "configs" / "gui_settings.xml")
+
+# Vertical offset (metres) to place the label above the junction centre.
+_POI_Y_OFFSET   = 30.0
+# SUMO layer — above roads (layer 0) and vehicles (layer ~10).
+_POI_LAYER      = 200.0
+
+# ---------------------------------------------------------------------------
+# Reward overlay (SUMO-GUI only)
+# ---------------------------------------------------------------------------
+
+# Colours as (R, G, B, A) 0-255.
+_COL_POS   = (30,  210,  60, 230)   # green  — positive reward
+_COL_NEG   = (220,  40,  40, 230)   # red    — negative reward
+_COL_ZERO  = (210, 170,   0, 230)   # amber  — near-zero reward
+_THRESHOLD = 0.3                     # |reward| below this → amber
+
+
+class RewardOverlay:
+    """Manages floating POI labels in SUMO-GUI showing per-junction rewards.
+
+    Each label is a SUMO POI whose *ID* is the text string displayed in the
+    GUI (SUMO shows POI IDs as labels when 'Show POI name' is enabled via the
+    view-settings file).  Because the reward value changes every step we
+    cannot keep a stable ID, so we track the previous ID per junction and
+    remove it before adding the new one.
+
+    Parameters
+    ----------
+    junction_infos :
+        The same dict the environment uses.  We need junction coordinates.
+    net :
+        sumolib network object for junction coordinates.
+    """
+
+    def __init__(self, junction_infos: dict[str, JunctionInfo], net) -> None:
+        self._net      = net
+        self._junctions = junction_infos
+        # Tracks the POI ID currently displayed for each junction.
+        self._active_ids: dict[str, str] = {}
+
+    def update(
+        self,
+        rewards:  dict[str, float],
+        switches: dict[str, bool],
+        phase:    dict[str, int],
+    ) -> None:
+        """Refresh all junction labels.  Call once per decision step."""
+        for jid in self._junctions:
+            r   = rewards.get(jid, 0.0)
+            sw  = switches.get(jid, False)
+            ph  = phase.get(jid, 0)
+
+            # Remove previous POI for this junction.
+            prev_id = self._active_ids.get(jid)
+            if prev_id is not None:
+                try:
+                    traci.poi.remove(prev_id)
+                except traci.exceptions.TraCIException:
+                    pass
+
+            # Build label: "J5 P2> +1.24"  or  "J5 P2  -0.31"
+            sw_marker = ">" if sw else " "
+            new_id = f"{jid} P{ph}{sw_marker} {r:+.2f}"
+
+            # Pick colour.
+            if r > _THRESHOLD:
+                color = _COL_POS
+            elif r < -_THRESHOLD:
+                color = _COL_NEG
+            else:
+                color = _COL_ZERO
+
+            # Place POI slightly above the junction centre.
+            node = self._net.getNode(jid)
+            x, y = node.getCoord()
+            traci.poi.add(
+                new_id,
+                x, y + _POI_Y_OFFSET,
+                color,
+                layer=_POI_LAYER,
+                imgFile="",
+                width=3.0,
+                height=3.0,
+                angle=0.0,
+            )
+            self._active_ids[jid] = new_id
+
+    def clear(self) -> None:
+        """Remove all overlay POIs (call on episode end / close)."""
+        for poi_id in self._active_ids.values():
+            try:
+                traci.poi.remove(poi_id)
+            except traci.exceptions.TraCIException:
+                pass
+        self._active_ids.clear()
+
 
 # ---------------------------------------------------------------------------
 # Expert controller
@@ -154,8 +260,11 @@ def _format_rewards(rewards: dict[str, float], switches: dict[str, bool]) -> str
 # ---------------------------------------------------------------------------
 
 def main(cfg: str, gui: bool, episode_length: int) -> None:
-    env    = TrafficEnv(cfg, gui=gui, episode_length=episode_length)
-    expert = GreedyExpert(env.junction_infos)
+    gui_settings = GUI_SETTINGS if gui else None
+    env    = TrafficEnv(cfg, gui=gui, episode_length=episode_length,
+                        gui_settings_file=gui_settings)
+    expert  = GreedyExpert(env.junction_infos)
+    overlay = RewardOverlay(env.junction_infos, env._net) if gui else None
 
     print(f"\n{'='*60}")
     print(f"  Expert controller — {len(env.junction_ids)} junctions")
@@ -182,6 +291,10 @@ def main(cfg: str, gui: bool, episode_length: int) -> None:
         for jid, r in rewards.items():
             ep_reward[jid] = ep_reward.get(jid, 0.0) + r
 
+        # Update in-sim reward labels.
+        if overlay is not None:
+            overlay.update(rewards, info["switches"], env._current_phases)
+
         # Print live step summary.
         t = info["sim_time"]
         gw = info["global_wait"]
@@ -190,6 +303,8 @@ def main(cfg: str, gui: bool, episode_length: int) -> None:
         print()
 
     # Episode summary.
+    if overlay is not None:
+        overlay.clear()
     print(f"\n{'='*60}  EPISODE DONE")
     print(f"  Cumulative rewards per junction:")
     for jid in sorted(ep_reward):
