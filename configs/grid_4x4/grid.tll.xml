@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <tlLogic id="B2" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGrrrrGGr"/>
+        <phase duration="3" state="yyrrrryyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrGgrrrrG"/>
+        <phase duration="3" state="rryyrrrry"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGGrrr"/>
+        <phase duration="3" state="rrryyyrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="ggrrrrrrr"/>
+        <phase duration="3" state="yyrrrrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="C0" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGrrrrGGr"/>
+        <phase duration="3" state="yyrrrryyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrGgrrrrG"/>
+        <phase duration="3" state="rryyrrrry"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGGrrr"/>
+        <phase duration="3" state="rrryyyrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="ggrrrrrrr"/>
+        <phase duration="3" state="yyrrrrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="C1" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGrrrrGGG"/>
+        <phase duration="3" state="yyrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrGggrrrr"/>
+        <phase duration="3" state="rryyyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGrrrr"/>
+        <phase duration="3" state="rrryyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrrrGgrr"/>
+        <phase duration="3" state="rrrrryyrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="C2" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGGrrrGGr"/>
+        <phase duration="3" state="yyyrrryyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrrrrrrG"/>
+        <phase duration="3" state="rrrrrrrry"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGrrrr"/>
+        <phase duration="3" state="rrryyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="grrrrGggr"/>
+        <phase duration="3" state="yrrrryyyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="C3" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGrrrrGGG"/>
+        <phase duration="3" state="yyrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrGggrrrr"/>
+        <phase duration="3" state="rryyyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGrrrr"/>
+        <phase duration="3" state="rrryyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrrrGgrr"/>
+        <phase duration="3" state="rrrrryyrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="D1" type="static" programID="canonical" offset="0">
+        <phase duration="25" state="GGGrrrGGr"/>
+        <phase duration="3" state="yyyrrryyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrrrrrrG"/>
+        <phase duration="3" state="rrrrrrrry"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="rrrGGrrrr"/>
+        <phase duration="3" state="rrryyrrrr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+        <phase duration="25" state="grrrrGggr"/>
+        <phase duration="3" state="yrrrryyyr"/>
+        <phase duration="2" state="rrrrrrrrr"/>
+    </tlLogic>
+</additional>

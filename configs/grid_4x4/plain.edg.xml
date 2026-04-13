@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-04-13T20:12:53.551141+01:00 by Eclipse SUMO netgenerate 1.26.0
+<netgenerateConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netgenerateConfiguration.xsd">
+
+    <grid_network>
+        <grid value="true"/>
+        <grid.number value="4"/>
+        <grid.length value="200.0"/>
+    </grid_network>
+
+    <output>
+        <plain-output-prefix value="C:\Projects\GNN-Traffic-Light-Optimization\configs\grid_4x4\plain"/>
+    </output>
+
+    <building_defaults>
+        <default.lanenumber value="2"/>
+        <default.speed value="13.89"/>
+    </building_defaults>
+
+    <tls_building>
+        <tls.guess value="true"/>
+    </tls_building>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+    </junctions>
+
+</netgenerateConfiguration>
+-->
+
+<edges version="1.20" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/edges_file.xsd">
+    <edge id="A0A1" from="A0" to="A1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A0B0" from="A0" to="B0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A1A0" from="A1" to="A0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A1A2" from="A1" to="A2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A1B1" from="A1" to="B1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A2A1" from="A2" to="A1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A2A3" from="A2" to="A3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A2B2" from="A2" to="B2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A3A2" from="A3" to="A2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="A3B3" from="A3" to="B3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B0A0" from="B0" to="A0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B0B1" from="B0" to="B1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B0C0" from="B0" to="C0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B1A1" from="B1" to="A1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B1B0" from="B1" to="B0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B1B2" from="B1" to="B2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B1C1" from="B1" to="C1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B2A2" from="B2" to="A2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B2B1" from="B2" to="B1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B2B3" from="B2" to="B3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B2C2" from="B2" to="C2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B3A3" from="B3" to="A3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B3B2" from="B3" to="B2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="B3C3" from="B3" to="C3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C0B0" from="C0" to="B0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C0C1" from="C0" to="C1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C0D0" from="C0" to="D0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C1B1" from="C1" to="B1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C1C0" from="C1" to="C0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C1C2" from="C1" to="C2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C1D1" from="C1" to="D1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C2B2" from="C2" to="B2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C2C1" from="C2" to="C1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C2C3" from="C2" to="C3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C2D2" from="C2" to="D2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C3B3" from="C3" to="B3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C3C2" from="C3" to="C2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="C3D3" from="C3" to="D3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D0C0" from="D0" to="C0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D0D1" from="D0" to="D1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D1C1" from="D1" to="C1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D1D0" from="D1" to="D0" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D1D2" from="D1" to="D2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D2C2" from="D2" to="C2" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D2D1" from="D2" to="D1" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D2D3" from="D2" to="D3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D3C3" from="D3" to="C3" priority="-1" numLanes="2" speed="13.89"/>
+    <edge id="D3D2" from="D3" to="D2" priority="-1" numLanes="2" speed="13.89"/>
+</edges>

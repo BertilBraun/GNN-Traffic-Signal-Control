@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <!-- E2 lane-area detectors: 200m upstream of the stop line per incoming lane.
+         Lane length 239.6m -> pos=39.6, length=200. -->
+    <laneAreaDetector id="det_N_C_0" lane="N_C_0" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_N_C_1" lane="N_C_1" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_E_C_0" lane="E_C_0" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_E_C_1" lane="E_C_1" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_S_C_0" lane="S_C_0" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_S_C_1" lane="S_C_1" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_W_C_0" lane="W_C_0" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_W_C_1" lane="W_C_1" pos="39.6" length="200" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+</additional>

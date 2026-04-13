@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <tlLogic id="C" type="static" programID="canonical" offset="0">
+        <!-- 16 links: per approach, lane 0 (right+through) = idx 0,1 ; lane 1 (through+left) = idx 2,3 -->
+        <!-- Order: N_C(0..3), E_C(4..7), S_C(8..11), W_C(12..15) -->
+
+        <!-- Phase 0: slot0/slot2 through + right (NS through+right) -->
+        <phase duration="25" state="GGGrrrrrGGGrrrrr"/>
+        <phase duration="3"  state="yyyrrrrryyyrrrrr"/>
+        <phase duration="2"  state="rrrrrrrrrrrrrrrr"/>
+
+        <!-- Phase 1: slot0/slot2 left + slot1/slot3 right -->
+        <phase duration="25" state="rrrGgrrrrrrGgrrr"/>
+        <phase duration="3"  state="rrryyrrrrrryyrrr"/>
+        <phase duration="2"  state="rrrrrrrrrrrrrrrr"/>
+
+        <!-- Phase 2: slot1/slot3 through + right (EW through+right) -->
+        <phase duration="25" state="rrrrGGGrrrrrGGGr"/>
+        <phase duration="3"  state="rrrryyyrrrrryyyr"/>
+        <phase duration="2"  state="rrrrrrrrrrrrrrrr"/>
+
+        <!-- Phase 3: slot1/slot3 left + slot0/slot2 right -->
+        <phase duration="25" state="grrrrrrGgrrrrrrG"/>
+        <phase duration="3"  state="yrrrrrryyrrrrrry"/>
+        <phase duration="2"  state="rrrrrrrrrrrrrrrr"/>
+    </tlLogic>
+</additional>

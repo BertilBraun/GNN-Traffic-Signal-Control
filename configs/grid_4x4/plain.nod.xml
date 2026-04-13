@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-04-13T20:12:53.550284+01:00 by Eclipse SUMO netgenerate 1.26.0
+<netgenerateConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netgenerateConfiguration.xsd">
+
+    <grid_network>
+        <grid value="true"/>
+        <grid.number value="4"/>
+        <grid.length value="200.0"/>
+    </grid_network>
+
+    <output>
+        <plain-output-prefix value="C:\Projects\GNN-Traffic-Light-Optimization\configs\grid_4x4\plain"/>
+    </output>
+
+    <building_defaults>
+        <default.lanenumber value="2"/>
+        <default.speed value="13.89"/>
+    </building_defaults>
+
+    <tls_building>
+        <tls.guess value="true"/>
+    </tls_building>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+    </junctions>
+
+</netgenerateConfiguration>
+-->
+
+<nodes version="1.20" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/nodes_file.xsd">
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,600.00,600.00" origBoundary="0.00,0.00,600.00,600.00" projParameter="!"/>
+
+    <node id="A0" x="0.00" y="0.00" type="priority"/>
+    <node id="A1" x="0.00" y="200.00" type="traffic_light" tl="A1"/>
+    <node id="A2" x="0.00" y="400.00" type="traffic_light" tl="A2"/>
+    <node id="A3" x="0.00" y="600.00" type="priority"/>
+    <node id="B0" x="200.00" y="0.00" type="traffic_light" tl="B0"/>
+    <node id="B1" x="200.00" y="200.00" type="traffic_light" tl="B1"/>
+    <node id="B2" x="200.00" y="400.00" type="traffic_light" tl="B2"/>
+    <node id="B3" x="200.00" y="600.00" type="traffic_light" tl="B3"/>
+    <node id="C0" x="400.00" y="0.00" type="traffic_light" tl="C0"/>
+    <node id="C1" x="400.00" y="200.00" type="traffic_light" tl="C1"/>
+    <node id="C2" x="400.00" y="400.00" type="traffic_light" tl="C2"/>
+    <node id="C3" x="400.00" y="600.00" type="traffic_light" tl="C3"/>
+    <node id="D0" x="600.00" y="0.00" type="priority"/>
+    <node id="D1" x="600.00" y="200.00" type="traffic_light" tl="D1"/>
+    <node id="D2" x="600.00" y="400.00" type="traffic_light" tl="D2"/>
+    <node id="D3" x="600.00" y="600.00" type="priority"/>
+</nodes>

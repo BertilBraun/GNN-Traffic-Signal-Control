@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <laneAreaDetector id="det_A2B2_0" lane="A2B2_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_A2B2_1" lane="A2B2_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B3B2_0" lane="B3B2_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B3B2_1" lane="B3B2_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2B2_0" lane="C2B2_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2B2_1" lane="C2B2_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B0C0_0" lane="B0C0_0" pos="0.00" length="189.60" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B0C0_1" lane="B0C0_1" pos="0.00" length="189.60" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1C0_0" lane="C1C0_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1C0_1" lane="C1C0_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D0C0_0" lane="D0C0_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D0C0_1" lane="D0C0_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C0C1_0" lane="C0C1_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C0C1_1" lane="C0C1_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2C1_0" lane="C2C1_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2C1_1" lane="C2C1_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D1C1_0" lane="D1C1_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D1C1_1" lane="D1C1_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B2C2_0" lane="B2C2_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B2C2_1" lane="B2C2_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1C2_0" lane="C1C2_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1C2_1" lane="C1C2_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C3C2_0" lane="C3C2_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C3C2_1" lane="C3C2_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B3C3_0" lane="B3C3_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_B3C3_1" lane="B3C3_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2C3_0" lane="C2C3_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C2C3_1" lane="C2C3_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D3C3_0" lane="D3C3_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D3C3_1" lane="D3C3_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1D1_0" lane="C1D1_0" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_C1D1_1" lane="C1D1_1" pos="0.00" length="179.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D0D1_0" lane="D0D1_0" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D0D1_1" lane="D0D1_1" pos="0.00" length="183.20" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D2D1_0" lane="D2D1_0" pos="0.00" length="189.60" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+    <laneAreaDetector id="det_D2D1_1" lane="D2D1_1" pos="0.00" length="189.60" freq="3600" file="detector_out.xml" friendlyPos="true"/>
+</additional>

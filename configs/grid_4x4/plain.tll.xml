@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-04-13T20:12:53.552548+01:00 by Eclipse SUMO netgenerate 1.26.0
+<netgenerateConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netgenerateConfiguration.xsd">
+
+    <grid_network>
+        <grid value="true"/>
+        <grid.number value="4"/>
+        <grid.length value="200.0"/>
+    </grid_network>
+
+    <output>
+        <plain-output-prefix value="C:\Projects\GNN-Traffic-Light-Optimization\configs\grid_4x4\plain"/>
+    </output>
+
+    <building_defaults>
+        <default.lanenumber value="2"/>
+        <default.speed value="13.89"/>
+    </building_defaults>
+
+    <tls_building>
+        <tls.guess value="true"/>
+    </tls_building>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+    </junctions>
+
+</netgenerateConfiguration>
+-->
+
+<tlLogics version="1.20" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tllogic_file.xsd">
+    <tlLogic id="A1" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGgrrrGGG"/>
+        <phase duration="3"  state="yyyrrrGyy"/>
+        <phase duration="42" state="rrrGGGGrr"/>
+        <phase duration="3"  state="rrryyyGrr"/>
+    </tlLogic>
+    <tlLogic id="A2" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGgrrrGGG"/>
+        <phase duration="3"  state="yyyrrrGyy"/>
+        <phase duration="42" state="rrrGGGGrr"/>
+        <phase duration="3"  state="rrryyyGrr"/>
+    </tlLogic>
+    <tlLogic id="B0" type="static" programID="0" offset="0">
+        <phase duration="42" state="rrrGGGGGg"/>
+        <phase duration="3"  state="rrrGyyyyy"/>
+        <phase duration="42" state="GGGGrrrrr"/>
+        <phase duration="3"  state="yyyGrrrrr"/>
+    </tlLogic>
+    <tlLogic id="B1" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGgrrrrGGGgrrrr"/>
+        <phase duration="3"  state="yyyyrrrryyyyrrrr"/>
+        <phase duration="42" state="rrrrGGGgrrrrGGGg"/>
+        <phase duration="3"  state="rrrryyyyrrrryyyy"/>
+    </tlLogic>
+    <tlLogic id="B2" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGgrrrrGGGgrrrr"/>
+        <phase duration="3"  state="yyyyrrrryyyyrrrr"/>
+        <phase duration="42" state="rrrrGGGgrrrrGGGg"/>
+        <phase duration="3"  state="rrrryyyyrrrryyyy"/>
+    </tlLogic>
+    <tlLogic id="B3" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGgrrrGGG"/>
+        <phase duration="3"  state="yyyrrrGyy"/>
+        <phase duration="42" state="rrrGGGGrr"/>
+        <phase duration="3"  state="rrryyyGrr"/>
+    </tlLogic>
+    <tlLogic id="C0" type="static" programID="0" offset="0">
+        <phase duration="42" state="rrrGGGGGg"/>
+        <phase duration="3"  state="rrrGyyyyy"/>
+        <phase duration="42" state="GGGGrrrrr"/>
+        <phase duration="3"  state="yyyGrrrrr"/>
+    </tlLogic>
+    <tlLogic id="C1" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGgrrrrGGGgrrrr"/>
+        <phase duration="3"  state="yyyyrrrryyyyrrrr"/>
+        <phase duration="42" state="rrrrGGGgrrrrGGGg"/>
+        <phase duration="3"  state="rrrryyyyrrrryyyy"/>
+    </tlLogic>
+    <tlLogic id="C2" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGgrrrrGGGgrrrr"/>
+        <phase duration="3"  state="yyyyrrrryyyyrrrr"/>
+        <phase duration="42" state="rrrrGGGgrrrrGGGg"/>
+        <phase duration="3"  state="rrrryyyyrrrryyyy"/>
+    </tlLogic>
+    <tlLogic id="C3" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGgrrrGGG"/>
+        <phase duration="3"  state="yyyrrrGyy"/>
+        <phase duration="42" state="rrrGGGGrr"/>
+        <phase duration="3"  state="rrryyyGrr"/>
+    </tlLogic>
+    <tlLogic id="D1" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGGGgrrr"/>
+        <phase duration="3"  state="Gyyyyyrrr"/>
+        <phase duration="42" state="GrrrrrGGG"/>
+        <phase duration="3"  state="Grrrrryyy"/>
+    </tlLogic>
+    <tlLogic id="D2" type="static" programID="0" offset="0">
+        <phase duration="42" state="GGGGGgrrr"/>
+        <phase duration="3"  state="Gyyyyyrrr"/>
+        <phase duration="42" state="GrrrrrGGG"/>
+        <phase duration="3"  state="Grrrrryyy"/>
+    </tlLogic>
+
+    <connection from="A0A1" to="A1B1" fromLane="0" toLane="0" tl="A1" linkIndex="6"/>
+    <connection from="A0A1" to="A1A2" fromLane="0" toLane="0" tl="A1" linkIndex="7"/>
+    <connection from="A0A1" to="A1A2" fromLane="1" toLane="1" tl="A1" linkIndex="8"/>
+    <connection from="A0B0" to="B0C0" fromLane="0" toLane="0" tl="B0" linkIndex="6"/>
+    <connection from="A0B0" to="B0C0" fromLane="1" toLane="1" tl="B0" linkIndex="7"/>
+    <connection from="A0B0" to="B0B1" fromLane="1" toLane="1" tl="B0" linkIndex="8"/>
+    <connection from="A1A2" to="A2B2" fromLane="0" toLane="0" tl="A2" linkIndex="6"/>
+    <connection from="A1A2" to="A2A3" fromLane="0" toLane="0" tl="A2" linkIndex="7"/>
+    <connection from="A1A2" to="A2A3" fromLane="1" toLane="1" tl="A2" linkIndex="8"/>
+    <connection from="A1B1" to="B1B0" fromLane="0" toLane="0" tl="B1" linkIndex="12"/>
+    <connection from="A1B1" to="B1C1" fromLane="0" toLane="0" tl="B1" linkIndex="13"/>
+    <connection from="A1B1" to="B1C1" fromLane="1" toLane="1" tl="B1" linkIndex="14"/>
+    <connection from="A1B1" to="B1B2" fromLane="1" toLane="1" tl="B1" linkIndex="15"/>
+    <connection from="A2A1" to="A1A0" fromLane="0" toLane="0" tl="A1" linkIndex="0"/>
+    <connection from="A2A1" to="A1A0" fromLane="1" toLane="1" tl="A1" linkIndex="1"/>
+    <connection from="A2A1" to="A1B1" fromLane="1" toLane="1" tl="A1" linkIndex="2"/>
+    <connection from="A2B2" to="B2B1" fromLane="0" toLane="0" tl="B2" linkIndex="12"/>
+    <connection from="A2B2" to="B2C2" fromLane="0" toLane="0" tl="B2" linkIndex="13"/>
+    <connection from="A2B2" to="B2C2" fromLane="1" toLane="1" tl="B2" linkIndex="14"/>
+    <connection from="A2B2" to="B2B3" fromLane="1" toLane="1" tl="B2" linkIndex="15"/>
+    <connection from="A3A2" to="A2A1" fromLane="0" toLane="0" tl="A2" linkIndex="0"/>
+    <connection from="A3A2" to="A2A1" fromLane="1" toLane="1" tl="A2" linkIndex="1"/>
+    <connection from="A3A2" to="A2B2" fromLane="1" toLane="1" tl="A2" linkIndex="2"/>
+    <connection from="A3B3" to="B3B2" fromLane="0" toLane="0" tl="B3" linkIndex="6"/>
+    <connection from="A3B3" to="B3C3" fromLane="0" toLane="0" tl="B3" linkIndex="7"/>
+    <connection from="A3B3" to="B3C3" fromLane="1" toLane="1" tl="B3" linkIndex="8"/>
+    <connection from="B0B1" to="B1C1" fromLane="0" toLane="0" tl="B1" linkIndex="8"/>
+    <connection from="B0B1" to="B1B2" fromLane="0" toLane="0" tl="B1" linkIndex="9"/>
+    <connection from="B0B1" to="B1B2" fromLane="1" toLane="1" tl="B1" linkIndex="10"/>
+    <connection from="B0B1" to="B1A1" fromLane="1" toLane="1" tl="B1" linkIndex="11"/>
+    <connection from="B0C0" to="C0D0" fromLane="0" toLane="0" tl="C0" linkIndex="6"/>
+    <connection from="B0C0" to="C0D0" fromLane="1" toLane="1" tl="C0" linkIndex="7"/>
+    <connection from="B0C0" to="C0C1" fromLane="1" toLane="1" tl="C0" linkIndex="8"/>
+    <connection from="B1A1" to="A1A2" fromLane="0" toLane="0" tl="A1" linkIndex="3"/>
+    <connection from="B1A1" to="A1A2" fromLane="1" toLane="1" tl="A1" linkIndex="4"/>
+    <connection from="B1A1" to="A1A0" fromLane="1" toLane="1" tl="A1" linkIndex="5"/>
+    <connection from="B1B0" to="B0A0" fromLane="0" toLane="0" tl="B0" linkIndex="0"/>
+    <connection from="B1B0" to="B0A0" fromLane="1" toLane="1" tl="B0" linkIndex="1"/>
+    <connection from="B1B0" to="B0C0" fromLane="1" toLane="1" tl="B0" linkIndex="2"/>
+    <connection from="B1B2" to="B2C2" fromLane="0" toLane="0" tl="B2" linkIndex="8"/>
+    <connection from="B1B2" to="B2B3" fromLane="0" toLane="0" tl="B2" linkIndex="9"/>
+    <connection from="B1B2" to="B2B3" fromLane="1" toLane="1" tl="B2" linkIndex="10"/>
+    <connection from="B1B2" to="B2A2" fromLane="1" toLane="1" tl="B2" linkIndex="11"/>
+    <connection from="B1C1" to="C1C0" fromLane="0" toLane="0" tl="C1" linkIndex="12"/>
+    <connection from="B1C1" to="C1D1" fromLane="0" toLane="0" tl="C1" linkIndex="13"/>
+    <connection from="B1C1" to="C1D1" fromLane="1" toLane="1" tl="C1" linkIndex="14"/>
+    <connection from="B1C1" to="C1C2" fromLane="1" toLane="1" tl="C1" linkIndex="15"/>
+    <connection from="B2A2" to="A2A3" fromLane="0" toLane="0" tl="A2" linkIndex="3"/>
+    <connection from="B2A2" to="A2A3" fromLane="1" toLane="1" tl="A2" linkIndex="4"/>
+    <connection from="B2A2" to="A2A1" fromLane="1" toLane="1" tl="A2" linkIndex="5"/>
+    <connection from="B2B1" to="B1A1" fromLane="0" toLane="0" tl="B1" linkIndex="0"/>
+    <connection from="B2B1" to="B1B0" fromLane="0" toLane="0" tl="B1" linkIndex="1"/>
+    <connection from="B2B1" to="B1B0" fromLane="1" toLane="1" tl="B1" linkIndex="2"/>
+    <connection from="B2B1" to="B1C1" fromLane="1" toLane="1" tl="B1" linkIndex="3"/>
+    <connection from="B2B3" to="B3C3" fromLane="0" toLane="0" tl="B3" linkIndex="3"/>
+    <connection from="B2B3" to="B3C3" fromLane="1" toLane="1" tl="B3" linkIndex="4"/>
+    <connection from="B2B3" to="B3A3" fromLane="1" toLane="1" tl="B3" linkIndex="5"/>
+    <connection from="B2C2" to="C2C1" fromLane="0" toLane="0" tl="C2" linkIndex="12"/>
+    <connection from="B2C2" to="C2D2" fromLane="0" toLane="0" tl="C2" linkIndex="13"/>
+    <connection from="B2C2" to="C2D2" fromLane="1" toLane="1" tl="C2" linkIndex="14"/>
+    <connection from="B2C2" to="C2C3" fromLane="1" toLane="1" tl="C2" linkIndex="15"/>
+    <connection from="B3B2" to="B2A2" fromLane="0" toLane="0" tl="B2" linkIndex="0"/>
+    <connection from="B3B2" to="B2B1" fromLane="0" toLane="0" tl="B2" linkIndex="1"/>
+    <connection from="B3B2" to="B2B1" fromLane="1" toLane="1" tl="B2" linkIndex="2"/>
+    <connection from="B3B2" to="B2C2" fromLane="1" toLane="1" tl="B2" linkIndex="3"/>
+    <connection from="B3C3" to="C3C2" fromLane="0" toLane="0" tl="C3" linkIndex="6"/>
+    <connection from="B3C3" to="C3D3" fromLane="0" toLane="0" tl="C3" linkIndex="7"/>
+    <connection from="B3C3" to="C3D3" fromLane="1" toLane="1" tl="C3" linkIndex="8"/>
+    <connection from="C0B0" to="B0B1" fromLane="0" toLane="0" tl="B0" linkIndex="3"/>
+    <connection from="C0B0" to="B0A0" fromLane="0" toLane="0" tl="B0" linkIndex="4"/>
+    <connection from="C0B0" to="B0A0" fromLane="1" toLane="1" tl="B0" linkIndex="5"/>
+    <connection from="C0C1" to="C1D1" fromLane="0" toLane="0" tl="C1" linkIndex="8"/>
+    <connection from="C0C1" to="C1C2" fromLane="0" toLane="0" tl="C1" linkIndex="9"/>
+    <connection from="C0C1" to="C1C2" fromLane="1" toLane="1" tl="C1" linkIndex="10"/>
+    <connection from="C0C1" to="C1B1" fromLane="1" toLane="1" tl="C1" linkIndex="11"/>
+    <connection from="C1B1" to="B1B2" fromLane="0" toLane="0" tl="B1" linkIndex="4"/>
+    <connection from="C1B1" to="B1A1" fromLane="0" toLane="0" tl="B1" linkIndex="5"/>
+    <connection from="C1B1" to="B1A1" fromLane="1" toLane="1" tl="B1" linkIndex="6"/>
+    <connection from="C1B1" to="B1B0" fromLane="1" toLane="1" tl="B1" linkIndex="7"/>
+    <connection from="C1C0" to="C0B0" fromLane="0" toLane="0" tl="C0" linkIndex="0"/>
+    <connection from="C1C0" to="C0B0" fromLane="1" toLane="1" tl="C0" linkIndex="1"/>
+    <connection from="C1C0" to="C0D0" fromLane="1" toLane="1" tl="C0" linkIndex="2"/>
+    <connection from="C1C2" to="C2D2" fromLane="0" toLane="0" tl="C2" linkIndex="8"/>
+    <connection from="C1C2" to="C2C3" fromLane="0" toLane="0" tl="C2" linkIndex="9"/>
+    <connection from="C1C2" to="C2C3" fromLane="1" toLane="1" tl="C2" linkIndex="10"/>
+    <connection from="C1C2" to="C2B2" fromLane="1" toLane="1" tl="C2" linkIndex="11"/>
+    <connection from="C1D1" to="D1D0" fromLane="0" toLane="0" tl="D1" linkIndex="6"/>
+    <connection from="C1D1" to="D1D0" fromLane="1" toLane="1" tl="D1" linkIndex="7"/>
+    <connection from="C1D1" to="D1D2" fromLane="1" toLane="1" tl="D1" linkIndex="8"/>
+    <connection from="C2B2" to="B2B3" fromLane="0" toLane="0" tl="B2" linkIndex="4"/>
+    <connection from="C2B2" to="B2A2" fromLane="0" toLane="0" tl="B2" linkIndex="5"/>
+    <connection from="C2B2" to="B2A2" fromLane="1" toLane="1" tl="B2" linkIndex="6"/>
+    <connection from="C2B2" to="B2B1" fromLane="1" toLane="1" tl="B2" linkIndex="7"/>
+    <connection from="C2C1" to="C1B1" fromLane="0" toLane="0" tl="C1" linkIndex="0"/>
+    <connection from="C2C1" to="C1C0" fromLane="0" toLane="0" tl="C1" linkIndex="1"/>
+    <connection from="C2C1" to="C1C0" fromLane="1" toLane="1" tl="C1" linkIndex="2"/>
+    <connection from="C2C1" to="C1D1" fromLane="1" toLane="1" tl="C1" linkIndex="3"/>
+    <connection from="C2C3" to="C3D3" fromLane="0" toLane="0" tl="C3" linkIndex="3"/>
+    <connection from="C2C3" to="C3D3" fromLane="1" toLane="1" tl="C3" linkIndex="4"/>
+    <connection from="C2C3" to="C3B3" fromLane="1" toLane="1" tl="C3" linkIndex="5"/>
+    <connection from="C2D2" to="D2D1" fromLane="0" toLane="0" tl="D2" linkIndex="6"/>
+    <connection from="C2D2" to="D2D1" fromLane="1" toLane="1" tl="D2" linkIndex="7"/>
+    <connection from="C2D2" to="D2D3" fromLane="1" toLane="1" tl="D2" linkIndex="8"/>
+    <connection from="C3B3" to="B3A3" fromLane="0" toLane="0" tl="B3" linkIndex="0"/>
+    <connection from="C3B3" to="B3A3" fromLane="1" toLane="1" tl="B3" linkIndex="1"/>
+    <connection from="C3B3" to="B3B2" fromLane="1" toLane="1" tl="B3" linkIndex="2"/>
+    <connection from="C3C2" to="C2B2" fromLane="0" toLane="0" tl="C2" linkIndex="0"/>
+    <connection from="C3C2" to="C2C1" fromLane="0" toLane="0" tl="C2" linkIndex="1"/>
+    <connection from="C3C2" to="C2C1" fromLane="1" toLane="1" tl="C2" linkIndex="2"/>
+    <connection from="C3C2" to="C2D2" fromLane="1" toLane="1" tl="C2" linkIndex="3"/>
+    <connection from="D0C0" to="C0C1" fromLane="0" toLane="0" tl="C0" linkIndex="3"/>
+    <connection from="D0C0" to="C0B0" fromLane="0" toLane="0" tl="C0" linkIndex="4"/>
+    <connection from="D0C0" to="C0B0" fromLane="1" toLane="1" tl="C0" linkIndex="5"/>
+    <connection from="D0D1" to="D1D2" fromLane="0" toLane="0" tl="D1" linkIndex="3"/>
+    <connection from="D0D1" to="D1D2" fromLane="1" toLane="1" tl="D1" linkIndex="4"/>
+    <connection from="D0D1" to="D1C1" fromLane="1" toLane="1" tl="D1" linkIndex="5"/>
+    <connection from="D1C1" to="C1C2" fromLane="0" toLane="0" tl="C1" linkIndex="4"/>
+    <connection from="D1C1" to="C1B1" fromLane="0" toLane="0" tl="C1" linkIndex="5"/>
+    <connection from="D1C1" to="C1B1" fromLane="1" toLane="1" tl="C1" linkIndex="6"/>
+    <connection from="D1C1" to="C1C0" fromLane="1" toLane="1" tl="C1" linkIndex="7"/>
+    <connection from="D1D2" to="D2D3" fromLane="0" toLane="0" tl="D2" linkIndex="3"/>
+    <connection from="D1D2" to="D2D3" fromLane="1" toLane="1" tl="D2" linkIndex="4"/>
+    <connection from="D1D2" to="D2C2" fromLane="1" toLane="1" tl="D2" linkIndex="5"/>
+    <connection from="D2C2" to="C2C3" fromLane="0" toLane="0" tl="C2" linkIndex="4"/>
+    <connection from="D2C2" to="C2B2" fromLane="0" toLane="0" tl="C2" linkIndex="5"/>
+    <connection from="D2C2" to="C2B2" fromLane="1" toLane="1" tl="C2" linkIndex="6"/>
+    <connection from="D2C2" to="C2C1" fromLane="1" toLane="1" tl="C2" linkIndex="7"/>
+    <connection from="D2D1" to="D1C1" fromLane="0" toLane="0" tl="D1" linkIndex="0"/>
+    <connection from="D2D1" to="D1D0" fromLane="0" toLane="0" tl="D1" linkIndex="1"/>
+    <connection from="D2D1" to="D1D0" fromLane="1" toLane="1" tl="D1" linkIndex="2"/>
+    <connection from="D3C3" to="C3B3" fromLane="0" toLane="0" tl="C3" linkIndex="0"/>
+    <connection from="D3C3" to="C3B3" fromLane="1" toLane="1" tl="C3" linkIndex="1"/>
+    <connection from="D3C3" to="C3C2" fromLane="1" toLane="1" tl="C3" linkIndex="2"/>
+    <connection from="D3D2" to="D2C2" fromLane="0" toLane="0" tl="D2" linkIndex="0"/>
+    <connection from="D3D2" to="D2D1" fromLane="0" toLane="0" tl="D2" linkIndex="1"/>
+    <connection from="D3D2" to="D2D1" fromLane="1" toLane="1" tl="D2" linkIndex="2"/>
+</tlLogics>
