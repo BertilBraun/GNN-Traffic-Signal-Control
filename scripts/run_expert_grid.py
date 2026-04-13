@@ -52,47 +52,56 @@ _POI_LAYER      = 200.0
 
 # Colours as (R, G, B, A) 0-255.
 _COL_POS   = (30,  210,  60, 230)   # green  — positive reward
-_COL_NEG   = (220,  40,  40, 230)   # red    — negative reward
-_COL_ZERO  = (210, 170,   0, 230)   # amber  — near-zero reward
-_THRESHOLD = 0.3                     # |reward| below this → amber
+# Wait-density colour thresholds (s/m).  Calibrated for 2-lane, 200 m
+# detectors at medium load (~500-800 veh/h/lane per PLAN §9):
+#   clear  : w < 0.05  → green
+#   moderate: 0.05 ≤ w < 0.30  → amber
+#   heavy  : w ≥ 0.30  → red
+_COL_CLEAR    = ( 30, 210,  60, 230)   # green
+_COL_MODERATE = (210, 170,   0, 230)   # amber
+_COL_HEAVY    = (220,  40,  40, 230)   # red
+_THR_CLEAR    = 0.05
+_THR_HEAVY    = 0.30
 
 
 class RewardOverlay:
-    """Manages floating POI labels in SUMO-GUI showing per-junction rewards.
+    """Manages floating POI labels in SUMO-GUI.
 
-    Each label is a SUMO POI whose *ID* is the text string displayed in the
-    GUI (SUMO shows POI IDs as labels when 'Show POI name' is enabled via the
-    view-settings file).  Because the reward value changes every step we
-    cannot keep a stable ID, so we track the previous ID per junction and
-    remove it before adding the new one.
+    Displays the *current local wait density* (total lane waiting-time /
+    total detector length, in s/m) above each junction rather than the raw
+    RL reward delta.  This is a human-interpretable congestion metric:
 
-    Parameters
-    ----------
-    junction_infos :
-        The same dict the environment uses.  We need junction coordinates.
-    net :
-        sumolib network object for junction coordinates.
+        green  — junction is clear  (w < 0.05 s/m)
+        amber  — queues forming     (0.05 ≤ w < 0.30 s/m)
+        red    — heavy congestion   (w ≥ 0.30 s/m)
+
+    Label format:  "<jid> P<phase>[>] w=<wait_density:.3f>"
+    The ">" marker appears when the junction switched phase this step.
+
+    The RL reward is logged to stdout but is NOT used for colouring here —
+    the reward is a training delta signal (Δwait), whose scale is too small
+    in light traffic to be a useful visual indicator.
     """
 
     def __init__(self, junction_infos: dict[str, JunctionInfo], net) -> None:
-        self._net      = net
+        self._net       = net
         self._junctions = junction_infos
-        # Tracks the POI ID currently displayed for each junction.
         self._active_ids: dict[str, str] = {}
 
     def update(
         self,
-        rewards:  dict[str, float],
         switches: dict[str, bool],
         phase:    dict[str, int],
     ) -> None:
         """Refresh all junction labels.  Call once per decision step."""
-        for jid in self._junctions:
-            r   = rewards.get(jid, 0.0)
-            sw  = switches.get(jid, False)
-            ph  = phase.get(jid, 0)
+        for jid, ji in self._junctions.items():
+            sw = switches.get(jid, False)
+            ph = phase.get(jid, 0)
 
-            # Remove previous POI for this junction.
+            # Current local wait density.
+            w = self._local_wait(ji)
+
+            # Remove previous POI.
             prev_id = self._active_ids.get(jid)
             if prev_id is not None:
                 try:
@@ -100,19 +109,18 @@ class RewardOverlay:
                 except traci.exceptions.TraCIException:
                     pass
 
-            # Build label: "J5 P2> +1.24"  or  "J5 P2  -0.31"
+            # Label:  "J5 P2> w=0.142"  or  "J5 P2  w=0.003"
             sw_marker = ">" if sw else " "
-            new_id = f"{jid} P{ph}{sw_marker} {r:+.2f}"
+            new_id = f"{jid} P{ph}{sw_marker} w={w:.3f}"
 
-            # Pick colour.
-            if r > _THRESHOLD:
-                color = _COL_POS
-            elif r < -_THRESHOLD:
-                color = _COL_NEG
+            # Colour by congestion level.
+            if w < _THR_CLEAR:
+                color = _COL_CLEAR
+            elif w < _THR_HEAVY:
+                color = _COL_MODERATE
             else:
-                color = _COL_ZERO
+                color = _COL_HEAVY
 
-            # Place POI slightly above the junction centre.
             node = self._net.getNode(jid)
             x, y = node.getCoord()
             traci.poi.add(
@@ -126,6 +134,15 @@ class RewardOverlay:
                 angle=0.0,
             )
             self._active_ids[jid] = new_id
+
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _local_wait(ji: JunctionInfo) -> float:
+        """Current wait density for junction *ji* (s/m)."""
+        total_wait = sum(traci.lane.getWaitingTime(lid) for lid, _ in ji.all_lane_det)
+        total_len  = sum(dl for _, dl in ji.all_lane_det) or 1.0
+        return total_wait / total_len
 
     def clear(self) -> None:
         """Remove all overlay POIs (call on episode end / close)."""
@@ -292,9 +309,9 @@ def main(cfg: str, gui: bool, episode_length: int) -> None:
         for jid, r in rewards.items():
             ep_reward[jid] = ep_reward.get(jid, 0.0) + r
 
-        # Update in-sim reward labels.
+        # Update in-sim congestion labels.
         if overlay is not None:
-            overlay.update(rewards, info["switches"], env._current_phases)
+            overlay.update(info["switches"], env._current_phases)
 
         # Print live step summary.
         t = info["sim_time"]
