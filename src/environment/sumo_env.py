@@ -50,6 +50,7 @@ import sumolib
 import traci
 
 from .junction_info import JunctionInfo, build_junction_info
+from src.utils.demand_generator import DemandRandomizer
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -100,6 +101,12 @@ class TrafficEnv:
         If True, launches sumo-gui instead of headless sumo.
     episode_length :
         Simulation seconds per episode.
+    flow_range :
+        ``(min, max)`` total vehicles-per-hour across the network.  A fresh
+        value is drawn uniformly at each ``reset()``.
+    demand_seed :
+        Seed for the demand RNG.  ``None`` (default) means a different
+        traffic pattern every episode.  Pass an integer for reproducible runs.
     """
 
     def __init__(
@@ -108,11 +115,18 @@ class TrafficEnv:
         gui: bool = False,
         episode_length: int = 3600,
         gui_settings_file: Optional[str] = None,
+        tripinfo_output: Optional[str] = None,
+        flow_range: tuple[int, int] = (300, 1000),
+        demand_seed: Optional[int] = None,
     ) -> None:
         self.cfg_path          = cfg_path
         self.gui               = gui
         self.episode_length    = episode_length
         self.gui_settings_file = gui_settings_file
+        # Set to a file path before env.reset() to make SUMO write per-vehicle
+        # trip statistics (waiting time, travel time) to that file.
+        # eval_episode.run_eval_episode() manages this automatically.
+        self.tripinfo_output   = tripinfo_output
 
         # Parse network statically (no simulation needed).
         net_path = _parse_net_path(cfg_path)
@@ -129,6 +143,12 @@ class TrafficEnv:
 
         if not self._junctions:
             raise RuntimeError("No supported TL junctions found in network.")
+
+        # Demand randomization — always active; seed=None means a different
+        # demand pattern each episode, seed=<int> gives reproducible demand.
+        self._rng              = np.random.default_rng(demand_seed)
+        self._temp_routes: Optional[str] = None
+        self._demand_randomizer = DemandRandomizer(self._net, flow_range)
 
         # Runtime state (populated by reset()).
         self._started          = False
@@ -151,6 +171,18 @@ class TrafficEnv:
         if self._started:
             traci.close()
             self._started = False
+
+        # Rotate demand: delete the previous temp file and generate a new one.
+        if self._temp_routes is not None:
+            try:
+                os.unlink(self._temp_routes)
+            except OSError:
+                pass
+            self._temp_routes = None
+
+        self._temp_routes = self._demand_randomizer.generate(
+            self.episode_length, self._rng
+        )
 
         self._start_sumo()
 
@@ -277,6 +309,12 @@ class TrafficEnv:
         if self._started:
             traci.close()
             self._started = False
+        if self._temp_routes is not None:
+            try:
+                os.unlink(self._temp_routes)
+            except OSError:
+                pass
+            self._temp_routes = None
 
     # ------------------------------------------------------------------
     # Properties
@@ -304,6 +342,10 @@ class TrafficEnv:
         ]
         if self.gui and self.gui_settings_file:
             cmd += ["--gui-settings-file", self.gui_settings_file]
+        if self.tripinfo_output:
+            cmd += ["--tripinfo-output", self.tripinfo_output]
+        if self._temp_routes is not None:
+            cmd += ["--route-files", self._temp_routes]
         traci.start(cmd)
         self._started = True
 
