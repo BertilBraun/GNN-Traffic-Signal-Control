@@ -265,6 +265,49 @@ def run_eval_episode(
 
 
 # ---------------------------------------------------------------------------
+# Multi-seed averaging
+# ---------------------------------------------------------------------------
+
+def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
+    """Return element-wise mean of a list of EvalMetrics.
+
+    Scalar fields are averaged directly.  Per-junction phase counts are summed
+    (preserving the relative distribution shape for histograms).
+    """
+    n = len(metrics_list)
+    if n == 1:
+        return metrics_list[0]
+
+    def mean(attr: str) -> float:
+        return sum(getattr(m, attr) for m in metrics_list) / n
+
+    jids = list(metrics_list[0].per_junction_wait_density.keys())
+    return EvalMetrics(
+        avg_waiting_time    = mean('avg_waiting_time'),
+        avg_travel_time     = mean('avg_travel_time'),
+        throughput_per_hour = mean('throughput_per_hour'),
+        max_queue_length    = mean('max_queue_length'),
+        phase_switch_freq   = mean('phase_switch_freq'),
+        avg_wait_density    = mean('avg_wait_density'),
+        per_junction_wait_density={
+            jid: sum(m.per_junction_wait_density[jid] for m in metrics_list) / n
+            for jid in jids
+        },
+        per_junction_max_queue={
+            jid: int(round(sum(m.per_junction_max_queue[jid] for m in metrics_list) / n))
+            for jid in jids
+        },
+        per_junction_phase_counts={
+            jid: [
+                sum(m.per_junction_phase_counts[jid][ph] for m in metrics_list)
+                for ph in range(4)
+            ]
+            for jid in jids
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tripinfo parser
 # ---------------------------------------------------------------------------
 

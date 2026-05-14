@@ -63,7 +63,9 @@ DECISION_INTERVAL = 15    # seconds between GNN decisions
 
 ALPHA = 1.0   # local wait weight
 BETA  = 0.1   # global wait weight
-GAMMA = 0.5   # switch penalty
+# Default switch penalty — can be overridden per-instance via switch_penalty arg.
+# RL stages typically use a lower value (0.1) to avoid suppressing phase switching.
+GAMMA = 0.5   # switch penalty (IL / expert default)
 
 MAX_PHASE_HOLD_S  = 45.0  # 3 intervals; used to normalise elapsed time
 
@@ -118,10 +120,12 @@ class TrafficEnv:
         tripinfo_output: Optional[str] = None,
         flow_range: tuple[int, int] = (300, 1000),
         demand_seed: Optional[int] = None,
+        switch_penalty: float = GAMMA,
     ) -> None:
         self.cfg_path          = cfg_path
         self.gui               = gui
         self.episode_length    = episode_length
+        self.switch_penalty    = switch_penalty
         self.gui_settings_file = gui_settings_file
         # Set to a file path before env.reset() to make SUMO write per-vehicle
         # trip statistics (waiting time, travel time) to that file.
@@ -283,12 +287,12 @@ class TrafficEnv:
 
         rewards: dict[str, float] = {}
         for jid in self._junctions:
-            delta_local    = post_local[jid] - pre_local[jid]
-            switch_penalty = 1.0 if switches[jid] else 0.0
+            delta_local  = post_local[jid] - pre_local[jid]
+            did_switch   = 1.0 if switches[jid] else 0.0
             rewards[jid] = (
-                -ALPHA * delta_local
-                - BETA  * delta_global
-                - GAMMA * switch_penalty
+                -ALPHA             * delta_local
+                - BETA             * delta_global
+                - self.switch_penalty * did_switch
             )
 
         self._prev_local_wait  = post_local
@@ -307,7 +311,13 @@ class TrafficEnv:
     def close(self) -> None:
         """Shut down the SUMO process."""
         if self._started:
-            traci.close()
+            try:
+                traci.close()
+            except Exception:
+                # SUMO may have already exited (e.g. received SIGINT from Ctrl+C
+                # on the same console).  Swallow the broken-socket error so the
+                # caller's finally block can proceed to save checkpoints.
+                pass
             self._started = False
         if self._temp_routes is not None:
             try:

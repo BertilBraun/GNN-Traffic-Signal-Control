@@ -59,6 +59,7 @@ from src.utils.graph_builder import GraphBuilder
 from src.model.gat_policy import GATPolicy
 from src.training.eval_episode import (
     EvalMetrics,
+    average_eval_metrics,
     run_eval_episode,
     make_model_policy,
     make_expert_policy,
@@ -81,6 +82,7 @@ def train_il(
     grad_clip: float = 0.5,
     eval_every: int = 5,
     print_every: int = 5,
+    n_eval_seeds: int = 5,
 ) -> GATPolicy:
     """Run the IL training loop and return the trained model.
 
@@ -107,6 +109,8 @@ def train_il(
         Set to 0 to disable mid-training eval (a final eval still runs).
     print_every :
         Print console summary every N episodes.
+    n_eval_seeds :
+        Number of demand seeds averaged in the final evaluation.
     """
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -160,7 +164,7 @@ def train_il(
         model.train()
 
         while not done:
-            # Expert labels for this step.
+            # Expert labels for this step (always from expert, regardless of driver).
             actions = expert.act()
 
             # Build graph (update normalizer during training).
@@ -176,7 +180,7 @@ def train_il(
             # Collect expert phase choices for episode histogram.
             ep_phases.extend(labels.cpu().tolist())
 
-            # Forward + loss.
+            # Forward + loss (always on expert labels).
             logits = model(graph)  # (N, 4)
             loss = F.cross_entropy(logits, labels)
 
@@ -198,12 +202,10 @@ def train_il(
             writer.add_scalar('loss/cross_entropy', loss.item(), global_step)
             writer.add_scalar('accuracy/phase_match', match, global_step)
 
-            # Step environment with expert actions.
             obs, _rewards, done, info = env.step(actions)
             ep_wait += info['global_wait']
             ep_switches += sum(1 for sw in info['switches'].values() if sw)
 
-            # Keep expert hold-interval counts in sync.
             for jid in env.junction_ids:
                 expert.notify_applied(jid, actions[jid])
 
@@ -243,15 +245,16 @@ def train_il(
         # ------------------------------------------------------------------
         if eval_every > 0 and (episode + 1) % eval_every == 0:
             model.eval()
-            _run_and_log_eval(env, model, expert, builder, dev, writer, episode)
+            _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=(42,))
             model.train()
 
     # ------------------------------------------------------------------
-    # Final evaluation.
+    # Final evaluation — averaged over n_eval_seeds for robustness.
     # ------------------------------------------------------------------
+    eval_seeds = tuple(range(42, 42 + n_eval_seeds))
     model.eval()
-    print('\nRunning final evaluation...')
-    _run_and_log_eval(env, model, expert, builder, dev, writer, n_episodes - 1)
+    print(f'\nRunning final evaluation (avg of {n_eval_seeds} seeds: {eval_seeds})...')
+    _run_and_log_eval(env, model, expert, builder, dev, writer, n_episodes - 1, eval_seeds=eval_seeds)
 
     # ------------------------------------------------------------------
     # Freeze normalizer and save checkpoints.
@@ -278,26 +281,43 @@ def _run_and_log_eval(
     dev: torch.device,
     writer: SummaryWriter,
     episode: int,
+    eval_seeds: tuple[int, ...] = (42,),
 ) -> None:
-    """Run model + expert eval episodes and log all metrics to TensorBoard.
+    """Run model + expert eval episodes and log averaged metrics to TensorBoard.
 
-    Both use the same config/demand file, so metrics are directly comparable.
-    Each call to run_eval_episode starts and closes its own SUMO process.
+    Each seed produces one model episode and one expert episode on identical
+    demand.  Results are averaged across all seeds before logging.  The
+    training RNG is saved and restored so subsequent episodes stay stochastic.
     """
+    orig_rng = env._rng
     model_policy = make_model_policy(model, builder, dev)
-    model_metrics = run_eval_episode(env, model_policy)
 
-    expert.reset()
-    expert_policy = make_expert_policy(expert)
-    expert_metrics = run_eval_episode(
-        env,
-        expert_policy,
-        on_step=lambda actions: _notify_expert(expert, actions),
-    )
+    model_runs: list[EvalMetrics] = []
+    expert_runs: list[EvalMetrics] = []
+
+    for seed in eval_seeds:
+        env._rng = np.random.default_rng(seed)
+        model_runs.append(run_eval_episode(env, model_policy))
+
+        expert.reset()
+        expert_policy = make_expert_policy(expert)
+        env._rng = np.random.default_rng(seed)  # same seed → same demand
+        expert_runs.append(
+            run_eval_episode(
+                env,
+                expert_policy,
+                on_step=lambda actions: _notify_expert(expert, actions),
+            )
+        )
+
+    env._rng = orig_rng  # restore stochastic training RNG
+
+    model_metrics = average_eval_metrics(model_runs)
+    expert_metrics = average_eval_metrics(expert_runs)
 
     _log_eval_scalars(writer, model_metrics, expert_metrics, episode)
     _log_junction_metrics(writer, model_metrics, expert_metrics, episode)
-    _print_eval_summary(model_metrics, expert_metrics, episode)
+    _print_eval_summary(model_metrics, expert_metrics, episode, n_seeds=len(eval_seeds))
 
 
 def _notify_expert(expert: GreedyExpert, actions: dict[str, int]) -> None:
@@ -313,23 +333,31 @@ def _log_eval_scalars(
 ) -> None:
     # add_scalars puts both series on the same chart in the Scalars tab.
     metrics = [
-        ('eval/avg_waiting_time',  'avg_waiting_time'),
-        ('eval/avg_travel_time',   'avg_travel_time'),
-        ('eval/throughput',        'throughput_per_hour'),
-        ('eval/max_queue_length',  'max_queue_length'),
+        ('eval/avg_waiting_time', 'avg_waiting_time'),
+        ('eval/avg_travel_time', 'avg_travel_time'),
+        ('eval/throughput', 'throughput_per_hour'),
+        ('eval/max_queue_length', 'max_queue_length'),
         ('eval/phase_switch_freq', 'phase_switch_freq'),
     ]
     for tag, attr in metrics:
-        writer.add_scalars(tag, {
-            'model':  getattr(model_m,  attr),
-            'expert': getattr(expert_m, attr),
-        }, episode)
+        writer.add_scalars(
+            tag,
+            {
+                'model': getattr(model_m, attr),
+                'expert': getattr(expert_m, attr),
+            },
+            episode,
+        )
 
     # wait_density shares a chart with the training series logged each episode.
-    writer.add_scalars('wait_density', {
-        'eval_model':  model_m.avg_wait_density,
-        'eval_expert': expert_m.avg_wait_density,
-    }, episode)
+    writer.add_scalars(
+        'wait_density',
+        {
+            'eval_model': model_m.avg_wait_density,
+            'eval_expert': expert_m.avg_wait_density,
+        },
+        episode,
+    )
 
 
 def _log_junction_metrics(
@@ -339,15 +367,23 @@ def _log_junction_metrics(
     episode: int,
 ) -> None:
     for jid in model_m.per_junction_wait_density:
-        writer.add_scalars(f'junctions/{jid}/wait_density', {
-            'model':  model_m.per_junction_wait_density[jid],
-            'expert': expert_m.per_junction_wait_density[jid],
-        }, episode)
+        writer.add_scalars(
+            f'junctions/{jid}/wait_density',
+            {
+                'model': model_m.per_junction_wait_density[jid],
+                'expert': expert_m.per_junction_wait_density[jid],
+            },
+            episode,
+        )
 
-        writer.add_scalars(f'junctions/{jid}/max_queue', {
-            'model':  float(model_m.per_junction_max_queue[jid]),
-            'expert': float(expert_m.per_junction_max_queue[jid]),
-        }, episode)
+        writer.add_scalars(
+            f'junctions/{jid}/max_queue',
+            {
+                'model': float(model_m.per_junction_max_queue[jid]),
+                'expert': float(expert_m.per_junction_max_queue[jid]),
+            },
+            episode,
+        )
 
         # Histograms stay per-tag (no add_scalars equivalent for histograms).
         for label, m in (('model', model_m), ('expert', expert_m)):
@@ -365,8 +401,10 @@ def _print_eval_summary(
     model: EvalMetrics,
     expert: EvalMetrics,
     episode: int,
+    n_seeds: int = 1,
 ) -> None:
-    print(f'\n  [eval @ ep {episode + 1}]')
+    seed_tag = f'avg of {n_seeds} seeds' if n_seeds > 1 else '1 seed'
+    print(f'\n  [eval @ ep {episode + 1}  ({seed_tag})]')
     print(f'  {"Metric":<24}  {"Model":>10}  {"Expert":>10}')
     print(f'  {"-" * 48}')
     rows = [
@@ -421,13 +459,19 @@ def load_checkpoint(
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = GATPolicy()
-    model.load_state_dict(
-        torch.load(
-            os.path.join(checkpoint_dir, 'il_policy.pt'),
-            map_location=device,
-            weights_only=True,
-        )
+    state = torch.load(
+        os.path.join(checkpoint_dir, 'il_policy.pt'),
+        map_location=device,
+        weights_only=True,
     )
+    # strict=False allows loading IL checkpoints that predate the value head:
+    # missing keys (value_head.*) keep their random initialisation; unexpected
+    # keys are silently ignored so RL checkpoints load cleanly too.
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    if missing:
+        print(f'  [load_checkpoint] New keys (random init): {missing}')
+    if unexpected:
+        print(f'  [load_checkpoint] Ignored keys: {unexpected}')
     model.to(torch.device(device)).eval()
 
     npz = np.load(os.path.join(checkpoint_dir, 'normalizer.npz'))

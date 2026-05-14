@@ -101,6 +101,12 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help='Print episode summary every N episodes',
     )
+    p.add_argument(
+        '--n-eval-seeds',
+        type=int,
+        default=5,
+        help='Number of demand seeds averaged in the final evaluation',
+    )
     return p.parse_args()
 
 
@@ -115,7 +121,7 @@ def main() -> None:
     # Generate a single timestamp so log_dir and ckpt_dir are always paired,
     # but only when the user hasn't provided explicit paths.
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_dir  = args.log_dir  or str(ROOT / 'runs'        / 'il' / stamp)
+    log_dir = args.log_dir or str(ROOT / 'runs' / 'il' / stamp)
     ckpt_dir = args.ckpt_dir or str(ROOT / 'checkpoints' / 'il' / stamp)
 
     train_il(
@@ -128,6 +134,7 @@ def main() -> None:
         device=args.device,
         eval_every=args.eval_every,
         print_every=args.print_every,
+        n_eval_seeds=args.n_eval_seeds,
     )
 
 
