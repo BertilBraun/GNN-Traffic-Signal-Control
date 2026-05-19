@@ -19,15 +19,17 @@ Observation vector per junction (41 dims, §3 of PLAN):
   [40]     elapsed time in phase, normalised to [0, 1]
 
 Reward per junction per step (§8):
-  r_i = -α·Δlocal_wait_i - β·Δglobal_wait - γ·switch_i
-  α=1.0, β=0.1, γ=0.5
+  r_i = -α·Δlocal_wait_i - β·Δglobal_wait
+  α=1.0, β=0.1
 
 Step timing (§6):
   Decision interval = 15 s.
   Switching junctions: 3 s yellow → 2 s all-red → 10 s new green.
   Holding junctions:   15 s current green.
-  Minimum green (10 s) is satisfied by construction.
+  Minimum green enforced via min_green_steps (default 2 × 15 s = 30 s).
+  Switch requests that arrive too early are silently overridden to hold.
 """
+
 from __future__ import annotations
 
 import os
@@ -39,12 +41,9 @@ from typing import Optional
 import numpy as np
 
 # Make sure SUMO tools are on the path.
-if "SUMO_HOME" not in os.environ:
-    raise EnvironmentError(
-        "SUMO_HOME environment variable is not set. "
-        "Point it to your SUMO installation directory."
-    )
-sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+if 'SUMO_HOME' not in os.environ:
+    raise EnvironmentError('SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.')
+sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
 import sumolib
 import traci
@@ -56,18 +55,17 @@ from src.utils.demand_generator import DemandRandomizer
 # Constants
 # ---------------------------------------------------------------------------
 
-YELLOW_DUR        = 3     # seconds
-ALLRED_DUR        = 2     # seconds
-MIN_GREEN_DUR     = 10    # seconds (guaranteed by the fixed 15-s interval)
-DECISION_INTERVAL = 15    # seconds between GNN decisions
+YELLOW_DUR = 3  # seconds
+ALLRED_DUR = 2  # seconds
+MIN_GREEN_DUR = 10  # seconds (guaranteed by the fixed 15-s interval)
+DECISION_INTERVAL = 15  # seconds between GNN decisions
 
-ALPHA = 1.0   # local wait weight
-BETA  = 0.1   # global wait weight
-# Default switch penalty — can be overridden per-instance via switch_penalty arg.
-# RL stages typically use a lower value (0.1) to avoid suppressing phase switching.
-GAMMA = 0.5   # switch penalty (IL / expert default)
+ALPHA = 1.0  # local wait weight
+BETA = 0.1  # global wait weight
 
-MAX_PHASE_HOLD_S  = 45.0  # 3 intervals; used to normalise elapsed time
+DEFAULT_MIN_GREEN_STEPS = 2  # decision intervals; 2 × 15 s = 30 s minimum green
+
+MAX_PHASE_HOLD_S = 45.0  # 3 intervals; used to normalise elapsed time
 
 # Movement directions in canonical order (matches feature vector layout)
 MOVEMENT_ORDER = ('l', 's', 'r')
@@ -76,20 +74,22 @@ MOVEMENT_ORDER = ('l', 's', 'r')
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_net_path(cfg_path: str) -> str:
     """Extract net-file path from a .sumocfg file."""
     cfg = Path(cfg_path)
     tree = ET.parse(cfg)
-    net_file = tree.find(".//net-file")
+    net_file = tree.find('.//net-file')
     if net_file is None:
-        raise ValueError(f"No <net-file> element found in {cfg_path}")
-    rel = net_file.get("value")
+        raise ValueError(f'No <net-file> element found in {cfg_path}')
+    rel = net_file.get('value')
     return str(cfg.parent / rel)
 
 
 # ---------------------------------------------------------------------------
 # TrafficEnv
 # ---------------------------------------------------------------------------
+
 
 class TrafficEnv:
     """Multi-junction traffic signal environment backed by SUMO/TraCI.
@@ -120,17 +120,17 @@ class TrafficEnv:
         tripinfo_output: Optional[str] = None,
         flow_range: tuple[int, int] = (300, 1000),
         demand_seed: Optional[int] = None,
-        switch_penalty: float = GAMMA,
+        min_green_steps: int = DEFAULT_MIN_GREEN_STEPS,
     ) -> None:
-        self.cfg_path          = cfg_path
-        self.gui               = gui
-        self.episode_length    = episode_length
-        self.switch_penalty    = switch_penalty
+        self.cfg_path = cfg_path
+        self.gui = gui
+        self.episode_length = episode_length
+        self.min_green_steps = min_green_steps
         self.gui_settings_file = gui_settings_file
         # Set to a file path before env.reset() to make SUMO write per-vehicle
         # trip statistics (waiting time, travel time) to that file.
         # eval_episode.run_eval_episode() manages this automatically.
-        self.tripinfo_output   = tripinfo_output
+        self.tripinfo_output = tripinfo_output
 
         # Parse network statically (no simulation needed).
         net_path = _parse_net_path(cfg_path)
@@ -139,27 +139,28 @@ class TrafficEnv:
         # Build per-junction canonical info (static, computed once).
         self._junctions: dict[str, JunctionInfo] = {}
         for node in sorted(self._net.getNodes(), key=lambda n: n.getID()):
-            if node.getType() != "traffic_light":
+            if node.getType() != 'traffic_light':
                 continue
             ji = build_junction_info(node)
             if ji is not None:
                 self._junctions[node.getID()] = ji
 
         if not self._junctions:
-            raise RuntimeError("No supported TL junctions found in network.")
+            raise RuntimeError('No supported TL junctions found in network.')
 
         # Demand randomization — always active; seed=None means a different
         # demand pattern each episode, seed=<int> gives reproducible demand.
-        self._rng              = np.random.default_rng(demand_seed)
+        self._rng = np.random.default_rng(demand_seed)
         self._temp_routes: Optional[str] = None
         self._demand_randomizer = DemandRandomizer(self._net, flow_range)
 
         # Runtime state (populated by reset()).
-        self._started          = False
-        self._current_phases:  dict[str, int]   = {}
-        self._phase_start_t:   dict[str, float] = {}   # sim-time when phase last changed
+        self._started = False
+        self._current_phases: dict[str, int] = {}
+        self._phase_start_t: dict[str, float] = {}  # sim-time when phase last changed
+        self._steps_in_phase: dict[str, int] = {}  # decision steps held in current phase
         self._prev_local_wait: dict[str, float] = {}
-        self._prev_global_wait: float           = 0.0
+        self._prev_global_wait: float = 0.0
 
     # ------------------------------------------------------------------
     # Public API
@@ -176,6 +177,11 @@ class TrafficEnv:
             traci.close()
             self._started = False
 
+        # Derive SUMO's internal seed from our RNG before demand generation so
+        # that fixing env._rng pins both vehicle spawning AND driver behaviour
+        # (speed jitter, gap acceptance) to a fully deterministic trajectory.
+        sumo_seed = int(self._rng.integers(0, 2**31))
+
         # Rotate demand: delete the previous temp file and generate a new one.
         if self._temp_routes is not None:
             try:
@@ -184,22 +190,21 @@ class TrafficEnv:
                 pass
             self._temp_routes = None
 
-        self._temp_routes = self._demand_randomizer.generate(
-            self.episode_length, self._rng
-        )
+        self._temp_routes = self._demand_randomizer.generate(self.episode_length, self._rng)
 
-        self._start_sumo()
+        self._start_sumo(sumo_seed=sumo_seed)
 
         # Initialise all junctions to phase 0.
         for jid, ji in self._junctions.items():
             self._current_phases[jid] = 0
-            self._phase_start_t[jid]  = 0.0
+            self._phase_start_t[jid] = 0.0
+            self._steps_in_phase[jid] = 0
             traci.trafficlight.setRedYellowGreenState(jid, ji.phase_states[0])
 
         # Advance one step so sensors have data.
         traci.simulationStep()
 
-        self._prev_local_wait  = self._compute_local_waits()
+        self._prev_local_wait = self._compute_local_waits()
         self._prev_global_wait = self._compute_global_wait()
 
         return self.observe()
@@ -237,19 +242,18 @@ class TrafficEnv:
         info         : dict with diagnostic values
         """
         # Fill missing junctions with hold.
-        full_actions: dict[str, int] = {
-            jid: actions.get(jid, self._current_phases[jid])
-            for jid in self._junctions
-        }
+        full_actions: dict[str, int] = {jid: actions.get(jid, self._current_phases[jid]) for jid in self._junctions}
+
+        # Enforce minimum green: override switches that arrive too early.
+        for jid in self._junctions:
+            if full_actions[jid] != self._current_phases[jid] and self._steps_in_phase[jid] < self.min_green_steps:
+                full_actions[jid] = self._current_phases[jid]
 
         # Determine which junctions will switch.
-        switches: dict[str, bool] = {
-            jid: (full_actions[jid] != self._current_phases[jid])
-            for jid in self._junctions
-        }
+        switches: dict[str, bool] = {jid: (full_actions[jid] != self._current_phases[jid]) for jid in self._junctions}
 
         # Snapshot wait densities before the interval.
-        pre_local  = self._compute_local_waits()
+        pre_local = self._compute_local_waits()
         pre_global = self._compute_global_wait()
 
         # ---- Run 15 simulation seconds -----------------------------------
@@ -258,7 +262,7 @@ class TrafficEnv:
             # Set each junction's signal state for this second.
             for jid, ji in self._junctions.items():
                 current = self._current_phases[jid]
-                target  = full_actions[jid]
+                target = full_actions[jid]
                 if switches[jid]:
                     if t <= YELLOW_DUR:
                         state = ji.yellow_states[current]
@@ -278,33 +282,31 @@ class TrafficEnv:
         for jid, target in full_actions.items():
             if switches[jid]:
                 self._current_phases[jid] = target
-                self._phase_start_t[jid]  = now
+                self._phase_start_t[jid] = now
+                self._steps_in_phase[jid] = 0
+            else:
+                self._steps_in_phase[jid] += 1
 
         # ---- Rewards -----------------------------------------------------
-        post_local  = self._compute_local_waits()
+        post_local = self._compute_local_waits()
         post_global = self._compute_global_wait()
         delta_global = post_global - pre_global
 
         rewards: dict[str, float] = {}
         for jid in self._junctions:
-            delta_local  = post_local[jid] - pre_local[jid]
-            did_switch   = 1.0 if switches[jid] else 0.0
-            rewards[jid] = (
-                -ALPHA             * delta_local
-                - BETA             * delta_global
-                - self.switch_penalty * did_switch
-            )
+            delta_local = post_local[jid] - pre_local[jid]
+            rewards[jid] = -ALPHA * delta_local - BETA * delta_global
 
-        self._prev_local_wait  = post_local
+        self._prev_local_wait = post_local
         self._prev_global_wait = post_global
 
         done = now >= self.episode_length
-        obs  = self.observe()
+        obs = self.observe()
         info = {
-            "sim_time":     now,
-            "global_wait":  post_global,
-            "local_waits":  post_local,
-            "switches":     switches,
+            'sim_time': now,
+            'global_wait': post_global,
+            'local_waits': post_local,
+            'switches': switches,
         }
         return obs, rewards, done, info
 
@@ -342,20 +344,25 @@ class TrafficEnv:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _start_sumo(self) -> None:
-        binary = sumolib.checkBinary("sumo-gui" if self.gui else "sumo")
+    def _start_sumo(self, sumo_seed: int = 0) -> None:
+        binary = sumolib.checkBinary('sumo-gui' if self.gui else 'sumo')
         cmd = [
             binary,
-            "-c", self.cfg_path,
-            "--no-step-log", "true",
-            "--no-warnings",  "true",
+            '-c',
+            self.cfg_path,
+            '--no-step-log',
+            'true',
+            '--no-warnings',
+            'true',
+            '--seed',
+            str(sumo_seed),
         ]
         if self.gui and self.gui_settings_file:
-            cmd += ["--gui-settings-file", self.gui_settings_file]
+            cmd += ['--gui-settings-file', self.gui_settings_file]
         if self.tripinfo_output:
-            cmd += ["--tripinfo-output", self.tripinfo_output]
+            cmd += ['--tripinfo-output', self.tripinfo_output]
         if self._temp_routes is not None:
-            cmd += ["--route-files", self._temp_routes]
+            cmd += ['--route-files', self._temp_routes]
         traci.start(cmd)
         self._started = True
 
@@ -368,42 +375,33 @@ class TrafficEnv:
     ) -> np.ndarray:
         """Build the 41-dim feature vector for one junction."""
         feat = np.zeros(41, dtype=np.float32)
-        idx  = 0
+        idx = 0
 
         for slot_idx in range(4):
             slot = ji.slots[slot_idx]
             if slot is None:
-                idx += 9   # 3 movements × 3 features — zero-padded
+                idx += 9  # 3 movements × 3 features — zero-padded
                 continue
 
             for direction in MOVEMENT_ORDER:
                 mv = slot.movements.get(direction)
                 if mv is None or not mv.lane_ids:
-                    idx += 3   # zero-pad absent movement
+                    idx += 3  # zero-pad absent movement
                     continue
 
                 total_len = mv.total_det_length
 
                 # queue_density: halting vehicles / total det length
-                halting = sum(
-                    traci.lane.getLastStepHaltingNumber(lid)
-                    for lid in mv.lane_ids
-                )
+                halting = sum(traci.lane.getLastStepHaltingNumber(lid) for lid in mv.lane_ids)
                 # approach_density: all vehicles in lane / det length
                 # (uses lane counts as proxy — det is within lane bounds)
-                approaching = sum(
-                    traci.lane.getLastStepVehicleNumber(lid)
-                    for lid in mv.lane_ids
-                )
+                approaching = sum(traci.lane.getLastStepVehicleNumber(lid) for lid in mv.lane_ids)
                 # wait_density: accumulated waiting time / det length
-                waiting = sum(
-                    traci.lane.getWaitingTime(lid)
-                    for lid in mv.lane_ids
-                )
+                waiting = sum(traci.lane.getWaitingTime(lid) for lid in mv.lane_ids)
 
-                feat[idx]   = halting    / total_len
-                feat[idx+1] = approaching / total_len
-                feat[idx+2] = waiting    / total_len
+                feat[idx] = halting / total_len
+                feat[idx + 1] = approaching / total_len
+                feat[idx + 2] = waiting / total_len
                 idx += 3
 
         # Junction-level features: current phase one-hot [36..39]
@@ -411,8 +409,8 @@ class TrafficEnv:
         feat[36 + phase] = 1.0
 
         # Elapsed time in phase, normalised to [0, 1] [40]
-        start_t  = self._phase_start_t.get(ji.junction_id, 0.0)
-        elapsed  = max(0.0, now - start_t)
+        start_t = self._phase_start_t.get(ji.junction_id, 0.0)
+        elapsed = max(0.0, now - start_t)
         feat[40] = min(1.0, elapsed / MAX_PHASE_HOLD_S)
 
         return feat
@@ -423,20 +421,17 @@ class TrafficEnv:
         """Wait density per junction: sum(lane_wait) / sum(det_len)."""
         result = {}
         for jid, ji in self._junctions.items():
-            total_wait = sum(
-                traci.lane.getWaitingTime(lid)
-                for lid, _ in ji.all_lane_det
-            )
-            total_len  = sum(dl for _, dl in ji.all_lane_det) or 1.0
+            total_wait = sum(traci.lane.getWaitingTime(lid) for lid, _ in ji.all_lane_det)
+            total_len = sum(dl for _, dl in ji.all_lane_det) or 1.0
             result[jid] = total_wait / total_len
         return result
 
     def _compute_global_wait(self) -> float:
         """Network-wide wait density: sum_all_lanes(wait) / sum_all_lanes(det_len)."""
         total_wait = 0.0
-        total_len  = 0.0
+        total_len = 0.0
         for ji in self._junctions.values():
             for lid, dl in ji.all_lane_det:
                 total_wait += traci.lane.getWaitingTime(lid)
-                total_len  += dl
+                total_len += dl
         return total_wait / (total_len or 1.0)

@@ -83,6 +83,11 @@ def train_il(
     eval_every: int = 5,
     print_every: int = 5,
     n_eval_seeds: int = 5,
+    dagger_beta_end: float = 0.0,
+    demand_seed: Optional[int] = None,
+    debug: bool = False,
+    flow_range: tuple[int, int] = (300, 1000),
+    min_green_steps: int = 2,
 ) -> GATPolicy:
     """Run the IL training loop and return the trained model.
 
@@ -111,6 +116,17 @@ def train_il(
         Print console summary every N episodes.
     n_eval_seeds :
         Number of demand seeds averaged in the final evaluation.
+    dagger_beta_end :
+        Final expert-driving probability (DAgger annealing). beta decays
+        linearly from 1.0 (episode 0, always expert drives) to this value.
+        Labels are always from the expert; only the environment stepping is
+        mixed. 0.0 = model drives entirely by end; 1.0 = pure BC (no DAgger).
+    demand_seed :
+        When set, every episode uses identical traffic demand (overfit probe).
+        Set env._rng to this seed before each env.reset().
+    debug :
+        When True, log per-step gradient norm and logit entropy to TensorBoard,
+        plus per-episode raw observation statistics (min/max/mean per feature).
     """
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -119,7 +135,9 @@ def train_il(
     # ------------------------------------------------------------------
     # Setup
     # ------------------------------------------------------------------
-    env = TrafficEnv(cfg_path, gui=False, episode_length=episode_length)
+    env = TrafficEnv(
+        cfg_path, gui=False, episode_length=episode_length, flow_range=flow_range, min_green_steps=min_green_steps
+    )
     expert = GreedyExpert(env.junction_infos)
     builder = GraphBuilder(env._net, env.junction_infos)
     model = GATPolicy().to(dev)
@@ -131,11 +149,15 @@ def train_il(
     n_junctions = len(env.junction_ids)
     steps_per_ep = episode_length // 15
 
+    demand_tag = f'fixed seed {demand_seed} (overfit mode)' if demand_seed is not None else 'randomised'
     print(
         f'\nImitation Learning'
         f'\n  Junctions:     {n_junctions}'
         f'\n  Episodes:      {n_episodes}'
         f'\n  Episode len:   {episode_length} s  ({steps_per_ep} decision steps)'
+        f'\n  DAgger beta:   1.0 → {dagger_beta_end} ({"disabled" if dagger_beta_end == 1.0 else "annealing"})'
+        f'\n  Demand:        {demand_tag}'
+        f'\n  Debug:         {debug}'
         f'\n  Device:        {dev}'
         f'\n  Parameters:    {model.n_parameters():,}'
         f'\n  Eval every:    {eval_every} episodes'
@@ -145,14 +167,21 @@ def train_il(
 
     global_step = 0
     t0 = time.time()
+    best_wait_density = float('inf')
 
     # ------------------------------------------------------------------
     # Training loop
     # ------------------------------------------------------------------
     for episode in range(n_episodes):
+        if demand_seed is not None:
+            env._rng = np.random.default_rng(demand_seed)
         obs = env.reset()
         expert.reset()
         done = False
+
+        # DAgger: beta = probability of using expert to step env this episode.
+        # Labels are always expert. beta decays linearly 1.0 → dagger_beta_end.
+        beta = 1.0 - (1.0 - dagger_beta_end) * (episode / max(1, n_episodes - 1))
 
         ep_loss: float = 0.0
         ep_match: float = 0.0
@@ -160,12 +189,17 @@ def train_il(
         ep_steps: int = 0
         ep_switches: int = 0
         ep_phases: list[int] = []  # all expert phase choices (all junctions, all steps)
+        ep_raw_obs: list[np.ndarray] = []  # (debug) raw obs vectors before normalisation
 
         model.train()
 
         while not done:
             # Expert labels for this step (always from expert, regardless of driver).
             actions = expert.act()
+
+            if debug:
+                for raw_vec in obs.values():
+                    ep_raw_obs.append(raw_vec)
 
             # Build graph (update normalizer during training).
             graph = builder.build(obs, update_normalizer=True).to(dev)
@@ -202,12 +236,28 @@ def train_il(
             writer.add_scalar('loss/cross_entropy', loss.item(), global_step)
             writer.add_scalar('accuracy/phase_match', match, global_step)
 
-            obs, _rewards, done, info = env.step(actions)
+            if debug:
+                grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+                with torch.no_grad():
+                    probs = torch.softmax(logits, dim=-1)
+                    entropy = -(probs * probs.log().clamp(min=-20)).sum(dim=-1).mean().item()
+                writer.add_scalar('debug/grad_norm', grad_norm, global_step)
+                writer.add_scalar('debug/logit_entropy', entropy, global_step)
+
+            # DAgger: step with expert (prob beta) or model (prob 1-beta).
+            if np.random.random() < beta:
+                step_actions = actions
+            else:
+                with torch.no_grad():
+                    model_phases = logits.argmax(dim=-1).cpu().tolist()
+                step_actions = {jid: model_phases[i] for i, jid in enumerate(builder.junction_ids)}
+
+            obs, _rewards, done, info = env.step(step_actions)
             ep_wait += info['global_wait']
             ep_switches += sum(1 for sw in info['switches'].values() if sw)
 
             for jid in env.junction_ids:
-                expert.notify_applied(jid, actions[jid])
+                expert.notify_applied(jid, step_actions[jid])
 
         # ------------------------------------------------------------------
         # Episode-level logging
@@ -221,6 +271,7 @@ def train_il(
         writer.add_scalar('episode/avg_match_rate', avg_match, episode)
         writer.add_scalars('wait_density', {'training': avg_wait}, episode)
         writer.add_scalar('policy/expert/switch_rate', switch_rate, episode)
+        writer.add_scalar('dagger/beta', beta, episode)
 
         if ep_phases:
             writer.add_histogram(
@@ -228,6 +279,13 @@ def train_il(
                 np.array(ep_phases, dtype=np.float32),
                 episode,
             )
+
+        if debug and ep_raw_obs:
+            obs_mat = np.stack(ep_raw_obs)  # (T*N, 41)
+            writer.add_scalar('debug/obs_min', float(obs_mat.min()), episode)
+            writer.add_scalar('debug/obs_max', float(obs_mat.max()), episode)
+            writer.add_scalar('debug/obs_mean', float(obs_mat.mean()), episode)
+            writer.add_scalar('debug/obs_abs_mean', float(np.abs(obs_mat).mean()), episode)
 
         if (episode + 1) % print_every == 0 or episode == 0:
             elapsed = time.time() - t0
@@ -237,6 +295,7 @@ def train_il(
                 f'  match={avg_match:.3f}'
                 f'  wait={avg_wait:.4f} s/m'
                 f'  sw={switch_rate:.2f}'
+                f'  β={beta:.2f}'
                 f'  [{elapsed:5.0f}s]'
             )
 
@@ -245,7 +304,11 @@ def train_il(
         # ------------------------------------------------------------------
         if eval_every > 0 and (episode + 1) % eval_every == 0:
             model.eval()
-            _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=(42,))
+            model_metrics = _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=(42,))
+            if model_metrics.avg_wait_density < best_wait_density:
+                best_wait_density = model_metrics.avg_wait_density
+                _save_checkpoint(model, builder, checkpoint_dir, tag='best')
+                print(f'  → new best  wait_density={best_wait_density:.4f} s/m  (checkpoint saved)')
             model.train()
 
     # ------------------------------------------------------------------
@@ -263,7 +326,7 @@ def train_il(
     env.close()  # idempotent if already closed by last eval
     writer.close()
 
-    _save_checkpoint(model, builder, checkpoint_dir)
+    _save_checkpoint(model, builder, checkpoint_dir, tag='final')
     print(f'\nTraining complete.  Checkpoints saved to {checkpoint_dir}/')
     return model
 
@@ -282,12 +345,13 @@ def _run_and_log_eval(
     writer: SummaryWriter,
     episode: int,
     eval_seeds: tuple[int, ...] = (42,),
-) -> None:
+) -> EvalMetrics:
     """Run model + expert eval episodes and log averaged metrics to TensorBoard.
 
     Each seed produces one model episode and one expert episode on identical
     demand.  Results are averaged across all seeds before logging.  The
     training RNG is saved and restored so subsequent episodes stay stochastic.
+    Returns the averaged model metrics so callers can track the best checkpoint.
     """
     orig_rng = env._rng
     model_policy = make_model_policy(model, builder, dev)
@@ -318,6 +382,7 @@ def _run_and_log_eval(
     _log_eval_scalars(writer, model_metrics, expert_metrics, episode)
     _log_junction_metrics(writer, model_metrics, expert_metrics, episode)
     _print_eval_summary(model_metrics, expert_metrics, episode, n_seeds=len(eval_seeds))
+    return model_metrics
 
 
 def _notify_expert(expert: GreedyExpert, actions: dict[str, int]) -> None:
@@ -429,12 +494,13 @@ def _save_checkpoint(
     model: GATPolicy,
     builder: GraphBuilder,
     directory: str,
+    tag: str = 'final',
 ) -> None:
-    model_path = os.path.join(directory, 'il_policy.pt')
+    model_path = os.path.join(directory, f'il_policy_{tag}.pt')
     torch.save(model.state_dict(), model_path)
 
     nd = builder.normalizer.state_dict()
-    norm_path = os.path.join(directory, 'normalizer.npz')
+    norm_path = os.path.join(directory, f'normalizer_{tag}.npz')
     np.savez(norm_path, n=np.array(nd['n']), mean=nd['mean'], M2=nd['M2'])
 
     print(f'  Saved model      → {model_path}')
@@ -444,6 +510,7 @@ def _save_checkpoint(
 def load_checkpoint(
     checkpoint_dir: str,
     device: Optional[str] = None,
+    tag: str = 'best',
 ) -> tuple[GATPolicy, dict]:
     """Load a saved IL checkpoint.
 
@@ -458,12 +525,20 @@ def load_checkpoint(
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    # Resolve file paths: prefer tagged names, fall back to legacy bare names
+    # so checkpoints saved before the tag scheme still load cleanly.
+    def _resolve(stem: str, ext: str) -> str:
+        tagged = os.path.join(checkpoint_dir, f'{stem}_{tag}{ext}')
+        legacy = os.path.join(checkpoint_dir, f'{stem}{ext}')
+        if os.path.exists(tagged):
+            return tagged
+        if os.path.exists(legacy):
+            print(f'  [load_checkpoint] "{stem}_{tag}{ext}" not found, loading legacy "{stem}{ext}"')
+            return legacy
+        raise FileNotFoundError(f'No checkpoint found at {tagged} or {legacy}')
+
     model = GATPolicy()
-    state = torch.load(
-        os.path.join(checkpoint_dir, 'il_policy.pt'),
-        map_location=device,
-        weights_only=True,
-    )
+    state = torch.load(_resolve('il_policy', '.pt'), map_location=device, weights_only=True)
     # strict=False allows loading IL checkpoints that predate the value head:
     # missing keys (value_head.*) keep their random initialisation; unexpected
     # keys are silently ignored so RL checkpoints load cleanly too.
@@ -474,5 +549,5 @@ def load_checkpoint(
         print(f'  [load_checkpoint] Ignored keys: {unexpected}')
     model.to(torch.device(device)).eval()
 
-    npz = np.load(os.path.join(checkpoint_dir, 'normalizer.npz'))
+    npz = np.load(_resolve('normalizer', '.npz'))
     return model, {'n': int(npz['n']), 'mean': npz['mean'], 'M2': npz['M2']}

@@ -63,11 +63,11 @@ This gives a fixed 12-slot movement vector per junction, regardless of geometry.
 
 ### Per-Movement Features (12 movements × F features)
 
-| Feature             | Description                                              | SUMO Source                                                 |
-| ------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
-| Queue density       | Stopped vehicles per meter of detector (veh/m)           | `traci.lane.getLastStepHaltingNumber` / `detector_length_m` |
-| Approaching density | Vehicles heading toward this movement per meter (veh/m)  | Lane-area detector count / `detector_length_m`              |
-| Wait density        | Accumulated waiting time per meter of detector (s/m)     | `traci.lane.getWaitingTime` / `detector_length_m`           |
+| Feature             | Description                                             | SUMO Source                                                 |
+| ------------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| Queue density       | Stopped vehicles per meter of detector (veh/m)          | `traci.lane.getLastStepHaltingNumber` / `detector_length_m` |
+| Approaching density | Vehicles heading toward this movement per meter (veh/m) | Lane-area detector count / `detector_length_m`              |
+| Wait density        | Accumulated waiting time per meter of detector (s/m)    | `traci.lane.getWaitingTime` / `detector_length_m`           |
 
 With F=3 features per movement and 12 movements, this gives a 36-dimensional per-movement block.
 
@@ -94,12 +94,12 @@ All features are z-score normalized using running statistics accumulated during 
 
 All four phases are defined as sets of compatible (non-conflicting) movements, indexed against the canonical slot ordering from Section 2:
 
-| Phase | Green Movements                                            | Description                      |
-| ----- | ---------------------------------------------------------- | -------------------------------- |
-| 0     | slot0-through, slot0-right, slot2-through, slot2-right     | Slots 0/2 through + right        |
-| 1     | slot0-left, slot2-left, slot1-right, slot3-right           | Slots 0/2 left + slots 1/3 right |
-| 2     | slot1-through, slot1-right, slot3-through, slot3-right     | Slots 1/3 through + right        |
-| 3     | slot1-left, slot3-left, slot0-right, slot2-right           | Slots 1/3 left + slots 0/2 right |
+| Phase | Green Movements                                        | Description                      |
+| ----- | ------------------------------------------------------ | -------------------------------- |
+| 0     | slot0-through, slot0-right, slot2-through, slot2-right | Slots 0/2 through + right        |
+| 1     | slot0-left, slot2-left, slot1-right, slot3-right       | Slots 0/2 left + slots 1/3 right |
+| 2     | slot1-through, slot1-right, slot3-through, slot3-right | Slots 1/3 through + right        |
+| 3     | slot1-left, slot3-left, slot0-right, slot2-right       | Slots 1/3 left + slots 0/2 right |
 
 This is the same standard NEMA-style 4-phase scheme, just expressed against geometric slot indices instead of compass directions.
 
@@ -197,16 +197,7 @@ Standard SUMO actuated controllers use their own phase programs, which generally
 
 This controller is greedy and purely local. It's not optimal, but it (a) produces well-defined (state, phase) labels in the GNN's output space, and (b) gives the GNN a sensible warm start before RL.
 
-### Stage 1: Imitation Learning — Single 4-Way Junction
-
-**Goal:** Validate the full pipeline end-to-end.
-
-- Run SUMO with the custom expert controller (defined above) on a single 4-way junction; use **1200s episodes** here for faster iteration (no transit, simpler dynamics)
-- Collect (state, expert_phase) pairs over many episodes with varied demand
-- Train the GNN (which reduces to a simple MLP here, since there are no neighbors) with cross-entropy loss against the expert phase
-- Metric: match rate with expert, plus comparison of average waiting time
-
-### Stage 2: Imitation Learning — Irregular Multi-Junction Network
+### Imitation Learning — Irregular Multi-Junction Network
 
 **Goal:** Validate that the full GATv2 pipeline runs end-to-end on a multi-junction network without producing pathologies (gridlock, starved approaches), before introducing RL. This is *not* a coordination test — the per-junction expert is purely local, so coordination only emerges in the RL stages.
 
@@ -226,17 +217,17 @@ Evaluation episodes use the same burn-in so metrics are comparable to training c
 
 ### PPO Hyperparameters
 
-| Parameter | Value | Notes |
-| ------------------- | ------------- | ------------------------------------------------------- |
-| Discount γ | 0.99 | ~100-step effective horizon ≈ 1500s |
-| GAE λ | 0.95 | Advantage estimation smoothing |
-| Clip ε | 0.2 | Maximum policy update ratio per step |
-| Epochs per update K | 10 | Passes over the rollout buffer per iteration |
-| Minibatch size | 256 | Stage 4: ~15 minibatches/epoch |
-| Learning rate | 3e-4 | Adam, shared for actor and critic |
-| Value loss coeff | 0.5 | Relative weight of critic loss term |
-| Entropy coeff | 0.01 | Exploration bonus |
-| Max gradient norm | 0.5 | Gradient clipping |
+| Parameter           | Value          | Notes                                        |
+| ------------------- | -------------- | -------------------------------------------- |
+| Discount γ          | 0.99           | ~100-step effective horizon ≈ 1500s          |
+| GAE λ               | 0.95           | Advantage estimation smoothing               |
+| Clip ε              | 0.2            | Maximum policy update ratio per step         |
+| Epochs per update K | 10             | Passes over the rollout buffer per iteration |
+| Minibatch size      | 256            | Stage 4: ~15 minibatches/epoch               |
+| Learning rate       | 3e-4           | Adam, shared for actor and critic            |
+| Value loss coeff    | 0.5            | Relative weight of critic loss term          |
+| Entropy coeff       | 0.01           | Exploration bonus                            |
+| Max gradient norm   | 0.5            | Gradient clipping                            |
 | Episodes per update | 1 (Stage 3: 4) | Stage 3 has only ~80 transitions/ep at 1200s |
 
 ### Training Loop
@@ -252,11 +243,11 @@ The buffer is thrown away after each update because PPO is **on-policy** — tra
 
 **Expected updates to convergence (from IL warm start):**
 
-| Stage | Updates | Estimated wall-clock |
-| --------------------------------- | ---------- | -------------------- |
-| Stage 3 — single junction | 100–300 | 15–50 min |
-| Stage 4 — 16 junctions | 300–800 | 1–2 hrs |
-| Stage 5 — city network (fine-tune) | 200–600 | 30 min–2 hrs |
+| Stage                              | Updates | Estimated wall-clock |
+| ---------------------------------- | ------- | -------------------- |
+| Stage 3 — single junction          | 100–300 | 15–50 min            |
+| Stage 4 — 16 junctions             | 300–800 | 1–2 hrs              |
+| Stage 5 — city network (fine-tune) | 200–600 | 30 min–2 hrs         |
 
 "Convergence" = consistently outperforming the greedy IL expert on held-out demand levels. Beating SUMO's actuated controller is the harder target and may take 2–3× more updates.
 

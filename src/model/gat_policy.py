@@ -96,13 +96,44 @@ class GATPolicy(nn.Module):
         ])
 
         # ------------------------------------------------------------------
-        # Classifier head: hidden → 64 → n_classes
+        # Classifier (actor) head: hidden → 64 → n_classes
         # ------------------------------------------------------------------
         self.classifier = nn.Sequential(
             nn.Linear(hidden, 64),
             nn.ReLU(),
             nn.Linear(64, n_classes),
         )
+
+        # ------------------------------------------------------------------
+        # Value (critic) head: hidden → 64 → 1  (per-node scalar V(s))
+        # Shares the encoder + GAT backbone with the actor.
+        # ------------------------------------------------------------------
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1),
+        )
+
+    # ------------------------------------------------------------------
+    # Shared backbone
+    # ------------------------------------------------------------------
+
+    def _encode(self, data: Data) -> torch.Tensor:
+        """Run the encoder + GATv2 message-passing layers.
+
+        Returns the per-node embedding of shape (N, hidden).
+        """
+        x          = data.x
+        edge_index = data.edge_index
+        edge_attr  = data.edge_attr
+
+        x = self.encoder(x)
+        for conv, norm in zip(self.convs, self.norms):
+            residual = x
+            x = conv(x, edge_index, edge_attr=edge_attr)
+            x = F.relu(x)
+            x = norm(x + residual)
+        return x
 
     # ------------------------------------------------------------------
     # Forward
@@ -121,22 +152,25 @@ class GATPolicy(nn.Module):
         -------
         logits : torch.Tensor of shape (N, n_classes)
         """
-        x         = data.x
-        edge_index = data.edge_index
-        edge_attr  = data.edge_attr
+        return self.classifier(self._encode(data))
 
-        # Encode node features to hidden dim.
-        x = self.encoder(x)
+    def forward_actor_critic(
+        self, data: Data
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run one forward pass and return both actor logits and critic values.
 
-        # Iterative message passing with residual connections.
-        for conv, norm in zip(self.convs, self.norms):
-            residual = x
-            x = conv(x, edge_index, edge_attr=edge_attr)
-            x = F.relu(x)
-            x = norm(x + residual)
+        Parameters
+        ----------
+        data :
+            torch_geometric.data.Data (or a PyG Batch of multiple graphs).
 
-        # Per-node classification.
-        return self.classifier(x)
+        Returns
+        -------
+        logits : (N, n_classes) — unnormalised action log-probabilities
+        values : (N,)           — per-node state-value estimates V(s)
+        """
+        h = self._encode(data)
+        return self.classifier(h), self.value_head(h).squeeze(-1)
 
     # ------------------------------------------------------------------
     # Convenience methods

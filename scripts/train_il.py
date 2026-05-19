@@ -57,6 +57,14 @@ def parse_args() -> argparse.Namespace:
         help='Path to .sumocfg file',
     )
     p.add_argument(
+        '--flow-range',
+        nargs=2,
+        type=int,
+        default=[300, 1000],
+        metavar=('MIN', 'MAX'),
+        help='Total vehicles/hour range for demand randomisation (default: 300 1000)',
+    )
+    p.add_argument(
         '--episodes',
         type=int,
         default=20,
@@ -107,6 +115,29 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help='Number of demand seeds averaged in the final evaluation',
     )
+    p.add_argument(
+        '--dagger-beta-end',
+        type=float,
+        default=0.0,
+        help='Final expert-driving probability (DAgger). 0.0=model drives by end, 1.0=pure BC',
+    )
+    p.add_argument(
+        '--demand-seed',
+        type=int,
+        default=None,
+        help='Fix demand RNG to this seed every episode (overfit probe). Omit for randomised demand.',
+    )
+    p.add_argument(
+        '--debug',
+        action='store_true',
+        help='Log per-step grad norm, logit entropy, and per-episode obs stats to TensorBoard.',
+    )
+    p.add_argument(
+        '--min-green-steps',
+        type=int,
+        default=2,
+        help='Minimum decision steps before a phase switch is allowed (2 × 15 s = 30 s)',
+    )
     return p.parse_args()
 
 
@@ -135,6 +166,11 @@ def main() -> None:
         eval_every=args.eval_every,
         print_every=args.print_every,
         n_eval_seeds=args.n_eval_seeds,
+        dagger_beta_end=args.dagger_beta_end,
+        demand_seed=args.demand_seed,
+        debug=args.debug,
+        flow_range=tuple(args.flow_range),
+        min_green_steps=args.min_green_steps,
     )
 
 
