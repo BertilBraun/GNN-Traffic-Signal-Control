@@ -56,21 +56,38 @@ Switching frequency is realistic (1.18 vs expert 1.26 — the constraint is work
 
 PLAN called for a single-junction RL validation stage. It was skipped because Stage 4 (multi-junction) passed cleanly from the IL warm start. No regression — the multi-junction result is the stronger evidence.
 
-### Stage 5 — city network (not started)
+### Stage 5 — city network (COMPLETE)
 
-Import a real city-centre excerpt from OpenStreetMap into SUMO. The network must contain only 3-way and 4-way signalised junctions (no 5+ arm intersections). Apply the trained GNN zero-shot — no fine-tuning — and measure vs SUMO's built-in actuated controller. Then fine-tune with PPO.
+**Network:** Munich Maxvorstadt (OSM bbox 48.147,11.568–48.155,11.581), imported via netconvert.
+10 usable TL junctions (7 three-way + 3 four-way); 6 additional 1–2 arm crossings silently skipped.
+53 E2 detectors on incoming lanes. `verify_env.py` passes 5/6 checks (phase 3 never selected by greedy expert in short 300s test episodes — low-demand artifact, not a phase definition bug).
 
-This is the primary remaining milestone. The GNN architecture was designed for this: geometry-agnostic slot ordering, density features, length-invariant normalisation, and frozen normalizer at RL time all exist to make zero-shot transfer work.
+Files: `configs/city/` — `city.net.xml`, `city.tll.xml`, `city.add.xml`, `city.rou.xml`, `city.sumocfg`
+Build scripts: `audit_junctions.py`, `build_tll.py`, `build_detectors.py`
+Eval script: `scripts/eval_city.py`
 
-**Steps to get there:**
+**Summary of results (5 seeds, 3600s episodes, 700–1200 veh/h):**
 
-1. Choose a city area (OSM export). ~10–20 signalised junctions.
-2. `netconvert` + manual cleanup to produce a valid `.net.xml`.
-3. Verify all junctions are 3-way or 4-way; exclude any with 5+ arms.
-4. Generate demand with `randomTrips.py` at several flow rates.
-5. Verify `TrafficEnv` starts cleanly on the new `.sumocfg`.
-6. Run zero-shot eval: `python scripts/run_grid.py --mode model --ckpt checkpoints/rl/<stamp> --cfg <city.sumocfg>`.
-7. Fine-tune with `train_rl.py --il-ckpt checkpoints/rl/<stamp> --cfg <city.sumocfg>`.
+| Metric | Expert | Zero-shot | Fine-tuned (200 iters) |
+|--------|--------|-----------|------------------------|
+| avg_waiting_time (s) | 37.1 | 210.9 | 123.9 |
+| avg_travel_time (s) | 145.1 | 318.0 | 232.7 |
+| throughput (veh/h) | 31.8 | 30.2 | 31.0 |
+| max_queue (vehs) | 1.4 | 1.6 | 1.4 |
+| switch_freq (/j/min) | 0.6 | 0.6 | 0.7 |
+| wait_density (s/m) | 0.0016 | 0.0440 | 0.0114 |
+
+**Zero-shot:** +469% avg wait vs expert — grid-trained normalizer statistics don't fit city feature distribution, model misreads traffic state.
+
+**After 200 PPO iterations:** +234% avg wait vs expert. Wait density improved 4× from zero-shot (0.044 → 0.011 s/m). Throughput nearly matched (−2.5%). The model did not beat the expert in 200 iterations.
+
+**Root cause of remaining gap:** The frozen normalizer from grid training is the primary bottleneck. The city network's feature distributions differ structurally from the grid (different lane lengths → different density scales, different block spacings). 200 PPO iterations provide a partial signal but are insufficient to fully compensate.
+
+**Next steps if continuing:** (a) Unfreeze the normalizer during city fine-tuning and re-accumulate statistics from city episodes, then re-freeze. (b) Run 500+ fine-tuning iterations. (c) Collect IL data on city with the expert, re-run DAgger with city-specific normalization.
+
+**Checkpoints:**
+- `checkpoints/city_warmstart/` — grid RL weights renamed for `train_rl.py` input
+- `checkpoints/rl/2026-05-19_23-35-19/` — city fine-tuning run (200 iters, final: `rl_policy_final.pt`)
 
 ---
 
