@@ -6,7 +6,7 @@ Parses SUMO network nodes into a fixed, geometry-derived representation:
     bearing; 3-way → straight-through pair → slots 0/2, stem → slot 1,
     slot 3 absent.
   - Movement decomposition (§2): per slot: left ('l'), through ('s'), right ('r').
-  - Phase string builder (§4): 4 canonical green/yellow/all-red SUMO state
+  - Phase string builder (§4): 8 canonical green/yellow/all-red SUMO state
     strings derived from the network connection table.
   - Feature helpers: for each (slot, movement) pair, which incoming lane IDs
     and detector lengths serve it.
@@ -16,6 +16,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from typing import Optional
+
+from .phase_schema import NUM_PHASES, SLOT_DIR_PHASES
 
 # ---------------------------------------------------------------------------
 # Bearing helpers
@@ -92,16 +94,16 @@ class JunctionInfo:
     junction_id:   str
     n_slots:       int                        # 3 or 4
     slots:         list[Optional[SlotInfo]]   # always length 4; [3] may be None
-    phase_states:  list[str]                  # 4 green state strings
-    yellow_states: list[str]                  # 4 yellow state strings
+    phase_states:  list[str]                  # 8 green state strings
+    yellow_states: list[str]                  # 8 yellow state strings
     all_red:       str
     # (lane_id, det_len) for every incoming lane — used for reward computation
     all_lane_det:  list[tuple[str, float]] = field(default_factory=list)
     # For each phase: set of incoming lane IDs with protected green ('G')
     phase_served_lanes: list[set] = field(default_factory=list)
-    # (from_edge_id, to_edge_id) -> primary phase index (first phase giving 'G')
-    # Used by the expert to attribute each vehicle's wait to the right phase.
-    conn_to_phase: dict = field(default_factory=dict)
+    # (from_edge_id, to_edge_id) -> phase indices giving protected green ('G')
+    # Used by the expert to attribute each vehicle's wait to all serving phases.
+    conn_to_phases: dict = field(default_factory=dict)
 
 # ---------------------------------------------------------------------------
 # Slot ordering
@@ -227,38 +229,16 @@ def _populate_movements(slots: list[Optional[SlotInfo]], node) -> None:
 # Phase state string builder  (canonical 4-phase scheme, PLAN §4)
 # ---------------------------------------------------------------------------
 
-# Maps (slot_index, SUMO_direction) → list of (phase_index, signal_char)
-# Signal char: 'G' = protected green, 'g' = permissive green
-_SLOT_DIR_PHASES: dict[tuple[int, str], list[tuple[int, str]]] = {
-    # slot 0
-    (0, 's'): [(0, 'G')],
-    (0, 'r'): [(0, 'G'), (3, 'g')],
-    (0, 'l'): [(1, 'G')],
-    # slot 1
-    (1, 's'): [(2, 'G')],
-    (1, 'r'): [(2, 'G'), (1, 'g')],
-    (1, 'l'): [(3, 'G')],
-    # slot 2 — opposing to slot 0, same phases
-    (2, 's'): [(0, 'G')],
-    (2, 'r'): [(0, 'G'), (3, 'g')],
-    (2, 'l'): [(1, 'G')],
-    # slot 3 — opposing to slot 1, same phases
-    (3, 's'): [(2, 'G')],
-    (3, 'r'): [(2, 'G'), (1, 'g')],
-    (3, 'l'): [(3, 'G')],
-}
-
-
 def _build_phase_strings(
     slots: list[Optional[SlotInfo]],
     node,
 ) -> tuple[list[str], list[str], str]:
-    """Compute SUMO state strings for the 4 canonical phases.
+    """Compute SUMO state strings for the 8 canonical phases.
 
     Returns
     -------
-    green_states  : list[str] — 4 phase green state strings
-    yellow_states : list[str] — 4 matching yellow state strings
+    green_states  : list[str] — 8 phase green state strings
+    yellow_states : list[str] — 8 matching yellow state strings
     all_red       : str
     """
     edge_to_slot_idx: dict[str, int] = {
@@ -283,17 +263,17 @@ def _build_phase_strings(
                 link_rows.append((tl_idx, in_edge.getID(), canon))
 
     if not link_rows:
-        return ([""] * 4, [""] * 4, "")
+        return ([""] * NUM_PHASES, [""] * NUM_PHASES, "")
 
     n_links = max(r[0] for r in link_rows) + 1
-    phase_states = [['r'] * n_links for _ in range(4)]
+    phase_states = [['r'] * n_links for _ in range(NUM_PHASES)]
 
     for tl_idx, from_edge_id, canon_dir in link_rows:
         slot_idx = edge_to_slot_idx.get(from_edge_id)
         if slot_idx is None:
             continue
         key = (slot_idx, canon_dir)
-        for ph_idx, sig_char in _SLOT_DIR_PHASES.get(key, []):
+        for ph_idx, sig_char in SLOT_DIR_PHASES.get(key, []):
             existing = phase_states[ph_idx][tl_idx]
             # Priority: G > g > r
             if existing == 'r' or (existing == 'g' and sig_char == 'G'):
@@ -313,7 +293,7 @@ def _build_phase_served_lanes(
     green_states: list[str],
 ) -> list[set]:
     """For each phase, collect incoming lane IDs that have protected green ('G')."""
-    served: list[set] = [set() for _ in range(4)]
+    served: list[set] = [set() for _ in range(len(green_states))]
     for ph_idx, state in enumerate(green_states):
         for tl_idx, char in enumerate(state):
             if char == 'G':
@@ -374,12 +354,10 @@ def build_junction_info(node) -> Optional[JunctionInfo]:
 
     phase_served = _build_phase_served_lanes(link_rows_with_lane, green_states)
 
-    # Build conn_to_phase: (from_edge_id, to_edge_id) -> primary phase index.
-    # "Primary" = the first phase (lowest index) that gives protected 'G' to
-    # this connection.  Used by the expert to attribute each vehicle's wait to
-    # the phase that would actually clear it — avoids the shared-lane
-    # over-counting problem that arises when a lane serves both through and left.
-    conn_to_phase: dict[tuple[str, str], int] = {}
+    # Build conn_to_phases: all phase indices that give protected 'G' to each
+    # connection. A movement can be served by a paired base phase and by a
+    # single-slot clearance phase.
+    conn_to_phases: dict[tuple[str, str], list[int]] = {}
     for in_edge in node.getIncoming():
         for out_edge in in_edge.getOutgoing():
             for conn in in_edge.getConnections(out_edge):
@@ -387,12 +365,10 @@ def build_junction_info(node) -> Optional[JunctionInfo]:
                 if tl_idx < 0:
                     continue
                 key = (in_edge.getID(), out_edge.getID())
-                if key in conn_to_phase:
-                    continue   # already mapped by a previous connection on same pair
+                phases = conn_to_phases.setdefault(key, [])
                 for ph_idx, state in enumerate(green_states):
-                    if tl_idx < len(state) and state[tl_idx] == 'G':
-                        conn_to_phase[key] = ph_idx
-                        break
+                    if tl_idx < len(state) and state[tl_idx] == 'G' and ph_idx not in phases:
+                        phases.append(ph_idx)
 
     # All incoming lanes + detector lengths (for reward).
     all_lane_det: list[tuple[str, float]] = []
@@ -409,5 +385,5 @@ def build_junction_info(node) -> Optional[JunctionInfo]:
         all_red=all_red,
         all_lane_det=all_lane_det,
         phase_served_lanes=phase_served,
-        conn_to_phase=conn_to_phase,
+        conn_to_phases=conn_to_phases,
     )
