@@ -10,7 +10,7 @@ Pipeline
    count / speed / name
 4. Promote 3+arm junctions to traffic_light via --tls.set
 5. Audit       — junction-arm-count table
-6. TLL         — canonical 4-phase signal programs
+6. TLL         — canonical 8-phase signal programs
 7. Detectors   — E2 laneAreaDetectors on incoming TL lanes (≤200 m)
 8. sumocfg     — ties everything together
 9. Verify      — launches SUMO-GUI with the greedy expert (--verify)
@@ -49,6 +49,8 @@ SUMO_HOME = os.environ.get('SUMO_HOME', r'C:\Program Files (x86)\Eclipse\Sumo')
 sys.path.append(os.path.join(SUMO_HOME, 'tools'))
 
 import sumolib  # noqa: E402  (needs SUMO_HOME on path first)
+
+from src.environment.phase_schema import NUM_PHASES, SLOT_DIR_PHASES  # noqa: E402
 
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -823,23 +825,6 @@ def _slot_order(node) -> list:
     return [slot0_edge, bearings[stem_idx][1], slot2_edge]
 
 
-# Maps (slot_index, direction) -> list of (phase_index, 'G'|'g') assignments.
-_PHASE_MAP: dict[tuple[int, str], list[tuple[int, str]]] = {
-    (0, 's'): [(0, 'G')],
-    (0, 'r'): [(0, 'G'), (3, 'g')],
-    (0, 'l'): [(1, 'G')],
-    (1, 's'): [(2, 'G')],
-    (1, 'r'): [(2, 'G'), (1, 'g')],
-    (1, 'l'): [(3, 'G')],
-    (2, 's'): [(0, 'G')],
-    (2, 'r'): [(0, 'G'), (3, 'g')],
-    (2, 'l'): [(1, 'G')],
-    (3, 's'): [(2, 'G')],
-    (3, 'r'): [(2, 'G'), (1, 'g')],
-    (3, 'l'): [(3, 'G')],
-}
-
-
 def _build_phase_strings(node) -> tuple[list[str], list[str], str] | None:
     incoming = list(node.getIncoming())
     if len(incoming) not in (3, 4):
@@ -860,13 +845,13 @@ def _build_phase_strings(node) -> tuple[list[str], list[str], str] | None:
         return None
 
     n_links = max(t[0] for t in link_info) + 1
-    phase_states = [['r'] * n_links for _ in range(4)]
+    phase_states = [['r'] * n_links for _ in range(NUM_PHASES)]
 
     for tl_idx, from_edge, direction in link_info:
         slot_idx = slot_map.get(from_edge)
         if slot_idx is None:
             continue
-        for ph, ch in _PHASE_MAP.get((slot_idx, direction.lower()), []):
+        for ph, ch in SLOT_DIR_PHASES.get((slot_idx, direction.lower()), []):
             existing = phase_states[ph][tl_idx]
             if existing == 'r' or (existing == 'g' and ch == 'G'):
                 phase_states[ph][tl_idx] = ch

@@ -54,6 +54,30 @@ class PhaseSchemaTest(unittest.TestCase):
             )
         )
 
+    @unittest.skipUnless(os.environ.get("SUMO_HOME"), "SUMO_HOME is required for sumolib")
+    def test_network_builder_builds_eight_phase_strings(self) -> None:
+        sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+        import sumolib
+
+        from scripts.build_network import _build_phase_strings
+
+        net = sumolib.net.readNet(str(ROOT / "configs" / "grid_4x4" / "grid.net.xml"), withConnections=True)
+        for node in net.getNodes():
+            if node.getType() != "traffic_light" or len(node.getIncoming()) not in (3, 4):
+                continue
+            result = _build_phase_strings(node)
+            if result is None:
+                continue
+            greens, yellows, all_red = result
+            self.assertEqual(len(greens), 8)
+            self.assertEqual(len(yellows), 8)
+            self.assertTrue(all(set(g) <= {"r", "g", "G"} for g in greens))
+            self.assertTrue(set(all_red) <= {"r"})
+            self.assertTrue(any("G" in greens[phase] for phase in (4, 5, 6, 7)))
+            break
+        else:
+            self.fail("No supported traffic-light node found")
+
 
 if __name__ == "__main__":
     unittest.main()
