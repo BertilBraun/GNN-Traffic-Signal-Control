@@ -1,6 +1,6 @@
 """Greedy expert controller for imitation learning (PLAN §8).
 
-The expert scores each of the 4 canonical phases by attributing every
+The expert scores each of the 8 canonical phases by attributing every
 waiting vehicle's accumulated wait to the phase that serves its intended
 turn (from-edge → to-edge lookup via vehicle route).  This avoids the
 shared-lane over-counting problem and produces clean (state, phase) labels
@@ -9,7 +9,7 @@ in the GNN's output space.
 Usage
 -----
     expert = GreedyExpert(env.junction_infos)
-    actions = expert.act()                      # dict[jid → int 0–3]
+    actions = expert.act()                      # dict[jid → int 0–7]
     obs, rewards, done, info = env.step(actions)
     for jid in env.junction_ids:
         expert.notify_applied(jid, actions[jid])
@@ -32,6 +32,7 @@ sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
 import traci
 
 from .junction_info import JunctionInfo
+from .phase_schema import NUM_PHASES, phase_indices
 
 # ---------------------------------------------------------------------------
 # Timing constants
@@ -99,7 +100,7 @@ class GreedyExpert:
         """Score phases by attributing each vehicle's accumulated wait to the
         phase that serves its intended movement (from-edge → to-edge lookup).
         """
-        scores = [0.0] * 4
+        scores = [0.0] * NUM_PHASES
         for lane_id, _ in ji.all_lane_det:
             for vid in traci.lane.getLastStepVehicleIDs(lane_id):
                 wait = traci.vehicle.getAccumulatedWaitingTime(vid)
@@ -109,8 +110,7 @@ class GreedyExpert:
                 ridx: int   = traci.vehicle.getRouteIndex(vid)
                 if ridx + 1 >= len(route):
                     continue
-                phase = ji.conn_to_phase.get((route[ridx], route[ridx + 1]))
-                if phase is not None:
+                for phase in ji.conn_to_phases.get((route[ridx], route[ridx + 1]), []):
                     scores[phase] += wait
         return scores
 
@@ -130,7 +130,7 @@ class GreedyExpert:
         if held < MIN_HOLD_INTERVALS:
             if self._served_lanes_clear(ji, current):
                 scores = self._score_phases(ji)
-                ranked = sorted(range(4), key=lambda p: scores[p], reverse=True)
+                ranked = sorted(phase_indices(), key=lambda p: scores[p], reverse=True)
                 best_other = next((p for p in ranked if p != current), current)
                 if scores[best_other] > 0:
                     return best_other   # early switch to something with demand
@@ -139,10 +139,10 @@ class GreedyExpert:
         # ---- Starvation cap ----------------------------------------------
         if held >= MAX_HOLD_INTERVALS:
             scores = self._score_phases(ji)
-            ranked = sorted(range(4), key=lambda p: scores[p], reverse=True)
+            ranked = sorted(phase_indices(), key=lambda p: scores[p], reverse=True)
             return next((p for p in ranked if p != current), current)
 
         # ---- Normal re-evaluation at / after MIN_HOLD --------------------
         scores = self._score_phases(ji)
-        ranked = sorted(range(4), key=lambda p: scores[p], reverse=True)
+        ranked = sorted(phase_indices(), key=lambda p: scores[p], reverse=True)
         return ranked[0]   # may equal current → re-commit for another MIN_HOLD

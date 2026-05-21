@@ -27,6 +27,8 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GATv2Conv
 
+from src.environment.phase_schema import NUM_PHASES, OBS_DIM
+
 
 class GATPolicy(nn.Module):
     """GATv2-based traffic signal policy with shared parameters across junctions.
@@ -34,7 +36,7 @@ class GATPolicy(nn.Module):
     Parameters
     ----------
     node_dim :
-        Input feature dimension per junction (41 per PLAN §3).
+        Input feature dimension per junction (45).
     hidden :
         Hidden dimension throughout the network (128).
     heads :
@@ -45,17 +47,17 @@ class GATPolicy(nn.Module):
     edge_dim :
         Edge feature dimension (3: length, lanes, speed).
     n_classes :
-        Number of output phase classes (4).
+        Number of output phase classes (8).
     """
 
     def __init__(
         self,
-        node_dim:  int = 41,
+        node_dim:  int = OBS_DIM,
         hidden:    int = 128,
         heads:     int = 4,
         n_layers:  int = 3,
         edge_dim:  int = 3,
-        n_classes: int = 4,
+        n_classes: int = NUM_PHASES,
     ) -> None:
         super().__init__()
 

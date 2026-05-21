@@ -1,6 +1,7 @@
 import unittest
 import sys
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,69 @@ class PhaseSchemaTest(unittest.TestCase):
 
         builder = GraphBuilder(net, junction_infos)
         self.assertEqual(builder.normalizer.dim, OBS_DIM)
+
+    def test_gat_policy_defaults_to_observation_and_phase_dimensions(self) -> None:
+        import torch
+        from torch_geometric.data import Data
+
+        from src.environment.phase_schema import NUM_PHASES, OBS_DIM
+        from src.model.gat_policy import GATPolicy
+
+        model = GATPolicy()
+        data = Data(
+            x=torch.zeros((3, OBS_DIM), dtype=torch.float32),
+            edge_index=torch.tensor([[0, 1], [1, 2]], dtype=torch.long),
+            edge_attr=torch.zeros((2, 3), dtype=torch.float32),
+        )
+        logits, values = model.forward_actor_critic(data)
+        self.assertEqual(tuple(logits.shape), (3, NUM_PHASES))
+        self.assertEqual(tuple(values.shape), (3,))
+
+    def test_expert_scores_all_protected_phases_for_connection(self) -> None:
+        from src.environment.expert import GreedyExpert
+        import src.environment.expert as expert_module
+
+        @dataclass
+        class DummyInfo:
+            all_lane_det: list
+            conn_to_phases: dict
+
+        class FakeLane:
+            @staticmethod
+            def getLastStepVehicleIDs(lane_id: str) -> list[str]:
+                return ["veh0"] if lane_id == "lane0" else []
+
+        class FakeVehicle:
+            @staticmethod
+            def getAccumulatedWaitingTime(vid: str) -> float:
+                return 7.0
+
+            @staticmethod
+            def getRoute(vid: str) -> list[str]:
+                return ["edge_a", "edge_b"]
+
+            @staticmethod
+            def getRouteIndex(vid: str) -> int:
+                return 0
+
+        class FakeTraci:
+            lane = FakeLane()
+            vehicle = FakeVehicle()
+
+        original_traci = expert_module.traci
+        expert_module.traci = FakeTraci()
+        try:
+            info = DummyInfo(
+                all_lane_det=[("lane0", 100.0)],
+                conn_to_phases={("edge_a", "edge_b"): [1, 4]},
+            )
+            expert = GreedyExpert({"J0": info})  # type: ignore[arg-type]
+            scores = expert._score_phases(info)  # type: ignore[arg-type]
+        finally:
+            expert_module.traci = original_traci
+
+        self.assertEqual(scores[1], 7.0)
+        self.assertEqual(scores[4], 7.0)
 
 
 if __name__ == "__main__":
