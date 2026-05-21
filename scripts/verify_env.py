@@ -56,15 +56,15 @@ def _sep(char: str = '-', width: int = 62) -> None:
 
 
 def _ok(msg: str) -> None:
-    print(f'  ✓  {msg}')
+    print(f'  OK  {msg}')
 
 
 def _warn(msg: str) -> None:
-    print(f'  ⚠  {msg}')
+    print(f'  WARN  {msg}')
 
 
 def _fail(msg: str) -> None:
-    print(f'  ✗  {msg}')
+    print(f'  FAIL  {msg}')
 
 
 def _header(n: int, total: int, title: str) -> None:
