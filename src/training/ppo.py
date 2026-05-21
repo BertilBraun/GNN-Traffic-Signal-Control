@@ -63,6 +63,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.environment import TrafficEnv
 from src.environment.expert import GreedyExpert
+from src.environment.phase_schema import NUM_PHASES
 from src.model.gat_policy import GATPolicy
 from src.training.imitation import load_checkpoint
 from src.training.rollout import RolloutBuffer
@@ -89,12 +90,12 @@ def _fixed_time_actions(
 ) -> dict[str, int]:
     """Round-robin phase assignment for burn-in.
 
-    Cycles through phases 0→1→2→3→0 with each phase held for
-    BURN_IN_CYCLE_LENGTH decision intervals (30 s per phase → 120 s cycle).
+    Cycles through phases 0→1→...→7→0 with each phase held for
+    BURN_IN_CYCLE_LENGTH decision intervals (30 s per phase → 240 s cycle).
     All junctions share the same cycle offset so they are synchronised, which
     avoids any single approach being starved during burn-in.
     """
-    phase = (step_in_episode // BURN_IN_CYCLE_LENGTH) % 4
+    phase = (step_in_episode // BURN_IN_CYCLE_LENGTH) % NUM_PHASES
     return {jid: phase for jid in junction_ids}
 
 

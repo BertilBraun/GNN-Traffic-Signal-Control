@@ -162,6 +162,32 @@ class PhaseSchemaTest(unittest.TestCase):
         self.assertEqual(scores[1], 7.0)
         self.assertEqual(scores[4], 7.0)
 
+    def test_eval_metric_phase_counts_preserve_all_phases(self) -> None:
+        from src.environment.phase_schema import NUM_PHASES
+        from src.training.eval_episode import EvalMetrics, average_eval_metrics
+
+        counts_a = list(range(NUM_PHASES))
+        counts_b = [10 + i for i in range(NUM_PHASES)]
+        averaged = average_eval_metrics(
+            [
+                EvalMetrics(0, 0, 0, 0, 0, 0, {"J0": 1.0}, {"J0": 1}, {"J0": counts_a}),
+                EvalMetrics(0, 0, 0, 0, 0, 0, {"J0": 3.0}, {"J0": 3}, {"J0": counts_b}),
+            ]
+        )
+
+        self.assertEqual(averaged.per_junction_phase_counts["J0"], [a + b for a, b in zip(counts_a, counts_b)])
+
+    def test_ppo_fixed_time_actions_cycle_all_phases(self) -> None:
+        from src.environment.phase_schema import NUM_PHASES
+        from src.training.ppo import BURN_IN_CYCLE_LENGTH, _fixed_time_actions
+
+        phases = [
+            _fixed_time_actions(["J0"], step)["J0"]
+            for step in range(NUM_PHASES * BURN_IN_CYCLE_LENGTH)
+        ]
+
+        self.assertEqual(sorted(set(phases)), list(range(NUM_PHASES)))
+
 
 if __name__ == "__main__":
     unittest.main()

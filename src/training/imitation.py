@@ -16,7 +16,7 @@ Per training episode
     episode/avg_match_rate      — mean per-step match rate
     episode/wait_density        — mean global wait density (s/m)
     policy/expert/switch_rate   — fraction of junctions that switched this episode
-    policy/expert/phase_dist    — histogram of expert phase choices (phases 0-3)
+    policy/expert/phase_dist    — histogram of expert phase choices (phases 0-7)
 
 Every eval_every episodes (model vs expert side-by-side)
     eval/{model,expert}/avg_waiting_time   — s / vehicle (from tripinfo)
@@ -215,7 +215,7 @@ def train_il(
             ep_phases.extend(labels.cpu().tolist())
 
             # Forward + loss (always on expert labels).
-            logits = model(graph)  # (N, 4)
+            logits = model(graph)  # (N, 8)
             loss = F.cross_entropy(logits, labels)
 
             opt.zero_grad()
@@ -281,7 +281,7 @@ def train_il(
             )
 
         if debug and ep_raw_obs:
-            obs_mat = np.stack(ep_raw_obs)  # (T*N, 41)
+            obs_mat = np.stack(ep_raw_obs)  # (T*N, 45)
             writer.add_scalar('debug/obs_min', float(obs_mat.min()), episode)
             writer.add_scalar('debug/obs_max', float(obs_mat.max()), episode)
             writer.add_scalar('debug/obs_mean', float(obs_mat.mean()), episode)

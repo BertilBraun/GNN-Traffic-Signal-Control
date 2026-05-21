@@ -53,6 +53,8 @@ if "SUMO_HOME" not in os.environ:
 sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
 import traci
 
+from src.environment.phase_schema import phase_indices
+
 # ---------------------------------------------------------------------------
 # EvalMetrics
 # ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ class EvalMetrics:
     per_junction_max_queue     : dict[str, int]        — peak halting vehicles
                                                           on any approach lane
     per_junction_phase_counts  : dict[str, list[int]]  — phase-selection counts
-                                                          [ph0, ph1, ph2, ph3]
+                                                          [ph0, ..., ph7]
     """
     # Tripinfo
     avg_waiting_time:    float
@@ -188,7 +190,7 @@ def run_eval_episode(
     # Per-junction
     junc_wait_acc   = {jid: 0.0 for jid in junction_ids}
     junc_max_queue  = {jid: 0   for jid in junction_ids}
-    junc_phase_cnt  = {jid: [0, 0, 0, 0] for jid in junction_ids}
+    junc_phase_cnt = {jid: [0 for _ in phase_indices()] for jid in junction_ids}
 
     # ------------------------------------------------------------------
     # Episode loop
@@ -300,7 +302,7 @@ def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
         per_junction_phase_counts={
             jid: [
                 sum(m.per_junction_phase_counts[jid][ph] for m in metrics_list)
-                for ph in range(4)
+                for ph in phase_indices()
             ]
             for jid in jids
         },
