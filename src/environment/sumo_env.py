@@ -3,20 +3,20 @@
 Interface
 ---------
 env = TrafficEnv(cfg_path, gui=False)
-obs          = env.reset()                    # dict[jid -> np.ndarray(41,)]
-obs, rew, done, info = env.step(actions)      # actions: dict[jid -> phase 0-3]
+obs          = env.reset()                    # dict[jid -> np.ndarray(45,)]
+obs, rew, done, info = env.step(actions)      # actions: dict[jid -> phase 0-7]
 obs          = env.observe()                  # can be called between steps
 env.close()
 
-Observation vector per junction (41 dims, §3 of PLAN):
+Observation vector per junction (45 dims):
   [0..35]  12 movements × 3 features (queue_density, approach_density, wait_density)
            ordered: slot0-left, slot0-through, slot0-right,
                     slot1-left, slot1-through, slot1-right,
                     slot2-left, slot2-through, slot2-right,
                     slot3-left, slot3-through, slot3-right
            Slot 3 is zero-padded for 3-way junctions.
-  [36..39] current phase one-hot (4 dims)
-  [40]     elapsed time in phase, normalised to [0, 1]
+  [36..43] current phase one-hot (8 dims)
+  [44]     elapsed time in phase, normalised to [0, 1]
 
 Reward per junction per step (§8):
   r_i = -α·Δlocal_wait_i - β·Δglobal_wait
@@ -49,6 +49,13 @@ import sumolib
 import traci
 
 from .junction_info import JunctionInfo, build_junction_info
+from .phase_schema import (
+    ELAPSED_FEATURE_INDEX,
+    MOVEMENT_ORDER,
+    NUM_PHASES,
+    OBS_DIM,
+    PHASE_FEATURE_START,
+)
 from src.utils.demand_generator import DemandRandomizer
 
 # ---------------------------------------------------------------------------
@@ -66,9 +73,6 @@ BETA = 0.1  # global wait weight
 DEFAULT_MIN_GREEN_STEPS = 2  # decision intervals; 2 × 15 s = 30 s minimum green
 
 MAX_PHASE_HOLD_S = 45.0  # 3 intervals; used to normalise elapsed time
-
-# Movement directions in canonical order (matches feature vector layout)
-MOVEMENT_ORDER = ('l', 's', 'r')
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -171,7 +175,7 @@ class TrafficEnv:
 
         Returns
         -------
-        Initial observations (dict[junction_id → np.ndarray(41,)]).
+        Initial observations (dict[junction_id → np.ndarray(45,)]).
         """
         if self._started:
             traci.close()
@@ -214,7 +218,7 @@ class TrafficEnv:
 
         Returns
         -------
-        dict mapping junction_id → np.ndarray of shape (41,).
+        dict mapping junction_id → np.ndarray of shape (45,).
         """
         now = traci.simulation.getTime()
         obs = {}
@@ -231,12 +235,12 @@ class TrafficEnv:
         Parameters
         ----------
         actions :
-            Target phase (0–3) for each junction.  Missing junctions hold
+            Target phase (0–7) for each junction.  Missing junctions hold
             their current phase.
 
         Returns
         -------
-        observations : dict[jid → np.ndarray(41,)]
+        observations : dict[jid → np.ndarray(45,)]
         rewards      : dict[jid → float]
         done         : bool — True when episode_length is reached
         info         : dict with diagnostic values
@@ -373,8 +377,8 @@ class TrafficEnv:
         ji: JunctionInfo,
         now: float,
     ) -> np.ndarray:
-        """Build the 41-dim feature vector for one junction."""
-        feat = np.zeros(41, dtype=np.float32)
+        """Build the canonical feature vector for one junction."""
+        feat = np.zeros(OBS_DIM, dtype=np.float32)
         idx = 0
 
         for slot_idx in range(4):
@@ -404,14 +408,15 @@ class TrafficEnv:
                 feat[idx + 2] = waiting / total_len
                 idx += 3
 
-        # Junction-level features: current phase one-hot [36..39]
+        # Junction-level features: current phase one-hot.
         phase = self._current_phases.get(ji.junction_id, 0)
-        feat[36 + phase] = 1.0
+        if 0 <= phase < NUM_PHASES:
+            feat[PHASE_FEATURE_START + phase] = 1.0
 
-        # Elapsed time in phase, normalised to [0, 1] [40]
+        # Elapsed time in phase, normalised to [0, 1].
         start_t = self._phase_start_t.get(ji.junction_id, 0.0)
         elapsed = max(0.0, now - start_t)
-        feat[40] = min(1.0, elapsed / MAX_PHASE_HOLD_S)
+        feat[ELAPSED_FEATURE_INDEX] = min(1.0, elapsed / MAX_PHASE_HOLD_S)
 
         return feat
 

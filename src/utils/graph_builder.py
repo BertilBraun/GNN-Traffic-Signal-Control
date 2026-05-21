@@ -28,6 +28,8 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 
+from src.environment.phase_schema import OBS_DIM
+
 
 # ---------------------------------------------------------------------------
 # RunningNormalizer
@@ -136,7 +138,7 @@ class GraphBuilder:
         Statically z-score normalised across all edges at construction time.
 
     Node features
-        The 41-dim observation vector, optionally z-score normalised via the
+        The canonical observation vector, optionally z-score normalised via the
         :attr:`normalizer` (RunningNormalizer).  Pass
         ``update_normalizer=True`` during IL data collection; call
         ``normalizer.freeze()`` before RL.
@@ -213,7 +215,7 @@ class GraphBuilder:
         )                                                # (E, 3)
 
         # Node-feature normalizer — lifecycle managed by the training loop.
-        self.normalizer = RunningNormalizer(dim=41)
+        self.normalizer = RunningNormalizer(dim=OBS_DIM)
 
     # ------------------------------------------------------------------
     # Build
@@ -229,7 +231,7 @@ class GraphBuilder:
         Parameters
         ----------
         obs :
-            ``dict[junction_id → np.ndarray(41,)]`` — current observations.
+            ``dict[junction_id → np.ndarray(45,)]`` — current observations.
         update_normalizer :
             If True, feed the stacked node features into the running
             normalizer before normalising.  Set to True during IL data
@@ -238,19 +240,19 @@ class GraphBuilder:
         Returns
         -------
         torch_geometric.data.Data with:
-            ``x``          — (N, 41) float32 node features (normalised)
+            ``x``          — (N, 45) float32 node features (normalised)
             ``edge_index`` — (2, E) int64
             ``edge_attr``  — (E, 3) float32 edge features (pre-normalised)
         """
         x_raw = np.stack(
             [obs[jid] for jid in self.junction_ids],
             axis=0,
-        )   # (N, 41), float32
+        )   # (N, OBS_DIM), float32
 
         if update_normalizer:
             self.normalizer.update(x_raw)
 
-        x_norm = self.normalizer.normalize(x_raw)   # (N, 41), float32
+        x_norm = self.normalizer.normalize(x_raw)   # (N, OBS_DIM), float32
 
         return Data(
             x          = torch.tensor(x_norm, dtype=torch.float32),

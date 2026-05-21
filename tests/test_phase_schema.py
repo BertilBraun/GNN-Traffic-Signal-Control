@@ -78,6 +78,26 @@ class PhaseSchemaTest(unittest.TestCase):
         else:
             self.fail("No supported traffic-light node found")
 
+    @unittest.skipUnless(os.environ.get("SUMO_HOME"), "SUMO_HOME is required for sumolib")
+    def test_graph_builder_uses_observation_dimension(self) -> None:
+        sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+        import sumolib
+
+        from src.environment.junction_info import build_junction_info
+        from src.environment.phase_schema import OBS_DIM
+        from src.utils.graph_builder import GraphBuilder
+
+        net = sumolib.net.readNet(str(ROOT / "configs" / "grid_4x4" / "grid.net.xml"), withConnections=True)
+        junction_infos = {}
+        for node in net.getNodes():
+            if node.getType() == "traffic_light":
+                info = build_junction_info(node)
+                if info is not None:
+                    junction_infos[node.getID()] = info
+
+        builder = GraphBuilder(net, junction_infos)
+        self.assertEqual(builder.normalizer.dim, OBS_DIM)
+
 
 if __name__ == "__main__":
     unittest.main()
