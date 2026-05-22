@@ -167,6 +167,7 @@ def _run_netconvert(osm_path: Path, net_path: Path, join_dist: float) -> None:
     # new phantom TLs and pass-throughs (e.g., TLs whose neighbors got merged).
     _plain_xml_cleanup(net_path, join_dist, netconvert)
     _final_phantom_tl_demote(net_path)
+    _final_unsupported_tl_demote(net_path)
     print(f'  Wrote {net_path}')
 
 
@@ -771,6 +772,43 @@ def _final_phantom_tl_demote(net_path: Path) -> None:
     if demoted:
         net_path.write_text(content, encoding='utf-8')
         print(f'  Final demotion: {len(demoted)} junctions back to priority')
+
+
+def _unsupported_tl_ids_by_incoming_count(net) -> list[str]:
+    """Return TL node IDs that the current 3/4-arm representation cannot manage."""
+    unsupported: list[str] = []
+    for node in net.getNodes():
+        if node.getType() not in TL_TYPES:
+            continue
+        if len(node.getIncoming()) not in (3, 4):
+            unsupported.append(node.getID())
+    return sorted(unsupported)
+
+
+def _final_unsupported_tl_demote(net_path: Path) -> None:
+    """Demote TLs that cannot be represented by TrafficEnv.
+
+    Leaving 1/2/5+-incoming-arm TLs as signalized nodes means SUMO runs them
+    with stub programs while the model and expert ignore them.  That creates
+    unmanaged signal behavior in evaluation and training.  If the current
+    representation cannot control a junction, keep it as priority traffic.
+    """
+    import re
+
+    net = sumolib.net.readNet(str(net_path), withConnections=True)
+    demoted = _unsupported_tl_ids_by_incoming_count(net)
+    if not demoted:
+        return
+
+    content = net_path.read_text(encoding='utf-8')
+    for jid in demoted:
+        content = re.sub(
+            rf'(<junction\b(?=[^>]*\bid="{re.escape(jid)}")[^>]*)type="traffic_light[^"]*"',
+            r'\1type="priority"',
+            content,
+        )
+    net_path.write_text(content, encoding='utf-8')
+    print(f'  Final unsupported demotion: {len(demoted)} TL junctions back to priority')
 
 
 # ---------------------------------------------------------------------------
