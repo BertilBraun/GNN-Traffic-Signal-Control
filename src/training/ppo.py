@@ -219,6 +219,7 @@ def _collect_episode_worker(args: dict) -> dict:
     min_green_steps = args.get('min_green_steps', 2)
     demand_seed = args.get('demand_seed', None)
     flow_range = args.get('flow_range', (300, 1000))
+    demand_min_rate = args.get('demand_min_rate', 5.0)
 
     env = _TrafficEnv(
         cfg_path,
@@ -226,6 +227,7 @@ def _collect_episode_worker(args: dict) -> dict:
         episode_length=episode_length,
         min_green_steps=min_green_steps,
         flow_range=flow_range,
+        demand_min_rate=demand_min_rate,
     )
     model = _GATPolicy()
     model.load_state_dict(model_state, strict=False)
@@ -326,6 +328,7 @@ def train_rl(
     device: Optional[str] = None,
     demand_seed: Optional[int] = None,
     flow_range: tuple[int, int] = (300, 1000),
+    demand_min_rate: float = 5.0,
 ) -> GATPolicy:
     """Run PPO fine-tuning from an IL checkpoint.
 
@@ -381,7 +384,12 @@ def train_rl(
     # Setup
     # ------------------------------------------------------------------
     env = TrafficEnv(
-        cfg_path, gui=False, episode_length=episode_length, min_green_steps=min_green_steps, flow_range=flow_range
+        cfg_path,
+        gui=False,
+        episode_length=episode_length,
+        min_green_steps=min_green_steps,
+        flow_range=flow_range,
+        demand_min_rate=demand_min_rate,
     )
     expert = GreedyExpert(env.junction_infos)
 
@@ -430,7 +438,7 @@ def train_rl(
         f'\n  Episode length:   {episode_length} s'
         f'\n  Burn-in steps:    {burn_in_steps} ({burn_in_steps * 15} s)'
         f'\n  Min green steps:  {min_green_steps} ({min_green_steps * 15} s)'
-        f'\n  Demand:           {"fixed seed " + str(demand_seed) + " (deterministic)" if demand_seed is not None else "randomised"}  flow={flow_range}'
+        f'\n  Demand:           {"fixed seed " + str(demand_seed) + " (deterministic)" if demand_seed is not None else "randomised"}  flow={flow_range}  min_od_rate={demand_min_rate}'
         f'\n  Entropy coeff:    {entropy_coeff}'
         f'\n  value_warmup:     {value_warmup_iters} iters (backbone frozen, {warmup_epochs} epochs/iter)'
         f'\n  n_epochs:         {n_epochs}'
@@ -471,6 +479,7 @@ def train_rl(
                     'burn_in_steps': burn_in_steps,
                     'min_green_steps': min_green_steps,
                     'flow_range': flow_range,
+                    'demand_min_rate': demand_min_rate,
                     'demand_seed': demand_seed,
                 }
                 futures = [pool.submit(_collect_episode_worker, worker_args) for _ in range(episodes_per_update)]
@@ -727,6 +736,10 @@ def _log_eval_scalars(
         ('eval/throughput', 'throughput_per_hour'),
         ('eval/max_queue_length', 'max_queue_length'),
         ('eval/phase_switch_freq', 'phase_switch_freq'),
+        ('eval/green_wave/tls_passes_per_vehicle', 'avg_tls_passes_per_vehicle'),
+        ('eval/green_wave/stops_before_tls_per_vehicle', 'avg_stops_before_tls_per_vehicle'),
+        ('eval/green_wave/nonstop_tls_pass_rate', 'nonstop_tls_pass_rate'),
+        ('eval/green_wave/best_nonstop_tls_streak', 'avg_best_nonstop_tls_streak'),
     ]
     for tag, attr in metrics:
         writer.add_scalars(
@@ -799,6 +812,10 @@ def _print_eval_summary(
         ('max_queue      (vehs)', model.max_queue_length, expert.max_queue_length),
         ('switch_freq (/j/min)', model.phase_switch_freq, expert.phase_switch_freq),
         ('wait_density    (s/m)', model.avg_wait_density, expert.avg_wait_density),
+        ('tls_passes     (/veh)', model.avg_tls_passes_per_vehicle, expert.avg_tls_passes_per_vehicle),
+        ('tls_stops      (/veh)', model.avg_stops_before_tls_per_vehicle, expert.avg_stops_before_tls_per_vehicle),
+        ('nonstop_tls_rate   %', 100.0 * model.nonstop_tls_pass_rate, 100.0 * expert.nonstop_tls_pass_rate),
+        ('best_nonstop_streak', model.avg_best_nonstop_tls_streak, expert.avg_best_nonstop_tls_streak),
     ]
     for name, mv, ev in rows:
         delta = mv - ev

@@ -56,6 +56,112 @@ import traci
 from src.environment.phase_schema import phase_indices
 
 # ---------------------------------------------------------------------------
+# Green-wave tracker
+# ---------------------------------------------------------------------------
+
+class GreenWaveTracker:
+    """Track whether vehicles pass signalized junctions without stopping.
+
+    A pass is counted when a vehicle's next TLS changes from one junction to
+    another, or when it arrives while still tracking an upcoming TLS.  A pass
+    is "nonstop" if the vehicle did not fall below ``stop_speed_mps`` within
+    ``approach_distance_m`` of that TLS while it was being tracked.
+    """
+
+    def __init__(self, approach_distance_m: float = 150.0, stop_speed_mps: float = 0.1) -> None:
+        self.approach_distance_m = approach_distance_m
+        self.stop_speed_mps = stop_speed_mps
+        self._seen: set[str] = set()
+        self._completed: set[str] = set()
+        self._current_tls: dict[str, str] = {}
+        self._stopped_on_approach: dict[str, bool] = {}
+        self._passes: dict[str, int] = {}
+        self._nonstop_passes: dict[str, int] = {}
+        self._current_streak: dict[str, int] = {}
+        self._best_streak: dict[str, int] = {}
+
+    def update(
+        self,
+        vehicle_ids: list[str],
+        next_tls_by_vehicle: dict[str, list],
+        speed_by_vehicle: dict[str, float],
+        arrived_ids: list[str],
+    ) -> None:
+        for vid in vehicle_ids:
+            self._seen.add(vid)
+            next_tls = next_tls_by_vehicle.get(vid, [])
+            tls_id, distance = self._first_tls(next_tls)
+            prev_tls = self._current_tls.get(vid)
+
+            if prev_tls is not None and tls_id != prev_tls:
+                self._record_pass(vid)
+                self._clear_current(vid)
+
+            if tls_id is not None and self._current_tls.get(vid) is None:
+                self._current_tls[vid] = tls_id
+                self._stopped_on_approach[vid] = False
+
+            if tls_id is not None and distance is not None:
+                speed = speed_by_vehicle.get(vid, float("inf"))
+                if distance <= self.approach_distance_m and speed <= self.stop_speed_mps:
+                    self._stopped_on_approach[vid] = True
+
+        for vid in arrived_ids:
+            self._completed.add(vid)
+            if vid in self._current_tls:
+                self._record_pass(vid)
+                self._clear_current(vid)
+
+    def metrics(self) -> dict[str, float]:
+        vehicles = self._completed if self._completed else self._seen
+        n_vehicles = len(vehicles)
+        if n_vehicles == 0:
+            return {
+                "avg_tls_passes_per_vehicle": 0.0,
+                "avg_stops_before_tls_per_vehicle": 0.0,
+                "nonstop_tls_pass_rate": 0.0,
+                "avg_best_nonstop_tls_streak": 0.0,
+            }
+
+        total_passes = sum(self._passes.get(vid, 0) for vid in vehicles)
+        total_nonstop = sum(self._nonstop_passes.get(vid, 0) for vid in vehicles)
+        total_stops = total_passes - total_nonstop
+        total_best_streak = sum(self._best_streak.get(vid, 0) for vid in vehicles)
+
+        return {
+            "avg_tls_passes_per_vehicle": total_passes / n_vehicles,
+            "avg_stops_before_tls_per_vehicle": total_stops / n_vehicles,
+            "nonstop_tls_pass_rate": total_nonstop / total_passes if total_passes else 0.0,
+            "avg_best_nonstop_tls_streak": total_best_streak / n_vehicles,
+        }
+
+    @staticmethod
+    def _first_tls(next_tls: list) -> tuple[str | None, float | None]:
+        if not next_tls:
+            return None, None
+        first = next_tls[0]
+        try:
+            return str(first[0]), float(first[2])
+        except (IndexError, TypeError, ValueError):
+            return None, None
+
+    def _record_pass(self, vid: str) -> None:
+        stopped = self._stopped_on_approach.get(vid, False)
+        self._passes[vid] = self._passes.get(vid, 0) + 1
+        if stopped:
+            self._current_streak[vid] = 0
+            return
+
+        self._nonstop_passes[vid] = self._nonstop_passes.get(vid, 0) + 1
+        streak = self._current_streak.get(vid, 0) + 1
+        self._current_streak[vid] = streak
+        self._best_streak[vid] = max(self._best_streak.get(vid, 0), streak)
+
+    def _clear_current(self, vid: str) -> None:
+        self._current_tls.pop(vid, None)
+        self._stopped_on_approach.pop(vid, None)
+
+# ---------------------------------------------------------------------------
 # EvalMetrics
 # ---------------------------------------------------------------------------
 
@@ -97,6 +203,11 @@ class EvalMetrics:
     per_junction_wait_density:  dict[str, float]      = field(default_factory=dict)
     per_junction_max_queue:     dict[str, int]        = field(default_factory=dict)
     per_junction_phase_counts:  dict[str, list[int]]  = field(default_factory=dict)
+    # Green-wave / progression
+    avg_tls_passes_per_vehicle:       float = 0.0
+    avg_stops_before_tls_per_vehicle: float = 0.0
+    nonstop_tls_pass_rate:             float = 0.0
+    avg_best_nonstop_tls_streak:       float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +302,7 @@ def run_eval_episode(
     junc_wait_acc   = {jid: 0.0 for jid in junction_ids}
     junc_max_queue  = {jid: 0   for jid in junction_ids}
     junc_phase_cnt = {jid: [0 for _ in phase_indices()] for jid in junction_ids}
+    green_wave = GreenWaveTracker()
 
     # ------------------------------------------------------------------
     # Episode loop
@@ -206,6 +318,8 @@ def run_eval_episode(
 
         if on_step is not None:
             on_step(actions)
+
+        _update_green_wave_tracker(green_wave)
 
         n_steps        += 1
         total_switches += sum(1 for sw in info["switches"].values() if sw)
@@ -252,6 +366,7 @@ def run_eval_episode(
         jid: junc_wait_acc[jid] / max(1, n_steps)
         for jid in junction_ids
     }
+    green_wave_metrics = green_wave.metrics()
 
     return EvalMetrics(
         avg_waiting_time           = avg_wait,
@@ -263,6 +378,28 @@ def run_eval_episode(
         per_junction_wait_density  = per_junction_wait_density,
         per_junction_max_queue     = junc_max_queue,
         per_junction_phase_counts  = junc_phase_cnt,
+        avg_tls_passes_per_vehicle       = green_wave_metrics["avg_tls_passes_per_vehicle"],
+        avg_stops_before_tls_per_vehicle = green_wave_metrics["avg_stops_before_tls_per_vehicle"],
+        nonstop_tls_pass_rate            = green_wave_metrics["nonstop_tls_pass_rate"],
+        avg_best_nonstop_tls_streak      = green_wave_metrics["avg_best_nonstop_tls_streak"],
+    )
+
+
+def _update_green_wave_tracker(tracker: GreenWaveTracker) -> None:
+    vehicle_ids = list(traci.vehicle.getIDList())
+    next_tls_by_vehicle = {}
+    speed_by_vehicle = {}
+    for vid in vehicle_ids:
+        try:
+            next_tls_by_vehicle[vid] = list(traci.vehicle.getNextTLS(vid))
+            speed_by_vehicle[vid] = float(traci.vehicle.getSpeed(vid))
+        except traci.exceptions.TraCIException:
+            continue
+    tracker.update(
+        vehicle_ids=vehicle_ids,
+        next_tls_by_vehicle=next_tls_by_vehicle,
+        speed_by_vehicle=speed_by_vehicle,
+        arrived_ids=list(traci.simulation.getArrivedIDList()),
     )
 
 
@@ -291,6 +428,10 @@ def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
         max_queue_length    = mean('max_queue_length'),
         phase_switch_freq   = mean('phase_switch_freq'),
         avg_wait_density    = mean('avg_wait_density'),
+        avg_tls_passes_per_vehicle=mean('avg_tls_passes_per_vehicle'),
+        avg_stops_before_tls_per_vehicle=mean('avg_stops_before_tls_per_vehicle'),
+        nonstop_tls_pass_rate=mean('nonstop_tls_pass_rate'),
+        avg_best_nonstop_tls_streak=mean('avg_best_nonstop_tls_streak'),
         per_junction_wait_density={
             jid: sum(m.per_junction_wait_density[jid] for m in metrics_list) / n
             for jid in jids

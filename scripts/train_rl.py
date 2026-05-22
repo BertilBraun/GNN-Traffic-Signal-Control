@@ -83,6 +83,13 @@ def parse_args() -> argparse.Namespace:
         metavar=('MIN', 'MAX'),
         help='Total vehicles/hour range for demand randomisation (default: 300 1000)',
     )
+    p.add_argument(
+        '--demand-min-rate',
+        type=float,
+        default=5.0,
+        metavar='R',
+        help='Minimum vehicles/hour per active O-D pair in generated demand.',
+    )
     p.add_argument('--burn-in', type=int, default=20, help='Fixed-time warm-up steps before GNN takes over (× 15 s)')
 
     # PPO knobs
@@ -181,6 +188,7 @@ def main() -> None:
         device=args.device,
         demand_seed=args.demand_seed,
         flow_range=tuple(args.flow_range),
+        demand_min_rate=args.demand_min_rate,
     )
 
 

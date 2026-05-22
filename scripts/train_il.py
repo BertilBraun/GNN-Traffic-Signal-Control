@@ -65,6 +65,13 @@ def parse_args() -> argparse.Namespace:
         help='Total vehicles/hour range for demand randomisation (default: 300 1000)',
     )
     p.add_argument(
+        '--demand-min-rate',
+        type=float,
+        default=5.0,
+        metavar='R',
+        help='Minimum vehicles/hour per active O-D pair in generated demand.',
+    )
+    p.add_argument(
         '--episodes',
         type=int,
         default=20,
@@ -93,6 +100,18 @@ def parse_args() -> argparse.Namespace:
         help='Checkpoint directory (default: checkpoints/il/<timestamp>)',
     )
     p.add_argument(
+        '--resume-from',
+        default=None,
+        metavar='DIR',
+        help='Resume IL from a checkpoint directory containing il_policy_<tag>.pt and normalizer_<tag>.npz',
+    )
+    p.add_argument(
+        '--resume-tag',
+        default='best',
+        choices=['best', 'final'],
+        help='Checkpoint tag to load when --resume-from is set',
+    )
+    p.add_argument(
         '--device',
         default=None,
         help="PyTorch device (e.g. 'cpu', 'cuda').  Auto-detected if omitted.",
@@ -114,6 +133,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help='Number of demand seeds averaged in the final evaluation',
+    )
+    p.add_argument(
+        '--periodic-eval-seeds',
+        type=int,
+        default=1,
+        help='Number of demand seeds averaged for periodic eval and best-checkpoint selection',
     )
     p.add_argument(
         '--dagger-beta-end',
@@ -170,6 +195,10 @@ def main() -> None:
         demand_seed=args.demand_seed,
         debug=args.debug,
         flow_range=tuple(args.flow_range),
+        demand_min_rate=args.demand_min_rate,
+        periodic_eval_seeds=args.periodic_eval_seeds,
+        resume_from=args.resume_from,
+        resume_tag=args.resume_tag,
         min_green_steps=args.min_green_steps,
     )
 

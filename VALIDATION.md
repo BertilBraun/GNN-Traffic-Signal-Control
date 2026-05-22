@@ -14,10 +14,10 @@ Six numbered checks, all automated:
 | # | Check | Result |
 |---|-------|--------|
 | 1 | Startup: junction count, obs keys match junction IDs | ✓ 6 junctions |
-| 2 | Obs shapes `(41,)`, dtype `float32`, no NaN/Inf | ✓ |
-| 3 | Feature bounds: all 41 dims flagged for negatives, bad one-hots, out-of-range elapsed | ✓ all clean |
+| 2 | Obs shapes `(45,)`, dtype `float32`, no NaN/Inf | ✓ |
+| 3 | Feature bounds: all 45 dims flagged for negatives, bad one-hots, out-of-range elapsed | ✓ all clean |
 | 4 | Junction ordering identical between `TrafficEnv` and `GraphBuilder` | ✓ exact match |
-| 5 | Expert uses all 4 phases; switch frequency in `[0.3, 4.0]` /junction/min | ✓ 1.667 /j/min |
+| 5 | Expert covers base/single-slot phases; switch frequency in `[0.3, 4.0]` /junction/min | ✓ 1.667 /j/min |
 | 6 | Expert wait density < always-phase-0 baseline | ✓ 12.4× better |
 
 **Notable findings from check 3:**

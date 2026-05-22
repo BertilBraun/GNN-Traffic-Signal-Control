@@ -87,6 +87,10 @@ def train_il(
     demand_seed: Optional[int] = None,
     debug: bool = False,
     flow_range: tuple[int, int] = (300, 1000),
+    demand_min_rate: float = 5.0,
+    periodic_eval_seeds: int = 1,
+    resume_from: Optional[str] = None,
+    resume_tag: str = 'best',
     min_green_steps: int = 2,
 ) -> GATPolicy:
     """Run the IL training loop and return the trained model.
@@ -136,11 +140,21 @@ def train_il(
     # Setup
     # ------------------------------------------------------------------
     env = TrafficEnv(
-        cfg_path, gui=False, episode_length=episode_length, flow_range=flow_range, min_green_steps=min_green_steps
+        cfg_path,
+        gui=False,
+        episode_length=episode_length,
+        flow_range=flow_range,
+        min_green_steps=min_green_steps,
+        demand_min_rate=demand_min_rate,
     )
     expert = GreedyExpert(env.junction_infos)
     builder = GraphBuilder(env._net, env.junction_infos)
-    model = GATPolicy().to(dev)
+    if resume_from is not None:
+        model, norm_state = load_checkpoint(resume_from, device=str(dev), tag=resume_tag)
+        builder.normalizer.load_state_dict(norm_state)
+        builder.normalizer.frozen = False
+    else:
+        model = GATPolicy().to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     writer = SummaryWriter(log_dir=log_dir)
 
@@ -157,6 +171,7 @@ def train_il(
         f'\n  Episode len:   {episode_length} s  ({steps_per_ep} decision steps)'
         f'\n  DAgger beta:   1.0 → {dagger_beta_end} ({"disabled" if dagger_beta_end == 1.0 else "annealing"})'
         f'\n  Demand:        {demand_tag}'
+        f'\n  Flow range:    {flow_range}  min_od_rate={demand_min_rate}'
         f'\n  Debug:         {debug}'
         f'\n  Device:        {dev}'
         f'\n  Parameters:    {model.n_parameters():,}'
@@ -164,6 +179,8 @@ def train_il(
         f'\n  TensorBoard:   {log_dir}'
         f'\n  Checkpoints:   {checkpoint_dir}\n'
     )
+    if resume_from is not None:
+        print(f'  Resumed from:   {resume_from}  tag={resume_tag}  normalizer_n={builder.normalizer.n}\n')
 
     global_step = 0
     t0 = time.time()
@@ -304,7 +321,8 @@ def train_il(
         # ------------------------------------------------------------------
         if eval_every > 0 and (episode + 1) % eval_every == 0:
             model.eval()
-            model_metrics = _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=(42,))
+            periodic_seeds = tuple(range(42, 42 + periodic_eval_seeds))
+            model_metrics = _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=periodic_seeds)
             if model_metrics.avg_wait_density < best_wait_density:
                 best_wait_density = model_metrics.avg_wait_density
                 _save_checkpoint(model, builder, checkpoint_dir, tag='best')
@@ -403,6 +421,10 @@ def _log_eval_scalars(
         ('eval/throughput', 'throughput_per_hour'),
         ('eval/max_queue_length', 'max_queue_length'),
         ('eval/phase_switch_freq', 'phase_switch_freq'),
+        ('eval/green_wave/tls_passes_per_vehicle', 'avg_tls_passes_per_vehicle'),
+        ('eval/green_wave/stops_before_tls_per_vehicle', 'avg_stops_before_tls_per_vehicle'),
+        ('eval/green_wave/nonstop_tls_pass_rate', 'nonstop_tls_pass_rate'),
+        ('eval/green_wave/best_nonstop_tls_streak', 'avg_best_nonstop_tls_streak'),
     ]
     for tag, attr in metrics:
         writer.add_scalars(
@@ -479,6 +501,10 @@ def _print_eval_summary(
         ('max_queue      (vehs)', model.max_queue_length, expert.max_queue_length),
         ('switch_freq (/j/min)', model.phase_switch_freq, expert.phase_switch_freq),
         ('wait_density    (s/m)', model.avg_wait_density, expert.avg_wait_density),
+        ('tls_passes     (/veh)', model.avg_tls_passes_per_vehicle, expert.avg_tls_passes_per_vehicle),
+        ('tls_stops      (/veh)', model.avg_stops_before_tls_per_vehicle, expert.avg_stops_before_tls_per_vehicle),
+        ('nonstop_tls_rate   %', 100.0 * model.nonstop_tls_pass_rate, 100.0 * expert.nonstop_tls_pass_rate),
+        ('best_nonstop_streak', model.avg_best_nonstop_tls_streak, expert.avg_best_nonstop_tls_streak),
     ]
     for name, mv, ev in rows:
         print(f'  {name:<24}  {mv:>10.3f}  {ev:>10.3f}')
@@ -530,12 +556,19 @@ def load_checkpoint(
     def _resolve(stem: str, ext: str) -> str:
         tagged = os.path.join(checkpoint_dir, f'{stem}_{tag}{ext}')
         legacy = os.path.join(checkpoint_dir, f'{stem}{ext}')
+        rl_latest = os.path.join(checkpoint_dir, f'rl_policy_latest{ext}') if stem == 'il_policy' else None
         if os.path.exists(tagged):
             return tagged
         if os.path.exists(legacy):
             print(f'  [load_checkpoint] "{stem}_{tag}{ext}" not found, loading legacy "{stem}{ext}"')
             return legacy
-        raise FileNotFoundError(f'No checkpoint found at {tagged} or {legacy}')
+        if rl_latest and os.path.exists(rl_latest):
+            print(f'  [load_checkpoint] "{stem}_{tag}{ext}" not found, loading RL checkpoint "rl_policy_latest{ext}"')
+            return rl_latest
+        searched = f'{tagged} or {legacy}'
+        if rl_latest:
+            searched += f' or {rl_latest}'
+        raise FileNotFoundError(f'No checkpoint found at {searched}')
 
     model = GATPolicy()
     state = torch.load(_resolve('il_policy', '.pt'), map_location=device, weights_only=True)

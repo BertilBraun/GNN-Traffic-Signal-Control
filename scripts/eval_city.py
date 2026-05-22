@@ -53,11 +53,18 @@ def _parse_args() -> argparse.Namespace:
         metavar=('MIN', 'MAX'),
         help='Traffic demand range (veh/h)',
     )
+    p.add_argument(
+        '--demand-min-rate',
+        type=float,
+        default=5.0,
+        metavar='R',
+        help='Min veh/h per O-D pair to include in demand file (lower = more active flows at light total demand)',
+    )
     p.add_argument('--device', default=None)
     return p.parse_args()
 
 
-def _print_table(expert: EvalMetrics, model: EvalMetrics, seeds: int) -> None:
+def _print_table(expert: EvalMetrics, model: EvalMetrics, seeds: int, ep_len: int) -> None:
     rows = [
         ('avg_waiting_time (s)', expert.avg_waiting_time, model.avg_waiting_time),
         ('avg_travel_time (s)', expert.avg_travel_time, model.avg_travel_time),
@@ -65,12 +72,16 @@ def _print_table(expert: EvalMetrics, model: EvalMetrics, seeds: int) -> None:
         ('max_queue (vehs)', expert.max_queue_length, model.max_queue_length),
         ('switch_freq (/j/min)', expert.phase_switch_freq, model.phase_switch_freq),
         ('wait_density (s/m)', expert.avg_wait_density, model.avg_wait_density),
+        ('tls_passes (/veh)', expert.avg_tls_passes_per_vehicle, model.avg_tls_passes_per_vehicle),
+        ('tls_stops (/veh)', expert.avg_stops_before_tls_per_vehicle, model.avg_stops_before_tls_per_vehicle),
+        ('nonstop_tls_rate', expert.nonstop_tls_pass_rate, model.nonstop_tls_pass_rate),
+        ('best_nonstop_streak', expert.avg_best_nonstop_tls_streak, model.avg_best_nonstop_tls_streak),
     ]
 
     header = f'{"Metric":<28}  {"Expert":>10}  {"Model":>10}  {"Delta":>10}'
     sep = '-' * len(header)
     print(f'\n{sep}')
-    print(f'  Zero-shot city eval  ({seeds} seeds, {seeds * 3600}s total sim time)')
+    print(f'  Zero-shot city eval  ({seeds} seeds, {seeds * ep_len}s total sim time)')
     print(sep)
     print(f'  {header}')
     print(f'  {sep}')
@@ -97,6 +108,7 @@ def main() -> None:
         gui=False,
         episode_length=args.ep_len,
         flow_range=tuple(args.flow_range),
+        demand_min_rate=args.demand_min_rate,
     )
     junction_ids = env.junction_ids
     junction_infos = env.junction_infos
@@ -147,7 +159,7 @@ def main() -> None:
     expert_avg = average_eval_metrics(expert_results)
     model_avg = average_eval_metrics(model_results)
 
-    _print_table(expert_avg, model_avg, args.seeds)
+    _print_table(expert_avg, model_avg, args.seeds, args.ep_len)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-05-19
+Last updated: 2026-05-21
 
 ---
 
@@ -8,7 +8,7 @@ Last updated: 2026-05-19
 
 ### Stage 1 — Environment (PASS)
 
-`TrafficEnv` wraps SUMO/TraCI. Six managed junctions on the irregular 4×4 grid. Observation: 41-dim per-junction vector (12 movements × 3 density features + 4-dim phase one-hot + elapsed-time scalar). Reward: `−α·Δlocal_wait − β·Δglobal_wait` (α=1.0, β=0.1). Decision interval: 15 s. Phase transitions: 3 s yellow + 2 s all-red + 10 s new green.
+`TrafficEnv` wraps SUMO/TraCI. Six managed junctions on the irregular 4×4 grid. Observation: 45-dim per-junction vector (12 movements × 3 density features + 8-dim phase one-hot + elapsed-time scalar). Reward: `−α·Δlocal_wait − β·Δglobal_wait` (α=1.0, β=0.1). Decision interval: 15 s. Phase transitions: 3 s yellow + 2 s all-red + 10 s new green.
 
 Minimum green is now enforced **at the env level** (`min_green_steps`, default 2 × 15 s = 30 s). Switch requests that arrive too early are silently overridden. The reward has **no switch penalty** — the constraint is physical, not a soft scalar.
 
@@ -16,7 +16,7 @@ Verification: `python scripts/verify_env.py` — 6 automated checks (startup, sh
 
 ### Stage 2 — Imitation Learning (PASS)
 
-GATv2 policy (41 → 128 → 128, 3 message-passing layers, 4 attention heads, ~50k parameters) trained on (graph, expert_phase) pairs from live SUMO episodes. DAgger anneals expert-driving probability from β=1.0 → 0.0 over 100 episodes.
+GATv2 policy (45 → 128 → 128, 3 message-passing layers, 4 attention heads, ~142k parameters) trained on (graph, expert_phase) pairs from live SUMO episodes. DAgger anneals expert-driving probability from β=1.0 → 0.0 over 100 episodes.
 
 Best checkpoint (~ep 90, β=0.10) achieves:
 
@@ -125,4 +125,6 @@ python scripts/train_rl.py \
   --flow-range 700 1200
 ```
 
-Best RL checkpoint: `checkpoints/rl/2026-05-19_20-02-40/`
+Best historical RL checkpoint: `checkpoints/rl/2026-05-19_20-02-40/`
+
+Note: the May 19 checkpoints use the old 41-input / 4-phase schema and do not load into the current 45-input / 8-phase `GATPolicy`. Re-run IL and PPO before using the current code for city transfer or new-network generalization.
