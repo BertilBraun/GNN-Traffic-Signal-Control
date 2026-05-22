@@ -243,6 +243,10 @@ def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str) -> Non
         if demoted:
             print(f'  Demoted {demoted} phantom TL nodes to priority')
 
+        roundabouts = _remove_roundabouts_in_plain(edg_file)
+        if roundabouts:
+            print(f'  Removed {roundabouts} stale roundabout metadata entries')
+
         merged_total, loop_total, spur_total = 0, 0, 0
         for _ in range(20):
             spurs = _remove_dead_end_spurs_in_plain(nod_file, edg_file)
@@ -309,6 +313,26 @@ def _rebuild_from_plain(prefix: Path, net_path: Path, join_dist: float, netconve
     if result.returncode != 0:
         print(result.stderr[-3000:])
         raise RuntimeError(f'netconvert rebuild failed (exit {result.returncode})')
+
+
+def _remove_roundabouts_in_plain(edg_file: Path) -> int:
+    """Remove plain-XML roundabout metadata before topology rewrites.
+
+    Plain export stores roundabouts as edge-id lists inside ``*.edg.xml``.
+    After pass-through merging, spur removal, or loop-stub removal, those
+    lists can reference edge IDs that no longer exist, causing netconvert's
+    rebuild to fail with "Unknown edge ... in roundabout".  The rebuilt net
+    does not rely on these hints for our signal-control workflow.
+    """
+    edges_tree = ET.parse(str(edg_file))
+    edges_root = edges_tree.getroot()
+    removed = 0
+    for elem in list(edges_root.findall('roundabout')):
+        edges_root.remove(elem)
+        removed += 1
+    if removed:
+        edges_tree.write(str(edg_file), encoding='utf-8', xml_declaration=True)
+    return removed
 
 
 def _strip_tl_join_metadata_in_plain(nod_file: Path) -> int:
