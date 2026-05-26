@@ -18,6 +18,12 @@ Run it visually in SUMO-GUI:
 python scripts\run_movement_max_pressure.py --cfg configs\grid_6x6_dedicated\grid.sumocfg --gui --steps 1800 --decision-interval 15 --yellow-duration 3 --verbose
 ```
 
+Switch to the longest-queue visual heuristic:
+
+```powershell
+python scripts\run_movement_max_pressure.py --cfg configs\grid_6x6_dedicated\grid.sumocfg --gui --method queue --steps 1800 --decision-interval 15 --yellow-duration 3 --verbose
+```
+
 For the smaller 3x3 sample:
 
 ```powershell

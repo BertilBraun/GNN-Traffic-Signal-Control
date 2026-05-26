@@ -1,4 +1,4 @@
-"""Run the movement-aware max-pressure controller in SUMO or SUMO-GUI."""
+"""Run movement-aware heuristic controllers in SUMO or SUMO-GUI."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ import traci  # noqa: E402
 
 from src.movement.sumo_adapter import (  # noqa: E402
     extract_programs_from_trafficlight_api,
-    select_max_pressure_states,
+    select_control_states,
 )
 from src.movement.transition import SignalTransitionController  # noqa: E402
 
@@ -30,7 +30,7 @@ DEFAULT_CFG = ROOT / "configs" / "grid_4x4" / "grid.sumocfg"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Visualize the movement-aware max-pressure phase selector.",
+        description="Visualize movement-aware phase-selection heuristics.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--cfg", default=str(DEFAULT_CFG), help="Path to SUMO .sumocfg file")
@@ -38,6 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=1800, help="Maximum simulation seconds to run")
     parser.add_argument("--decision-interval", type=int, default=15, help="Seconds between phase decisions")
     parser.add_argument("--yellow-duration", type=int, default=3, help="Yellow seconds inserted before a new green")
+    parser.add_argument(
+        "--method",
+        choices=("max-pressure", "queue"),
+        default="max-pressure",
+        help="Control heuristic used to score selectable phases",
+    )
     parser.add_argument("--seed", type=int, default=42, help="SUMO random seed")
     parser.add_argument("--verbose", action="store_true", help="Print selected phases each decision")
     return parser.parse_args()
@@ -64,13 +70,13 @@ def main() -> None:
 
         print(f"Loaded {len(programs)} movement-aware traffic-light programs.")
         controller = SignalTransitionController(yellow_duration=args.yellow_duration)
-        controller.set_targets(select_max_pressure_states(programs, traci.lane))
+        controller.set_targets(select_control_states(programs, traci.lane, method=args.method))
         for step in range(args.steps):
             if step % args.decision_interval == 0:
-                target_states = select_max_pressure_states(programs, traci.lane)
+                target_states = select_control_states(programs, traci.lane, method=args.method)
                 controller.set_targets(target_states)
                 if args.verbose:
-                    print(f"t={step:5d}s targets={target_states}")
+                    print(f"t={step:5d}s method={args.method} targets={target_states}")
 
             current_states = controller.current_states()
             for tls_id, state in current_states.items():
