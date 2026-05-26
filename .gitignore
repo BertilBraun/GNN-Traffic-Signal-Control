@@ -9,6 +9,7 @@ build/
 .env
 .venv
 venv/
+test/
 
 # SUMO output files
 *.xml.bak

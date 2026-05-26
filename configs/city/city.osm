@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6" generator="Overpass API 0.7.62.11 87bfad18">
 <note>The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.</note>
-<meta osm_base="2026-05-19T21:22:30Z"/>
+<meta osm_base="2026-05-20T15:18:31Z"/>
 
   <node id="1954309" lat="48.1540458" lon="11.5721703">
     <tag k="highway" v="traffic_signals"/>
@@ -3636,66 +3636,6 @@
     <tag k="surface" v="sett"/>
     <tag k="width" v="6.2"/>
   </way>
-  <relation id="128149">
-    <member type="way" ref="34114237" role="to"/>
-    <member type="way" ref="3845812" role="from"/>
-    <member type="node" ref="29565896" role="via"/>
-    <tag k="except" v="psv;taxi"/>
-    <tag k="restriction" v="only_straight_on"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="129370">
-    <member type="node" ref="618697482" role="via"/>
-    <member type="way" ref="34130309" role="to"/>
-    <member type="way" ref="392069508" role="from"/>
-    <tag k="restriction" v="no_left_turn"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="6756664">
-    <member type="way" ref="457240756" role="from"/>
-    <member type="way" ref="457244990" role="to"/>
-    <member type="node" ref="4534215939" role="via"/>
-    <tag k="restriction" v="no_exit"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="8401899">
-    <member type="way" ref="47229081" role="from"/>
-    <member type="node" ref="27270924" role="via"/>
-    <member type="way" ref="89840540" role="to"/>
-    <tag k="restriction" v="no_left_turn"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="8401900">
-    <member type="way" ref="47229081" role="from"/>
-    <member type="node" ref="27270924" role="via"/>
-    <member type="way" ref="47224976" role="to"/>
-    <tag k="restriction" v="no_straight_on"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="17746638">
-    <member type="way" ref="1294707328" role="from"/>
-    <member type="way" ref="1294707327" role="to"/>
-    <member type="node" ref="20835091" role="via"/>
-    <tag k="except" v="bicycle;psv"/>
-    <tag k="restriction" v="no_right_turn"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="17746639">
-    <member type="way" ref="392088975" role="from"/>
-    <member type="way" ref="1294707327" role="to"/>
-    <member type="node" ref="20835091" role="via"/>
-    <tag k="except" v="bicycle;psv"/>
-    <tag k="restriction" v="no_straight_on"/>
-    <tag k="type" v="restriction"/>
-  </relation>
-  <relation id="17746640">
-    <member type="way" ref="51508352" role="from"/>
-    <member type="way" ref="1294707327" role="to"/>
-    <member type="node" ref="20835091" role="via"/>
-    <tag k="except" v="bicycle;psv"/>
-    <tag k="restriction" v="no_left_turn"/>
-    <tag k="type" v="restriction"/>
-  </relation>
   <node id="682198286" lat="48.1459196" lon="11.5756003"/>
   <node id="10146614938" lat="48.1459507" lon="11.5756131"/>
   <node id="1954400" lat="48.1522168" lon="11.5649463"/>
@@ -4009,11 +3949,7 @@
   <node id="4476505946" lat="48.1491860" lon="11.5798130"/>
   <node id="4532822645" lat="48.1517439" lon="11.5801562"/>
   <node id="4534215932" lat="48.1512942" lon="11.5790917"/>
-  <node id="4534215938" lat="48.1513894" lon="11.5787654"/>
-  <node id="4534215939" lat="48.1513970" lon="11.5787219"/>
   <node id="4534215940" lat="48.1518616" lon="11.5769907"/>
-  <node id="4534215944" lat="48.1516398" lon="11.5788125"/>
-  <node id="4534386771" lat="48.1516608" lon="11.5786039"/>
   <node id="4743056825" lat="48.1506228" lon="11.5747292"/>
   <node id="5964210859" lat="48.1497031" lon="11.5779481"/>
   <node id="5964210860" lat="48.1497385" lon="11.5780723"/>
@@ -4071,7 +4007,6 @@
   <node id="368339684" lat="48.1513509" lon="11.5815025"/>
   <node id="372796487" lat="48.1501595" lon="11.5809401"/>
   <node id="372796999" lat="48.1490233" lon="11.5804052"/>
-  <node id="372800054" lat="48.1500972" lon="11.5812447"/>
   <node id="847979769" lat="48.1502103" lon="11.5808285"/>
   <node id="847979776" lat="48.1511026" lon="11.5812327"/>
   <node id="1041430752" lat="48.1496233" lon="11.5808635"/>
@@ -4181,83 +4116,5 @@
   <node id="1384982960" lat="48.1598330" lon="11.5690588"/>
   <node id="8867266359" lat="48.1601783" lon="11.5689747"/>
   <node id="10291535069" lat="48.1602621" lon="11.5689356"/>
-  <way id="3845812">
-    <nd ref="618697470"/>
-    <nd ref="637762338"/>
-    <nd ref="1326631495"/>
-    <nd ref="3580395763"/>
-    <nd ref="29565896"/>
-  </way>
-  <way id="34114237">
-    <nd ref="29565896"/>
-    <nd ref="3580395770"/>
-    <nd ref="1679831925"/>
-    <nd ref="10867703555"/>
-  </way>
-  <way id="51508352">
-    <nd ref="967091764"/>
-    <nd ref="12715535132"/>
-    <nd ref="8748721318"/>
-    <nd ref="618697472"/>
-    <nd ref="83870461"/>
-    <nd ref="6262887387"/>
-    <nd ref="4638819851"/>
-    <nd ref="13725374567"/>
-    <nd ref="3813915947"/>
-    <nd ref="13725374564"/>
-  </way>
-  <way id="392069508">
-    <nd ref="618697482"/>
-    <nd ref="1562831710"/>
-    <nd ref="3505015541"/>
-    <nd ref="3580335715"/>
-    <nd ref="3757402785"/>
-  </way>
-  <way id="392088975">
-    <nd ref="3813915949"/>
-    <nd ref="922879322"/>
-    <nd ref="13725374564"/>
-  </way>
-  <way id="1294707327">
-    <nd ref="13725374564"/>
-    <nd ref="922831081"/>
-  </way>
-  <way id="34130309">
-    <nd ref="618697482"/>
-    <nd ref="3580335718"/>
-    <nd ref="1954411"/>
-  </way>
-  <way id="1294707328">
-    <nd ref="13725374564"/>
-    <nd ref="3813915952"/>
-    <nd ref="13725374566"/>
-    <nd ref="922831072"/>
-    <nd ref="27487423"/>
-    <nd ref="258890820"/>
-    <nd ref="27487425"/>
-    <nd ref="1954309"/>
-  </way>
-  <way id="457240756">
-    <nd ref="4534386771"/>
-    <nd ref="4534215944"/>
-    <nd ref="4534215939"/>
-  </way>
-  <way id="457244990">
-    <nd ref="4534215939"/>
-    <nd ref="4534215938"/>
-  </way>
-  <way id="47224976">
-    <nd ref="372796487"/>
-    <nd ref="27270924"/>
-  </way>
-  <way id="47229081">
-    <nd ref="372800054"/>
-    <nd ref="27270924"/>
-  </way>
-  <way id="89840540">
-    <nd ref="1041430752"/>
-    <nd ref="4753785224"/>
-    <nd ref="27270924"/>
-  </way>
 
 </osm>

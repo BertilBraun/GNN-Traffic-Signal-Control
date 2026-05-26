@@ -125,6 +125,7 @@ class TrafficEnv:
         flow_range: tuple[int, int] = (300, 1000),
         demand_seed: Optional[int] = None,
         min_green_steps: int = DEFAULT_MIN_GREEN_STEPS,
+        demand_min_rate: float = 5.0,
     ) -> None:
         self.cfg_path = cfg_path
         self.gui = gui
@@ -156,7 +157,7 @@ class TrafficEnv:
         # demand pattern each episode, seed=<int> gives reproducible demand.
         self._rng = np.random.default_rng(demand_seed)
         self._temp_routes: Optional[str] = None
-        self._demand_randomizer = DemandRandomizer(self._net, flow_range)
+        self._demand_randomizer = DemandRandomizer(self._net, flow_range, min_rate=demand_min_rate)
 
         # Runtime state (populated by reset()).
         self._started = False

@@ -173,6 +173,7 @@ def main(
     demand_seed: int | None,
     flow_range: tuple[int, int],
     min_green_steps: int,
+    demand_min_rate: float,
 ) -> None:
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -184,6 +185,7 @@ def main(
         episode_length=episode_length,
         flow_range=flow_range,
         min_green_steps=min_green_steps,
+        demand_min_rate=demand_min_rate,
     )
     junction_ids = env.junction_ids
 
@@ -300,6 +302,13 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help='Minimum decision steps before a phase switch is allowed',
     )
+    p.add_argument(
+        '--demand-min-rate',
+        type=float,
+        default=5.0,
+        metavar='R',
+        help='Min veh/h per O-D pair to include in demand file',
+    )
     p.add_argument('--device', default=None, help='PyTorch device (model mode only)')
     return p.parse_args()
 
@@ -316,4 +325,5 @@ if __name__ == '__main__':
         demand_seed=args.demand_seed,
         flow_range=tuple(args.flow_range),
         min_green_steps=args.min_green_steps,
+        demand_min_rate=args.demand_min_rate,
     )
