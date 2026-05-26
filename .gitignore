@@ -27,4 +27,6 @@ wandb/
 # Claude Code local settings
 .claude/
 
+.pytest_cache/
+
 checkpoints/
