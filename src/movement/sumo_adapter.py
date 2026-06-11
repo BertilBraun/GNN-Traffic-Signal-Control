@@ -1,11 +1,9 @@
 """Adapters between TraCI-style APIs and movement-aware control primitives."""
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from .extraction import extract_traffic_light_program
-from .max_pressure import select_max_pressure_phase
 from .schema import TrafficLightProgram
 
 
@@ -34,90 +32,3 @@ def extract_programs_from_trafficlight_api(trafficlight_api: Any) -> dict[str, T
         if program.selectable_phases:
             programs[tls_id] = program
     return programs
-
-
-def compute_movement_pressures(
-    program: TrafficLightProgram,
-    lane_api: Any,
-) -> dict[int, float]:
-    """Compute movement pressure as incoming halting queue minus outgoing queue."""
-    pressures: dict[int, float] = {}
-    for movement in program.movements:
-        incoming_queue = lane_api.getLastStepHaltingNumber(movement.incoming_lane_id)
-        outgoing_queue = lane_api.getLastStepHaltingNumber(movement.outgoing_lane_id)
-        pressures[movement.movement_index] = float(incoming_queue - outgoing_queue)
-    return pressures
-
-
-def compute_movement_queues(
-    program: TrafficLightProgram,
-    lane_api: Any,
-) -> dict[int, float]:
-    """Compute movement demand proxy as incoming halting queue only."""
-    queues: dict[int, float] = {}
-    for movement in program.movements:
-        queues[movement.movement_index] = float(
-            lane_api.getLastStepHaltingNumber(movement.incoming_lane_id)
-        )
-    return queues
-
-
-def select_max_pressure_actions(
-    programs: Mapping[str, TrafficLightProgram],
-    lane_api: Any,
-    aggregate_by: str = "incoming_lane",
-) -> dict[str, int]:
-    """Return `{tls_id: sumo_phase_index}` selected by max-pressure scoring."""
-    actions: dict[str, int] = {}
-    for tls_id, program in programs.items():
-        movement_pressures = compute_movement_pressures(program, lane_api)
-        actions[tls_id] = select_max_pressure_phase(
-            program,
-            movement_pressures,
-            aggregate_by=aggregate_by,
-        ).sumo_phase_index
-    return actions
-
-
-def select_max_pressure_states(
-    programs: Mapping[str, TrafficLightProgram],
-    lane_api: Any,
-    aggregate_by: str = "incoming_lane",
-) -> dict[str, str]:
-    """Return `{tls_id: phase_state}` for directly holding selected greens."""
-    states: dict[str, str] = {}
-    for tls_id, program in programs.items():
-        movement_pressures = compute_movement_pressures(program, lane_api)
-        selection = select_max_pressure_phase(
-            program,
-            movement_pressures,
-            aggregate_by=aggregate_by,
-        )
-        states[tls_id] = program.selectable_phases[selection.local_phase_index].state
-    return states
-
-
-def select_control_states(
-    programs: Mapping[str, TrafficLightProgram],
-    lane_api: Any,
-    method: str = "max-pressure",
-    aggregate_by: str = "incoming_lane",
-) -> dict[str, str]:
-    """Return held green states for the requested simple control method."""
-    if method not in {"max-pressure", "queue"}:
-        raise ValueError(f"Unsupported control method: {method}")
-
-    states: dict[str, str] = {}
-    for tls_id, program in programs.items():
-        movement_scores = (
-            compute_movement_pressures(program, lane_api)
-            if method == "max-pressure"
-            else compute_movement_queues(program, lane_api)
-        )
-        selection = select_max_pressure_phase(
-            program,
-            movement_scores,
-            aggregate_by=aggregate_by,
-        )
-        states[tls_id] = program.selectable_phases[selection.local_phase_index].state
-    return states

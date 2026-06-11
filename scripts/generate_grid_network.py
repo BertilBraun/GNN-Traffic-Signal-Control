@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
 import subprocess
 import sys
@@ -50,7 +51,17 @@ class FlowSpec:
     probability: float
 
 
-TLLinkSpec = tuple[int, str, str]
+@dataclass(frozen=True)
+class TLLinkSpec:
+    tl_link_index: int
+    approach: str
+    direction: str
+    outgoing_edge_id: str | None = None
+    request_index: int | None = None
+
+    @property
+    def axis(self) -> str:
+        return "vertical" if self.approach in {"north", "south"} else "horizontal"
 
 
 def node_id(row: int, col: int) -> str:
@@ -194,27 +205,131 @@ def build_safe_phase_states(
     links: list[TLLinkSpec],
     n_links: int,
 ) -> list[str]:
-    """Build conservative protected movement phases.
+    """Build conflict-valid protected movement phases for generated grids.
 
-    Link tuple fields are `(tl_link_index, approach_axis, direction)`, where
-    axis is `vertical` or `horizontal` and direction is SUMO-style `r/s/l`.
+    Link fields are `(tl_link_index, approach, direction)`, where approach is
+    `north/south/east/west` and direction is SUMO-style `r/s/l`.
     """
-    phase_rules = [
-        ("vertical", {"r", "s"}),
-        ("vertical", {"l"}),
-        ("horizontal", {"r", "s"}),
-        ("horizontal", {"l"}),
+    phase_rules: list[list[tuple[set[str], set[str]]]] = [
+        [({"north", "south"}, {"r", "s"})],
+        [({"north", "south"}, {"l"}), ({"east", "west"}, {"r"})],
+        [({"east", "west"}, {"r", "s"})],
+        [({"east", "west"}, {"l"}), ({"north", "south"}, {"r"})],
+        [({"north"}, {"r", "s", "l"})],
+        [({"south"}, {"r", "s", "l"})],
+        [({"east"}, {"r", "s", "l"})],
+        [({"west"}, {"r", "s", "l"})],
     ]
     states: list[str] = []
-    for axis, directions in phase_rules:
+    for rule in phase_rules:
         chars = ["r"] * n_links
-        for tl_idx, link_axis, direction in links:
-            if link_axis == axis and direction.lower() in directions:
-                chars[tl_idx] = "G"
+        phase_links = [
+            link for link in links
+            if any(
+                link.approach in approaches and link.direction.lower() in directions
+                for approaches, directions in rule
+            )
+        ]
+        if _has_movement_conflict(phase_links):
+            continue
+        for link in phase_links:
+            chars[link.tl_link_index] = "G"
         state = "".join(chars)
         if "G" in state and state not in states:
             states.append(state)
     return states
+
+
+def build_conflict_phase_states(
+    links: list[TLLinkSpec],
+    n_links: int,
+    are_foes,
+) -> list[str]:
+    """Build maximal phases from SUMO foes plus same-outgoing-edge conflicts."""
+    indexed_links = sorted(links, key=lambda link: link.tl_link_index)
+    valid_sets: list[frozenset[int]] = []
+    for size in range(1, len(indexed_links) + 1):
+        for phase_links in itertools.combinations(indexed_links, size):
+            if _has_sumo_or_outgoing_edge_conflict(list(phase_links), are_foes):
+                continue
+            valid_sets.append(frozenset(link.tl_link_index for link in phase_links))
+
+    maximal_sets = [
+        candidate for candidate in valid_sets
+        if not any(candidate < other for other in valid_sets)
+    ]
+    states: list[str] = []
+    for phase_set in sorted(maximal_sets, key=lambda item: (-len(item), sorted(item))):
+        chars = ["r"] * n_links
+        for tl_idx in phase_set:
+            chars[tl_idx] = "G"
+        state = "".join(chars)
+        if state not in states:
+            states.append(state)
+    return states
+
+
+def _has_sumo_or_outgoing_edge_conflict(links: list[TLLinkSpec], are_foes) -> bool:
+    for idx, first in enumerate(links):
+        for second in links[idx + 1:]:
+            if _sumo_requests_are_foes(first, second, are_foes):
+                return True
+            if (
+                first.outgoing_edge_id is not None
+                and first.outgoing_edge_id == second.outgoing_edge_id
+            ):
+                return True
+    return False
+
+
+def _sumo_requests_are_foes(first: TLLinkSpec, second: TLLinkSpec, are_foes) -> bool:
+    first_request = (
+        first.request_index
+        if first.request_index is not None
+        else first.tl_link_index
+    )
+    second_request = (
+        second.request_index
+        if second.request_index is not None
+        else second.tl_link_index
+    )
+    return bool(
+        are_foes(first_request, second_request)
+        or are_foes(second_request, first_request)
+    )
+
+
+def _has_movement_conflict(links: list[TLLinkSpec]) -> bool:
+    for idx, first in enumerate(links):
+        for second in links[idx + 1:]:
+            if _movements_conflict(first, second):
+                return True
+    return False
+
+
+def _movements_conflict(first: TLLinkSpec, second: TLLinkSpec) -> bool:
+    if first.approach == second.approach:
+        return False
+
+    first_direction = first.direction.lower()
+    second_direction = second.direction.lower()
+    if _opposite_approaches(first.approach, second.approach):
+        return not (
+            first_direction in {"r", "s"} and second_direction in {"r", "s"}
+            or first_direction == "l" and second_direction == "l"
+        )
+
+    return not (
+        first_direction == "l" and second_direction == "r"
+        or first_direction == "r" and second_direction == "l"
+    )
+
+
+def _opposite_approaches(first: str, second: str) -> bool:
+    return {first, second} in (
+        {"north", "south"},
+        {"east", "west"},
+    )
 
 
 def generate_grid(
@@ -224,6 +339,7 @@ def generate_grid(
     spacing: float = 200.0,
     speed: float = 13.89,
     netconvert: bool = True,
+    phase_mode: str = "conflict-edge",
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
     edges = build_edge_specs(nodes, speed=speed)
@@ -245,7 +361,7 @@ def generate_grid(
     if netconvert:
         _run_netconvert(nod_path, edg_path, con_path, net_path)
 
-    _write_tll_from_net(net_path, out_dir / "grid.tll.xml")
+    _write_tll_from_net(net_path, out_dir / "grid.tll.xml", phase_mode=phase_mode)
     _print_summary(nodes, edges, connections, net_path)
     return net_path
 
@@ -461,30 +577,57 @@ def _run_netconvert(nod_path: Path, edg_path: Path, con_path: Path, net_path: Pa
     )
 
 
-def _write_tll_from_net(net_path: Path, tll_path: Path) -> None:
+def _write_tll_from_net(
+    net_path: Path,
+    tll_path: Path,
+    phase_mode: str = "conflict-edge",
+) -> None:
     if "SUMO_HOME" not in os.environ:
         raise EnvironmentError("SUMO_HOME environment variable is required to generate traffic lights.")
     sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
     import sumolib
 
-    net = sumolib.net.readNet(str(net_path), withConnections=True)
+    if phase_mode not in {"protected", "conflict-edge"}:
+        raise ValueError(f"Unsupported phase mode: {phase_mode}")
+
+    net = sumolib.net.readNet(
+        str(net_path),
+        withConnections=True,
+        withFoes=phase_mode == "conflict-edge",
+    )
     root = ET.Element("additional")
     for node in sorted(net.getNodes(), key=lambda item: item.getID()):
         if node.getType() != "traffic_light":
             continue
         link_specs: list[TLLinkSpec] = []
         for incoming in node.getIncoming():
-            axis = _approach_axis(incoming.getFromNode().getID(), node.getID())
+            approach = _approach_name(incoming.getFromNode().getID(), node.getID())
             for outgoing in incoming.getOutgoing():
                 for conn in incoming.getConnections(outgoing):
                     tl_idx = conn.getTLLinkIndex()
                     if tl_idx < 0:
                         continue
-                    link_specs.append((tl_idx, axis, conn.getDirection().lower()))
+                    request_idx = conn.getJunctionIndex()
+                    link_specs.append(
+                        TLLinkSpec(
+                            tl_link_index=tl_idx,
+                            approach=approach,
+                            direction=conn.getDirection().lower(),
+                            outgoing_edge_id=conn.getTo().getID(),
+                            request_index=request_idx if request_idx >= 0 else None,
+                        )
+                    )
         if not link_specs:
             continue
-        n_links = max(tl_idx for tl_idx, _axis, _direction in link_specs) + 1
-        green_states = build_safe_phase_states(link_specs, n_links)
+        n_links = max(link.tl_link_index for link in link_specs) + 1
+        if phase_mode == "conflict-edge":
+            green_states = build_conflict_phase_states(
+                link_specs,
+                n_links,
+                are_foes=node.areFoes,
+            )
+        else:
+            green_states = build_safe_phase_states(link_specs, n_links)
         all_red = "r" * n_links
         logic = ET.SubElement(
             root,
@@ -503,10 +646,18 @@ def _write_tll_from_net(net_path: Path, tll_path: Path) -> None:
     _write_xml(tll_path, root)
 
 
-def _approach_axis(from_node: str, to_node: str) -> str:
+def _approach_name(from_node: str, to_node: str) -> str:
     from_row, from_col = _parse_node_id(from_node)
     to_row, to_col = _parse_node_id(to_node)
-    return "vertical" if from_row != to_row else "horizontal"
+    if from_row < to_row:
+        return "north"
+    if from_row > to_row:
+        return "south"
+    if from_col < to_col:
+        return "west"
+    if from_col > to_col:
+        return "east"
+    raise ValueError(f"Cannot infer approach for {from_node} -> {to_node}.")
 
 
 def _yellow_state(green: str) -> str:
@@ -533,6 +684,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--spacing", type=float, default=200.0, help="Distance between adjacent nodes in metres")
     parser.add_argument("--speed", type=float, default=13.89, help="Default speed in m/s")
     parser.add_argument("--no-netconvert", action="store_true", help="Only write plain XML files")
+    parser.add_argument(
+        "--phase-mode",
+        choices=("conflict-edge", "protected"),
+        default="conflict-edge",
+        help="How to synthesize generated grid traffic-light phases",
+    )
     return parser.parse_args()
 
 
@@ -545,6 +702,7 @@ def main() -> None:
         spacing=args.spacing,
         speed=args.speed,
         netconvert=not args.no_netconvert,
+        phase_mode=args.phase_mode,
     )
 
 
