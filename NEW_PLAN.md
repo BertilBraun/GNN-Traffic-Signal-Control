@@ -597,7 +597,7 @@ and cannot be served independently because they share the same queue,
 represent them as a shared-lane movement group for phase scoring.
 ```
 
-This does not mean the movements disappear. It means that for scoring and demand estimation, the model should know they are coupled by the same upstream queue.
+This does not mean the movements disappear. It means that candidate phases and learned scoring must know they are coupled by the same upstream queue.
 
 Example:
 
@@ -611,7 +611,7 @@ shared-lane movement group:
   lane_0 -> {west_out, south_out, east_out}
 ```
 
-If a phase enables all three, the phase should be scored as serving the shared incoming queue, not as independently serving three separate queues.
+If a phase enables only one of these movements, it may be a poor candidate because the first vehicle in the shared lane can still block the lane. Prefer candidate phases that enable the complete shared-lane movement group, unless route-intention observability later proves that a partial green is useful.
 
 ### 10.3 Multi-Lane / Dedicated-Turn Case
 
@@ -687,7 +687,7 @@ movement_demand(in -> out)
   = incoming_queue_or_count(in) × estimated_turn_probability(in -> out)
 ```
 
-For shared-lane groups, total incoming queue should not be counted multiple times for each possible outgoing direction.
+Shared-lane blocking should be handled by movement grouping and phase synthesis, not by a separate incoming-lane phase aggregation mode. The baseline phase score should remain a simple sum over the movement or movement-group scores that the phase actually serves.
 
 ## 11. Phase Extraction
 
@@ -774,6 +774,8 @@ Reason:
 * simple,
 * stable,
 * physically interpretable as total served movement benefit.
+
+Do not use a separate "incoming lane aggregation" as the default phase-scoring mechanism. If multiple raw movements share one incoming queue, model that coupling before phase scoring by constructing shared-lane movement groups and by avoiding partial phases that open only one branch of a blocked shared lane.
 
 Later ablations:
 
@@ -996,6 +998,25 @@ many cities + fine-tune on target city
 ## 18. Implementation Plan
 
 The implementation should progress through increasingly difficult network types. Do not start with arbitrary real city networks.
+
+### Phase 0.5: Movement Stack Cleanup Checkpoint
+
+Before imitation learning or reinforcement learning work, clean the movement-control code into a stable baseline:
+
+* replace fixed string options with enums for scoring method and phase generation mode;
+* introduce semantic types for traffic-light IDs, movement indices, signal indices, lane IDs, edge IDs, and phase states;
+* remove default incoming-lane phase aggregation from the main path;
+* keep phase scoring as sum over served movement or movement-group scores;
+* move baseline policies out of `scripts/run.py` into a small policy module;
+* keep runtime production-oriented and do not add fake/test-only branches to it;
+* preserve the current manual visual runner for SUMO-GUI validation;
+* document the conflict-edge phase synthesis and analysis commands.
+
+Goal:
+
+```text
+Create a typed, inspectable movement-control baseline that can support imitation learning, PPO/RL, OSM network validation, and transfer experiments.
+```
 
 ### Phase 0: Synthetic Network Curriculum Setup
 
