@@ -21,16 +21,10 @@ from .schema import (
 @dataclass(frozen=True)
 class TrafficLightLinkSpec:
     traffic_light_link_index: int
-    approach: str
-    direction: str
     incoming_lane_id: LaneId | None = None
     outgoing_lane_id: LaneId | None = None
     outgoing_edge_id: str | None = None
     request_index: int | None = None
-
-    @property
-    def axis(self) -> str:
-        return "vertical" if self.approach in {"north", "south"} else "horizontal"
 
 
 def synthesize_traffic_light_program(

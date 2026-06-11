@@ -15,24 +15,18 @@ def test_conflict_phases_do_not_partially_open_shared_incoming_lane() -> None:
     links = [
         TrafficLightLinkSpec(
             traffic_light_link_index=0,
-            approach="unknown",
-            direction="s",
             incoming_lane_id=LaneId("lane_a"),
             outgoing_edge_id="edge_x",
             request_index=0,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=1,
-            approach="unknown",
-            direction="l",
             incoming_lane_id=LaneId("lane_a"),
             outgoing_edge_id="edge_y",
             request_index=1,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=2,
-            approach="unknown",
-            direction="r",
             incoming_lane_id=LaneId("lane_b"),
             outgoing_edge_id="edge_z",
             request_index=2,
@@ -55,16 +49,12 @@ def test_conflict_phases_allow_same_incoming_lane_to_same_outgoing_edge() -> Non
     links = [
         TrafficLightLinkSpec(
             traffic_light_link_index=0,
-            approach="unknown",
-            direction="r",
             incoming_lane_id=LaneId("lane_a"),
             outgoing_edge_id="edge_x",
             request_index=0,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=1,
-            approach="unknown",
-            direction="r",
             incoming_lane_id=LaneId("lane_a"),
             outgoing_edge_id="edge_x",
             request_index=1,

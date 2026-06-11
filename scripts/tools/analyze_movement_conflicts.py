@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -30,6 +31,26 @@ from src.movement.schema import LaneId  # noqa: E402
 class ConflictAnalysisMode(str, Enum):
     SUMO_FOES = "sumo-foes"
     CONFLICT_EDGE = "conflict-edge"
+
+
+@dataclass(frozen=True)
+class AnalyzedTrafficLightLink:
+    traffic_light_link_index: int
+    request_index: int
+    approach: str
+    direction: str
+    incoming_lane_id: LaneId
+    outgoing_lane_id: LaneId
+    outgoing_edge_id: str
+
+    def to_synthesis_spec(self, include_outgoing_edge: bool) -> TrafficLightLinkSpec:
+        return TrafficLightLinkSpec(
+            traffic_light_link_index=self.traffic_light_link_index,
+            incoming_lane_id=self.incoming_lane_id,
+            outgoing_lane_id=self.outgoing_lane_id,
+            outgoing_edge_id=self.outgoing_edge_id if include_outgoing_edge else None,
+            request_index=self.request_index,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,18 +86,14 @@ def main() -> None:
 
     if analysis_mode == ConflictAnalysisMode.SUMO_FOES:
         phase_links = [
-            TrafficLightLinkSpec(
-                traffic_light_link_index=link.traffic_light_link_index,
-                approach=link.approach,
-                direction=link.direction,
-                incoming_lane_id=link.incoming_lane_id,
-                outgoing_lane_id=link.outgoing_lane_id,
-                request_index=link.request_index,
-            )
+            link.to_synthesis_spec(include_outgoing_edge=False)
             for link in links
         ]
     else:
-        phase_links = links
+        phase_links = [
+            link.to_synthesis_spec(include_outgoing_edge=True)
+            for link in links
+        ]
 
     states = build_conflict_phase_states(
         phase_links,
@@ -89,8 +106,8 @@ def main() -> None:
         print(f"{state}  links={','.join(enabled)}")
 
 
-def _collect_tls_links(node, tls_id: str) -> list[TrafficLightLinkSpec]:
-    links: list[TrafficLightLinkSpec] = []
+def _collect_tls_links(node, tls_id: str) -> list[AnalyzedTrafficLightLink]:
+    links: list[AnalyzedTrafficLightLink] = []
     for incoming in node.getIncoming():
         approach = _approach_name(incoming.getFromNode().getID(), node.getID())
         for outgoing in incoming.getOutgoing():
@@ -102,14 +119,14 @@ def _collect_tls_links(node, tls_id: str) -> list[TrafficLightLinkSpec]:
                 if tl_idx < 0 or request_idx < 0:
                     continue
                 links.append(
-                    TrafficLightLinkSpec(
+                    AnalyzedTrafficLightLink(
                         traffic_light_link_index=tl_idx,
+                        request_index=request_idx,
                         approach=approach,
                         direction=conn.getDirection().lower(),
                         incoming_lane_id=LaneId(conn.getFromLane().getID()),
                         outgoing_lane_id=LaneId(conn.getToLane().getID()),
                         outgoing_edge_id=conn.getTo().getID(),
-                        request_index=request_idx,
                     )
                 )
     return sorted(links, key=lambda link: link.traffic_light_link_index)

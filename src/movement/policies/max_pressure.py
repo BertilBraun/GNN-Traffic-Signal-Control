@@ -1,7 +1,7 @@
 """Max-pressure movement scoring policy."""
 from __future__ import annotations
 
-from src.movement.policies.types import LaneQueueApi
+from src.movement.runtime import LaneQueueApi
 from src.movement.schema import MovementIndex, TrafficLightProgram
 
 

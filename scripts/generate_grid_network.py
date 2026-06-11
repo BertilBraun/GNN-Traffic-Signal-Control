@@ -468,7 +468,6 @@ def _write_tll_from_net(
             continue
         link_specs: list[TrafficLightLinkSpec] = []
         for incoming in node.getIncoming():
-            approach = _approach_name(incoming.getFromNode().getID(), node.getID())
             for outgoing in incoming.getOutgoing():
                 for conn in incoming.getConnections(outgoing):
                     tl_idx = conn.getTLLinkIndex()
@@ -478,8 +477,6 @@ def _write_tll_from_net(
                     link_specs.append(
                         TrafficLightLinkSpec(
                             traffic_light_link_index=tl_idx,
-                            approach=approach,
-                            direction=conn.getDirection().lower(),
                             incoming_lane_id=LaneId(conn.getFromLane().getID()),
                             outgoing_lane_id=LaneId(conn.getToLane().getID()),
                             outgoing_edge_id=conn.getTo().getID(),

@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from .min_green import MinGreenController
-from .schema import TrafficLightProgram
+from .schema import LaneId, TrafficLightProgram
 from .sumo_adapter import extract_programs_from_trafficlight_api
 from .transition import SignalTransitionController
 
@@ -20,6 +21,11 @@ import sumolib
 import traci._lane
 
 LaneAPI = traci._lane.LaneDomain
+
+
+class LaneQueueApi(Protocol):
+    def getLastStepHaltingNumber(self, lane_id: LaneId) -> int:
+        ...
 
 
 @dataclass

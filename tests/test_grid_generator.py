@@ -115,12 +115,12 @@ def test_default_route_flows_include_bottom_and_right_boundary_sources() -> None
 
 def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
     links = [
-        TrafficLightLinkSpec(0, "north", "r", outgoing_edge_id="west_out", request_index=0),
-        TrafficLightLinkSpec(1, "north", "s", outgoing_edge_id="south_out", request_index=1),
-        TrafficLightLinkSpec(2, "north", "l", outgoing_edge_id="east_out", request_index=2),
-        TrafficLightLinkSpec(3, "east", "r", outgoing_edge_id="north_out", request_index=3),
-        TrafficLightLinkSpec(4, "east", "s", outgoing_edge_id="west_out", request_index=4),
-        TrafficLightLinkSpec(5, "east", "l", outgoing_edge_id="south_out", request_index=5),
+        TrafficLightLinkSpec(0, outgoing_edge_id="west_out", request_index=0),
+        TrafficLightLinkSpec(1, outgoing_edge_id="south_out", request_index=1),
+        TrafficLightLinkSpec(2, outgoing_edge_id="east_out", request_index=2),
+        TrafficLightLinkSpec(3, outgoing_edge_id="north_out", request_index=3),
+        TrafficLightLinkSpec(4, outgoing_edge_id="west_out", request_index=4),
+        TrafficLightLinkSpec(5, outgoing_edge_id="south_out", request_index=5),
     ]
     sumo_foes = {
         frozenset({1, 5}),
