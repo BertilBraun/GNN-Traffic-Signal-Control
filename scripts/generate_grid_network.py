@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.dom import minidom
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from src.movement.phase_synthesis import (
     PhaseGenerationMode,
     TrafficLightLinkSpec,

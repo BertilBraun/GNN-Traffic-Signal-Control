@@ -124,7 +124,10 @@ def build_protected_phase_states(
                 for approaches, directions in rule
             )
         ]
-        if _has_movement_conflict(phase_links):
+        if (
+            _has_movement_conflict(phase_links)
+            or _partially_serves_shared_incoming_lane(phase_links, links)
+        ):
             continue
         for link in phase_links:
             chars[link.traffic_light_link_index] = "G"
@@ -156,7 +159,11 @@ def build_conflict_phase_states(
     valid_sets: list[frozenset[int]] = []
     for size in range(1, len(indexed_links) + 1):
         for phase_links in itertools.combinations(indexed_links, size):
-            if _has_sumo_or_outgoing_edge_conflict(list(phase_links), are_foes):
+            candidate_links = list(phase_links)
+            if (
+                _has_sumo_or_outgoing_edge_conflict(candidate_links, are_foes)
+                or _partially_serves_shared_incoming_lane(candidate_links, indexed_links)
+            ):
                 continue
             valid_sets.append(frozenset(link.traffic_light_link_index for link in phase_links))
 
@@ -183,11 +190,40 @@ def _has_sumo_or_outgoing_edge_conflict(
         for second in links[index + 1:]:
             if _sumo_requests_are_foes(first, second, are_foes):
                 return True
-            if (
-                first.outgoing_edge_id is not None
-                and first.outgoing_edge_id == second.outgoing_edge_id
-            ):
+            if _same_outgoing_edge_conflict(first, second):
                 return True
+    return False
+
+
+def _same_outgoing_edge_conflict(
+    first: TrafficLightLinkSpec,
+    second: TrafficLightLinkSpec,
+) -> bool:
+    if first.outgoing_edge_id is None or first.outgoing_edge_id != second.outgoing_edge_id:
+        return False
+    return first.incoming_lane_id is None or first.incoming_lane_id != second.incoming_lane_id
+
+
+def _partially_serves_shared_incoming_lane(
+    phase_links: list[TrafficLightLinkSpec],
+    all_links: list[TrafficLightLinkSpec],
+) -> bool:
+    enabled_indices = {
+        link.traffic_light_link_index
+        for link in phase_links
+    }
+    lane_groups: dict[LaneId, set[int]] = {}
+    for link in all_links:
+        if link.incoming_lane_id is None:
+            continue
+        lane_groups.setdefault(link.incoming_lane_id, set()).add(link.traffic_light_link_index)
+
+    for shared_indices in lane_groups.values():
+        if len(shared_indices) < 2:
+            continue
+        enabled_shared_indices = enabled_indices & shared_indices
+        if enabled_shared_indices and enabled_shared_indices != shared_indices:
+            return True
     return False
 
 
