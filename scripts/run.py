@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
-from src.movement.runtime import LaneAPI, MovementControlRuntime
+from src.movement.runtime import LaneQueueApi, MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
@@ -20,7 +20,7 @@ DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
 
 def select_control_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneAPI,
+    lane_api: LaneQueueApi,
     method: MovementScoringMethod,
 ) -> dict[str, str]:
     """Return held green states selected by the runner's scoring method."""

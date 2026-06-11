@@ -18,9 +18,6 @@ if 'SUMO_HOME' not in os.environ:
     )
 import traci
 import sumolib
-import traci._lane
-
-LaneAPI = traci._lane.LaneDomain
 
 
 class LaneQueueApi(Protocol):
@@ -48,7 +45,7 @@ class MovementControlRuntime:
         self._min_green_controller = MinGreenController(min_green_steps=self.min_green_steps)
 
     @property
-    def lane_api(self) -> LaneAPI:
+    def lane_api(self) -> LaneQueueApi:
         self._require_started()
         return traci.lane
 
