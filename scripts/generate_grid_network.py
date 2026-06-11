@@ -8,8 +8,14 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from xml.dom import minidom
+
+
+class PhaseGenerationMode(str, Enum):
+    CONFLICT_EDGE = "conflict-edge"
+    PROTECTED = "protected"
 
 
 @dataclass(frozen=True)
@@ -339,7 +345,7 @@ def generate_grid(
     spacing: float = 200.0,
     speed: float = 13.89,
     netconvert: bool = True,
-    phase_mode: str = "conflict-edge",
+    phase_mode: PhaseGenerationMode = PhaseGenerationMode.CONFLICT_EDGE,
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
     edges = build_edge_specs(nodes, speed=speed)
@@ -580,20 +586,17 @@ def _run_netconvert(nod_path: Path, edg_path: Path, con_path: Path, net_path: Pa
 def _write_tll_from_net(
     net_path: Path,
     tll_path: Path,
-    phase_mode: str = "conflict-edge",
+    phase_mode: PhaseGenerationMode = PhaseGenerationMode.CONFLICT_EDGE,
 ) -> None:
     if "SUMO_HOME" not in os.environ:
         raise EnvironmentError("SUMO_HOME environment variable is required to generate traffic lights.")
     sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
     import sumolib
 
-    if phase_mode not in {"protected", "conflict-edge"}:
-        raise ValueError(f"Unsupported phase mode: {phase_mode}")
-
     net = sumolib.net.readNet(
         str(net_path),
         withConnections=True,
-        withFoes=phase_mode == "conflict-edge",
+        withFoes=phase_mode == PhaseGenerationMode.CONFLICT_EDGE,
     )
     root = ET.Element("additional")
     for node in sorted(net.getNodes(), key=lambda item: item.getID()):
@@ -620,7 +623,7 @@ def _write_tll_from_net(
         if not link_specs:
             continue
         n_links = max(link.tl_link_index for link in link_specs) + 1
-        if phase_mode == "conflict-edge":
+        if phase_mode == PhaseGenerationMode.CONFLICT_EDGE:
             green_states = build_conflict_phase_states(
                 link_specs,
                 n_links,
@@ -686,8 +689,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-netconvert", action="store_true", help="Only write plain XML files")
     parser.add_argument(
         "--phase-mode",
-        choices=("conflict-edge", "protected"),
-        default="conflict-edge",
+        choices=tuple(mode.value for mode in PhaseGenerationMode),
+        default=PhaseGenerationMode.CONFLICT_EDGE.value,
         help="How to synthesize generated grid traffic-light phases",
     )
     return parser.parse_args()
@@ -702,7 +705,7 @@ def main() -> None:
         spacing=args.spacing,
         speed=args.speed,
         netconvert=not args.no_netconvert,
-        phase_mode=args.phase_mode,
+        phase_mode=PhaseGenerationMode(args.phase_mode),
     )
 
 

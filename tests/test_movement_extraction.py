@@ -40,7 +40,7 @@ def test_extract_program_maps_green_positions_to_controlled_movements() -> None:
         controlled_links=controlled_links,
     )
 
-    assert program.tls_id == "J0"
+    assert program.traffic_light_id == "J0"
     assert [movement.signal_index for movement in program.movements] == [0, 1, 2]
     assert program.movements[0].incoming_lane_id == "north_0"
     assert program.movements[0].outgoing_lane_id == "south_0"

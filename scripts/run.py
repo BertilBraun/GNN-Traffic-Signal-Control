@@ -11,39 +11,17 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.phase_selection import select_highest_scoring_phase
+from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.runtime import LaneAPI, MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
-PHASE_SCORE_AGGREGATION = 'incoming_lane'
-
-
-def compute_movement_scores(
-    program: TrafficLightProgram,
-    lane_api: LaneAPI,
-    method: str,
-) -> dict[int, float]:
-    """Compute runner-owned movement scores for a single traffic light."""
-    if method not in {'max-pressure', 'queue'}:
-        raise ValueError(f'Unsupported control method: {method}')
-
-    scores: dict[int, float] = {}
-    for movement in program.movements:
-        incoming_queue = lane_api.getLastStepHaltingNumber(movement.incoming_lane_id)
-        if method == 'queue':
-            scores[movement.movement_index] = float(incoming_queue)
-            continue
-
-        outgoing_queue = lane_api.getLastStepHaltingNumber(movement.outgoing_lane_id)
-        scores[movement.movement_index] = float(incoming_queue - outgoing_queue)
-    return scores
 
 
 def select_control_states(
     programs: Mapping[str, TrafficLightProgram],
     lane_api: LaneAPI,
-    method: str,
-    phase_score_aggregation: str = PHASE_SCORE_AGGREGATION,
+    method: MovementScoringMethod,
 ) -> dict[str, str]:
     """Return held green states selected by the runner's scoring method."""
     states: dict[str, str] = {}
@@ -52,7 +30,6 @@ def select_control_states(
         selection = select_highest_scoring_phase(
             program,
             movement_scores,
-            phase_score_aggregation=phase_score_aggregation,
         )
         states[tls_id] = program.selectable_phases[selection.local_phase_index].state
     return states
@@ -80,8 +57,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--method',
-        choices=('max-pressure', 'queue'),
-        default='max-pressure',
+        choices=tuple(method.value for method in MovementScoringMethod),
+        default=MovementScoringMethod.MAX_PRESSURE.value,
         help='Control heuristic used to score selectable phases',
     )
     parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
@@ -93,6 +70,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    scoring_method = MovementScoringMethod(args.method)
     runtime = MovementControlRuntime(
         cfg_path=args.cfg,
         gui=args.gui,
@@ -105,11 +83,11 @@ def main() -> None:
             desired_states = select_control_states(
                 decision.programs,
                 decision.lane_api,
-                method=args.method,
+                method=scoring_method,
             )
             accepted_states = decision.request_targets(desired_states)
             if args.verbose:
-                print(f'method={args.method} desired={desired_states} accepted={accepted_states}')
+                print(f'method={scoring_method.value} desired={desired_states} accepted={accepted_states}')
 
     try:
         runtime.start()
@@ -119,12 +97,12 @@ def main() -> None:
                 desired_states = select_control_states(
                     runtime.programs,
                     runtime.lane_api,
-                    method=args.method,
+                    method=scoring_method,
                 )
                 accepted_states = runtime.request_targets(desired_states)
                 if args.verbose:
                     print(
-                        f't={step:5d}s method={args.method} '
+                        f't={step:5d}s method={scoring_method.value} '
                         f'desired={desired_states} accepted={accepted_states}'
                     )
 

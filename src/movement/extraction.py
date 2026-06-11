@@ -3,7 +3,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from .schema import ControlledMovement, SelectablePhase, TrafficLightProgram
+from .schema import (
+    ControlledMovement,
+    LaneId,
+    MovementIndex,
+    PhaseState,
+    SelectablePhase,
+    SignalIndex,
+    SumoPhaseIndex,
+    TrafficLightId,
+    TrafficLightProgram,
+)
 
 GREEN_CHARS = frozenset({"G", "g"})
 TRANSITION_CHARS = frozenset({"y", "Y"})
@@ -52,11 +62,11 @@ def extract_traffic_light_program(
     signal_links = list(_iter_signal_links(controlled_links))
     movements = tuple(
         ControlledMovement(
-            movement_index=movement_idx,
-            signal_index=signal_idx,
-            incoming_lane_id=incoming_lane,
-            outgoing_lane_id=outgoing_lane,
-            via_lane_id=via_lane,
+            movement_index=MovementIndex(movement_idx),
+            signal_index=SignalIndex(signal_idx),
+            incoming_lane_id=LaneId(incoming_lane),
+            outgoing_lane_id=LaneId(outgoing_lane),
+            via_lane_id=LaneId(via_lane) if via_lane is not None else None,
         )
         for movement_idx, (signal_idx, (incoming_lane, outgoing_lane, via_lane))
         in enumerate(signal_links)
@@ -86,14 +96,14 @@ def extract_traffic_light_program(
         if enabled:
             selectable_phases.append(
                 SelectablePhase(
-                    sumo_phase_index=phase_idx,
-                    state=state,
+                    sumo_phase_index=SumoPhaseIndex(phase_idx),
+                    state=PhaseState(state),
                     enabled_movement_indices=enabled,
                 )
             )
 
     return TrafficLightProgram(
-        tls_id=tls_id,
+        traffic_light_id=TrafficLightId(tls_id),
         movements=movements,
         selectable_phases=tuple(selectable_phases),
     )

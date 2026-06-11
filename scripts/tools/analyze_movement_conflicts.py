@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from enum import Enum
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,11 @@ from scripts.generate_grid_network import (  # noqa: E402
 )
 
 
+class ConflictAnalysisMode(str, Enum):
+    SUMO_FOES = "sumo-foes"
+    CONFLICT_EDGE = "conflict-edge"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Print movement conflicts and generated phase states for one SUMO TLS node.",
@@ -34,8 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tls", required=True, help="Traffic-light node id")
     parser.add_argument(
         "--mode",
-        choices=("sumo-foes", "conflict-edge"),
-        default="conflict-edge",
+        choices=tuple(mode.value for mode in ConflictAnalysisMode),
+        default=ConflictAnalysisMode.CONFLICT_EDGE.value,
         help="Conflict rule used for generated phase states",
     )
     return parser.parse_args()
@@ -43,6 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    analysis_mode = ConflictAnalysisMode(args.mode)
     net = sumolib.net.readNet(str(args.net), withConnections=True, withFoes=True)
     node = net.getNode(args.tls)
     links = _collect_tls_links(node, args.tls)
@@ -55,7 +62,7 @@ def main() -> None:
             f"{link.approach:5s} {link.direction:1s} -> {link.outgoing_edge_id}"
         )
 
-    if args.mode == "sumo-foes":
+    if analysis_mode == ConflictAnalysisMode.SUMO_FOES:
         phase_links = [
             TLLinkSpec(
                 link.tl_link_index,
@@ -74,7 +81,7 @@ def main() -> None:
         n_links=n_links,
         are_foes=node.areFoes,
     )
-    print(f"\n{args.mode} maximal phase states: {len(states)}")
+    print(f"\n{analysis_mode.value} maximal phase states: {len(states)}")
     for state in states:
         enabled = [str(idx) for idx, char in enumerate(state) if char == "G"]
         print(f"{state}  links={','.join(enabled)}")
