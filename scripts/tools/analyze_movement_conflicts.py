@@ -19,11 +19,12 @@ sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
 
 import sumolib  # noqa: E402
 
-from scripts.generate_grid_network import (  # noqa: E402
-    TLLinkSpec,
-    _approach_name,
+from scripts.generate_grid_network import _approach_name  # noqa: E402
+from src.movement.phase_synthesis import (  # noqa: E402
+    TrafficLightLinkSpec,
     build_conflict_phase_states,
 )
+from src.movement.schema import LaneId  # noqa: E402
 
 
 class ConflictAnalysisMode(str, Enum):
@@ -53,23 +54,24 @@ def main() -> None:
     net = sumolib.net.readNet(str(args.net), withConnections=True, withFoes=True)
     node = net.getNode(args.tls)
     links = _collect_tls_links(node, args.tls)
-    n_links = max(link.tl_link_index for link in links) + 1
+    number_of_links = max(link.traffic_light_link_index for link in links) + 1
 
     print(f"TLS {args.tls}: {len(links)} controlled movements")
-    for link in sorted(links, key=lambda item: item.tl_link_index):
+    for link in sorted(links, key=lambda item: item.traffic_light_link_index):
         print(
-            f"{link.tl_link_index:2d} request={link.request_index:2d} "
+            f"{link.traffic_light_link_index:2d} request={link.request_index:2d} "
             f"{link.approach:5s} {link.direction:1s} -> {link.outgoing_edge_id}"
         )
 
     if analysis_mode == ConflictAnalysisMode.SUMO_FOES:
         phase_links = [
-            TLLinkSpec(
-                link.tl_link_index,
-                link.approach,
-                link.direction,
-                None,
-                link.request_index,
+            TrafficLightLinkSpec(
+                traffic_light_link_index=link.traffic_light_link_index,
+                approach=link.approach,
+                direction=link.direction,
+                incoming_lane_id=link.incoming_lane_id,
+                outgoing_lane_id=link.outgoing_lane_id,
+                request_index=link.request_index,
             )
             for link in links
         ]
@@ -78,7 +80,7 @@ def main() -> None:
 
     states = build_conflict_phase_states(
         phase_links,
-        n_links=n_links,
+        number_of_links=number_of_links,
         are_foes=node.areFoes,
     )
     print(f"\n{analysis_mode.value} maximal phase states: {len(states)}")
@@ -87,8 +89,8 @@ def main() -> None:
         print(f"{state}  links={','.join(enabled)}")
 
 
-def _collect_tls_links(node, tls_id: str) -> list[TLLinkSpec]:
-    links: list[TLLinkSpec] = []
+def _collect_tls_links(node, tls_id: str) -> list[TrafficLightLinkSpec]:
+    links: list[TrafficLightLinkSpec] = []
     for incoming in node.getIncoming():
         approach = _approach_name(incoming.getFromNode().getID(), node.getID())
         for outgoing in incoming.getOutgoing():
@@ -100,15 +102,17 @@ def _collect_tls_links(node, tls_id: str) -> list[TLLinkSpec]:
                 if tl_idx < 0 or request_idx < 0:
                     continue
                 links.append(
-                    TLLinkSpec(
-                        tl_link_index=tl_idx,
+                    TrafficLightLinkSpec(
+                        traffic_light_link_index=tl_idx,
                         approach=approach,
                         direction=conn.getDirection().lower(),
+                        incoming_lane_id=LaneId(conn.getFromLane().getID()),
+                        outgoing_lane_id=LaneId(conn.getToLane().getID()),
                         outgoing_edge_id=conn.getTo().getID(),
                         request_index=request_idx,
                     )
                 )
-    return sorted(links, key=lambda link: link.tl_link_index)
+    return sorted(links, key=lambda link: link.traffic_light_link_index)
 
 
 if __name__ == "__main__":

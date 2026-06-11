@@ -2,20 +2,22 @@
 from __future__ import annotations
 
 import argparse
-import itertools
 import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from xml.dom import minidom
 
-
-class PhaseGenerationMode(str, Enum):
-    CONFLICT_EDGE = "conflict-edge"
-    PROTECTED = "protected"
+from src.movement.phase_synthesis import (
+    PhaseGenerationMode,
+    TrafficLightLinkSpec,
+    build_conflict_phase_states as synthesize_conflict_phase_states,
+    build_protected_phase_states as synthesize_protected_phase_states,
+    synthesize_traffic_light_program,
+)
+from src.movement.schema import LaneId, TrafficLightId
 
 
 @dataclass(frozen=True)
@@ -55,19 +57,6 @@ class FlowSpec:
     begin: int
     end: int
     probability: float
-
-
-@dataclass(frozen=True)
-class TLLinkSpec:
-    tl_link_index: int
-    approach: str
-    direction: str
-    outgoing_edge_id: str | None = None
-    request_index: int | None = None
-
-    @property
-    def axis(self) -> str:
-        return "vertical" if self.approach in {"north", "south"} else "horizontal"
 
 
 def node_id(row: int, col: int) -> str:
@@ -208,134 +197,18 @@ def build_route_flows(
 
 
 def build_safe_phase_states(
-    links: list[TLLinkSpec],
+    links: list[TrafficLightLinkSpec],
     n_links: int,
 ) -> list[str]:
-    """Build conflict-valid protected movement phases for generated grids.
-
-    Link fields are `(tl_link_index, approach, direction)`, where approach is
-    `north/south/east/west` and direction is SUMO-style `r/s/l`.
-    """
-    phase_rules: list[list[tuple[set[str], set[str]]]] = [
-        [({"north", "south"}, {"r", "s"})],
-        [({"north", "south"}, {"l"}), ({"east", "west"}, {"r"})],
-        [({"east", "west"}, {"r", "s"})],
-        [({"east", "west"}, {"l"}), ({"north", "south"}, {"r"})],
-        [({"north"}, {"r", "s", "l"})],
-        [({"south"}, {"r", "s", "l"})],
-        [({"east"}, {"r", "s", "l"})],
-        [({"west"}, {"r", "s", "l"})],
-    ]
-    states: list[str] = []
-    for rule in phase_rules:
-        chars = ["r"] * n_links
-        phase_links = [
-            link for link in links
-            if any(
-                link.approach in approaches and link.direction.lower() in directions
-                for approaches, directions in rule
-            )
-        ]
-        if _has_movement_conflict(phase_links):
-            continue
-        for link in phase_links:
-            chars[link.tl_link_index] = "G"
-        state = "".join(chars)
-        if "G" in state and state not in states:
-            states.append(state)
-    return states
+    return [str(state) for state in synthesize_protected_phase_states(links, n_links)]
 
 
 def build_conflict_phase_states(
-    links: list[TLLinkSpec],
+    links: list[TrafficLightLinkSpec],
     n_links: int,
     are_foes,
 ) -> list[str]:
-    """Build maximal phases from SUMO foes plus same-outgoing-edge conflicts."""
-    indexed_links = sorted(links, key=lambda link: link.tl_link_index)
-    valid_sets: list[frozenset[int]] = []
-    for size in range(1, len(indexed_links) + 1):
-        for phase_links in itertools.combinations(indexed_links, size):
-            if _has_sumo_or_outgoing_edge_conflict(list(phase_links), are_foes):
-                continue
-            valid_sets.append(frozenset(link.tl_link_index for link in phase_links))
-
-    maximal_sets = [
-        candidate for candidate in valid_sets
-        if not any(candidate < other for other in valid_sets)
-    ]
-    states: list[str] = []
-    for phase_set in sorted(maximal_sets, key=lambda item: (-len(item), sorted(item))):
-        chars = ["r"] * n_links
-        for tl_idx in phase_set:
-            chars[tl_idx] = "G"
-        state = "".join(chars)
-        if state not in states:
-            states.append(state)
-    return states
-
-
-def _has_sumo_or_outgoing_edge_conflict(links: list[TLLinkSpec], are_foes) -> bool:
-    for idx, first in enumerate(links):
-        for second in links[idx + 1:]:
-            if _sumo_requests_are_foes(first, second, are_foes):
-                return True
-            if (
-                first.outgoing_edge_id is not None
-                and first.outgoing_edge_id == second.outgoing_edge_id
-            ):
-                return True
-    return False
-
-
-def _sumo_requests_are_foes(first: TLLinkSpec, second: TLLinkSpec, are_foes) -> bool:
-    first_request = (
-        first.request_index
-        if first.request_index is not None
-        else first.tl_link_index
-    )
-    second_request = (
-        second.request_index
-        if second.request_index is not None
-        else second.tl_link_index
-    )
-    return bool(
-        are_foes(first_request, second_request)
-        or are_foes(second_request, first_request)
-    )
-
-
-def _has_movement_conflict(links: list[TLLinkSpec]) -> bool:
-    for idx, first in enumerate(links):
-        for second in links[idx + 1:]:
-            if _movements_conflict(first, second):
-                return True
-    return False
-
-
-def _movements_conflict(first: TLLinkSpec, second: TLLinkSpec) -> bool:
-    if first.approach == second.approach:
-        return False
-
-    first_direction = first.direction.lower()
-    second_direction = second.direction.lower()
-    if _opposite_approaches(first.approach, second.approach):
-        return not (
-            first_direction in {"r", "s"} and second_direction in {"r", "s"}
-            or first_direction == "l" and second_direction == "l"
-        )
-
-    return not (
-        first_direction == "l" and second_direction == "r"
-        or first_direction == "r" and second_direction == "l"
-    )
-
-
-def _opposite_approaches(first: str, second: str) -> bool:
-    return {first, second} in (
-        {"north", "south"},
-        {"east", "west"},
-    )
+    return [str(state) for state in synthesize_conflict_phase_states(links, n_links, are_foes)]
 
 
 def generate_grid(
@@ -602,7 +475,7 @@ def _write_tll_from_net(
     for node in sorted(net.getNodes(), key=lambda item: item.getID()):
         if node.getType() != "traffic_light":
             continue
-        link_specs: list[TLLinkSpec] = []
+        link_specs: list[TrafficLightLinkSpec] = []
         for incoming in node.getIncoming():
             approach = _approach_name(incoming.getFromNode().getID(), node.getID())
             for outgoing in incoming.getOutgoing():
@@ -612,25 +485,26 @@ def _write_tll_from_net(
                         continue
                     request_idx = conn.getJunctionIndex()
                     link_specs.append(
-                        TLLinkSpec(
-                            tl_link_index=tl_idx,
+                        TrafficLightLinkSpec(
+                            traffic_light_link_index=tl_idx,
                             approach=approach,
                             direction=conn.getDirection().lower(),
+                            incoming_lane_id=LaneId(conn.getFromLane().getID()),
+                            outgoing_lane_id=LaneId(conn.getToLane().getID()),
                             outgoing_edge_id=conn.getTo().getID(),
                             request_index=request_idx if request_idx >= 0 else None,
                         )
                     )
         if not link_specs:
             continue
-        n_links = max(link.tl_link_index for link in link_specs) + 1
-        if phase_mode == PhaseGenerationMode.CONFLICT_EDGE:
-            green_states = build_conflict_phase_states(
-                link_specs,
-                n_links,
-                are_foes=node.areFoes,
-            )
-        else:
-            green_states = build_safe_phase_states(link_specs, n_links)
+        synthesized_program = synthesize_traffic_light_program(
+            traffic_light_id=TrafficLightId(node.getID()),
+            links=link_specs,
+            mode=phase_mode,
+            are_foes=node.areFoes,
+        )
+        green_states = [str(phase.state) for phase in synthesized_program.selectable_phases]
+        n_links = max(link.traffic_light_link_index for link in link_specs) + 1
         all_red = "r" * n_links
         logic = ET.SubElement(
             root,

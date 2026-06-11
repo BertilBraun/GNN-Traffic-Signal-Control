@@ -5,13 +5,15 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts.generate_grid_network import (
-    TLLinkSpec,
     build_connection_specs,
-    build_conflict_phase_states,
     build_edge_specs,
     build_node_specs,
     build_route_flows,
-    build_safe_phase_states,
+)
+from src.movement.phase_synthesis import (
+    TrafficLightLinkSpec,
+    build_conflict_phase_states,
+    build_protected_phase_states,
 )
 
 
@@ -114,15 +116,15 @@ def test_default_route_flows_include_bottom_and_right_boundary_sources() -> None
 
 def test_safe_phase_states_separate_left_turns_from_through_movements() -> None:
     links = [
-        TLLinkSpec(0, "north", "r"),
-        TLLinkSpec(1, "north", "s"),
-        TLLinkSpec(2, "north", "l"),
-        TLLinkSpec(3, "east", "r"),
-        TLLinkSpec(4, "east", "s"),
-        TLLinkSpec(5, "east", "l"),
+        TrafficLightLinkSpec(0, "north", "r"),
+        TrafficLightLinkSpec(1, "north", "s"),
+        TrafficLightLinkSpec(2, "north", "l"),
+        TrafficLightLinkSpec(3, "east", "r"),
+        TrafficLightLinkSpec(4, "east", "s"),
+        TrafficLightLinkSpec(5, "east", "l"),
     ]
 
-    states = build_safe_phase_states(links, n_links=6)
+    states = [str(state) for state in build_protected_phase_states(links, number_of_links=6)]
 
     assert states == [
         "GGrrrr",
@@ -136,21 +138,21 @@ def test_safe_phase_states_separate_left_turns_from_through_movements() -> None:
 
 def test_safe_phase_states_include_richer_conflict_valid_four_way_candidates() -> None:
     links = [
-        TLLinkSpec(0, "north", "r"),
-        TLLinkSpec(1, "north", "s"),
-        TLLinkSpec(2, "north", "l"),
-        TLLinkSpec(3, "south", "r"),
-        TLLinkSpec(4, "south", "s"),
-        TLLinkSpec(5, "south", "l"),
-        TLLinkSpec(6, "east", "r"),
-        TLLinkSpec(7, "east", "s"),
-        TLLinkSpec(8, "east", "l"),
-        TLLinkSpec(9, "west", "r"),
-        TLLinkSpec(10, "west", "s"),
-        TLLinkSpec(11, "west", "l"),
+        TrafficLightLinkSpec(0, "north", "r"),
+        TrafficLightLinkSpec(1, "north", "s"),
+        TrafficLightLinkSpec(2, "north", "l"),
+        TrafficLightLinkSpec(3, "south", "r"),
+        TrafficLightLinkSpec(4, "south", "s"),
+        TrafficLightLinkSpec(5, "south", "l"),
+        TrafficLightLinkSpec(6, "east", "r"),
+        TrafficLightLinkSpec(7, "east", "s"),
+        TrafficLightLinkSpec(8, "east", "l"),
+        TrafficLightLinkSpec(9, "west", "r"),
+        TrafficLightLinkSpec(10, "west", "s"),
+        TrafficLightLinkSpec(11, "west", "l"),
     ]
 
-    states = build_safe_phase_states(links, n_links=12)
+    states = [str(state) for state in build_protected_phase_states(links, number_of_links=12)]
 
     assert states == [
         "GGrGGrrrrrrr",
@@ -166,12 +168,12 @@ def test_safe_phase_states_include_richer_conflict_valid_four_way_candidates() -
 
 def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
     links = [
-        TLLinkSpec(0, "north", "r", "west_out", 0),
-        TLLinkSpec(1, "north", "s", "south_out", 1),
-        TLLinkSpec(2, "north", "l", "east_out", 2),
-        TLLinkSpec(3, "east", "r", "north_out", 3),
-        TLLinkSpec(4, "east", "s", "west_out", 4),
-        TLLinkSpec(5, "east", "l", "south_out", 5),
+        TrafficLightLinkSpec(0, "north", "r", outgoing_edge_id="west_out", request_index=0),
+        TrafficLightLinkSpec(1, "north", "s", outgoing_edge_id="south_out", request_index=1),
+        TrafficLightLinkSpec(2, "north", "l", outgoing_edge_id="east_out", request_index=2),
+        TrafficLightLinkSpec(3, "east", "r", outgoing_edge_id="north_out", request_index=3),
+        TrafficLightLinkSpec(4, "east", "s", outgoing_edge_id="west_out", request_index=4),
+        TrafficLightLinkSpec(5, "east", "l", outgoing_edge_id="south_out", request_index=5),
     ]
     sumo_foes = {
         frozenset({1, 5}),
@@ -181,7 +183,14 @@ def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
     def are_foes(first: int, second: int) -> bool:
         return frozenset({first, second}) in sumo_foes
 
-    states = build_conflict_phase_states(links, n_links=6, are_foes=are_foes)
+    states = [
+        str(state)
+        for state in build_conflict_phase_states(
+            links,
+            number_of_links=6,
+            are_foes=are_foes,
+        )
+    ]
 
     assert states == [
         "GGGGrr",
