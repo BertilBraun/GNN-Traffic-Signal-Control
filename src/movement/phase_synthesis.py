@@ -4,7 +4,6 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 
 from .schema import (
     ControlledMovement,
@@ -17,11 +16,6 @@ from .schema import (
     TrafficLightProgram,
     TrafficLightId,
 )
-
-
-class PhaseGenerationMode(str, Enum):
-    CONFLICT_EDGE = "conflict-edge"
-    PROTECTED = "protected"
 
 
 @dataclass(frozen=True)
@@ -42,14 +36,12 @@ class TrafficLightLinkSpec:
 def synthesize_traffic_light_program(
     traffic_light_id: TrafficLightId,
     links: list[TrafficLightLinkSpec],
-    mode: PhaseGenerationMode,
     are_foes: Callable[[int, int], bool],
 ) -> TrafficLightProgram:
     number_of_links = max(link.traffic_light_link_index for link in links) + 1
-    phase_states = synthesize_phase_states(
+    phase_states = build_conflict_phase_states(
         links=links,
         number_of_links=number_of_links,
-        mode=mode,
         are_foes=are_foes,
     )
     movements = tuple(
@@ -78,63 +70,6 @@ def synthesize_traffic_light_program(
         movements=movements,
         selectable_phases=selectable_phases,
     )
-
-
-def synthesize_phase_states(
-    links: list[TrafficLightLinkSpec],
-    number_of_links: int,
-    mode: PhaseGenerationMode,
-    are_foes: Callable[[int, int], bool],
-) -> tuple[PhaseState, ...]:
-    match mode:
-        case PhaseGenerationMode.CONFLICT_EDGE:
-            return build_conflict_phase_states(
-                links=links,
-                number_of_links=number_of_links,
-                are_foes=are_foes,
-            )
-        case PhaseGenerationMode.PROTECTED:
-            return build_protected_phase_states(
-                links=links,
-                number_of_links=number_of_links,
-            )
-
-
-def build_protected_phase_states(
-    links: list[TrafficLightLinkSpec],
-    number_of_links: int,
-) -> tuple[PhaseState, ...]:
-    phase_rules: list[list[tuple[set[str], set[str]]]] = [
-        [({"north", "south"}, {"r", "s"})],
-        [({"north", "south"}, {"l"}), ({"east", "west"}, {"r"})],
-        [({"east", "west"}, {"r", "s"})],
-        [({"east", "west"}, {"l"}), ({"north", "south"}, {"r"})],
-        [({"north"}, {"r", "s", "l"})],
-        [({"south"}, {"r", "s", "l"})],
-        [({"east"}, {"r", "s", "l"})],
-        [({"west"}, {"r", "s", "l"})],
-    ]
-    states: list[PhaseState] = []
-    for rule in phase_rules:
-        chars = ["r"] * number_of_links
-        phase_links = [
-            link for link in links
-            if any(
-                link.approach in approaches and link.direction.lower() in directions
-                for approaches, directions in rule
-            )
-        ]
-        if (
-            _has_movement_conflict(phase_links)
-            or _partially_serves_shared_incoming_lane(phase_links, links)
-        ):
-            continue
-        for link in phase_links:
-            chars[link.traffic_light_link_index] = "G"
-        state = PhaseState("".join(chars))
-        if "G" in state and state not in states:
-            states.append(state)
-    return tuple(states)
 
 
 def _required_lane_id(
@@ -245,40 +180,4 @@ def _sumo_requests_are_foes(
     return bool(
         are_foes(first_request, second_request)
         or are_foes(second_request, first_request)
-    )
-
-
-def _has_movement_conflict(links: list[TrafficLightLinkSpec]) -> bool:
-    for index, first in enumerate(links):
-        for second in links[index + 1:]:
-            if _movements_conflict(first, second):
-                return True
-    return False
-
-
-def _movements_conflict(
-    first: TrafficLightLinkSpec,
-    second: TrafficLightLinkSpec,
-) -> bool:
-    if first.approach == second.approach:
-        return False
-
-    first_direction = first.direction.lower()
-    second_direction = second.direction.lower()
-    if _opposite_approaches(first.approach, second.approach):
-        return not (
-            first_direction in {"r", "s"} and second_direction in {"r", "s"}
-            or first_direction == "l" and second_direction == "l"
-        )
-
-    return not (
-        first_direction == "l" and second_direction == "r"
-        or first_direction == "r" and second_direction == "l"
-    )
-
-
-def _opposite_approaches(first: str, second: str) -> bool:
-    return {first, second} in (
-        {"north", "south"},
-        {"east", "west"},
     )

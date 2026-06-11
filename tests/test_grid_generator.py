@@ -13,7 +13,6 @@ from scripts.generate_grid_network import (
 from src.movement.phase_synthesis import (
     TrafficLightLinkSpec,
     build_conflict_phase_states,
-    build_protected_phase_states,
 )
 
 
@@ -112,58 +111,6 @@ def test_default_route_flows_include_bottom_and_right_boundary_sources() -> None
 
     assert any(edge.startswith("N2_2_to_") for edge in source_edges)
     assert any(edge.endswith("_to_N2_2") for edge in destination_edges)
-
-
-def test_safe_phase_states_separate_left_turns_from_through_movements() -> None:
-    links = [
-        TrafficLightLinkSpec(0, "north", "r"),
-        TrafficLightLinkSpec(1, "north", "s"),
-        TrafficLightLinkSpec(2, "north", "l"),
-        TrafficLightLinkSpec(3, "east", "r"),
-        TrafficLightLinkSpec(4, "east", "s"),
-        TrafficLightLinkSpec(5, "east", "l"),
-    ]
-
-    states = [str(state) for state in build_protected_phase_states(links, number_of_links=6)]
-
-    assert states == [
-        "GGrrrr",
-        "rrGGrr",
-        "rrrGGr",
-        "GrrrrG",
-        "GGGrrr",
-        "rrrGGG",
-    ]
-
-
-def test_safe_phase_states_include_richer_conflict_valid_four_way_candidates() -> None:
-    links = [
-        TrafficLightLinkSpec(0, "north", "r"),
-        TrafficLightLinkSpec(1, "north", "s"),
-        TrafficLightLinkSpec(2, "north", "l"),
-        TrafficLightLinkSpec(3, "south", "r"),
-        TrafficLightLinkSpec(4, "south", "s"),
-        TrafficLightLinkSpec(5, "south", "l"),
-        TrafficLightLinkSpec(6, "east", "r"),
-        TrafficLightLinkSpec(7, "east", "s"),
-        TrafficLightLinkSpec(8, "east", "l"),
-        TrafficLightLinkSpec(9, "west", "r"),
-        TrafficLightLinkSpec(10, "west", "s"),
-        TrafficLightLinkSpec(11, "west", "l"),
-    ]
-
-    states = [str(state) for state in build_protected_phase_states(links, number_of_links=12)]
-
-    assert states == [
-        "GGrGGrrrrrrr",
-        "rrGrrGGrrGrr",
-        "rrrrrrGGrGGr",
-        "GrrGrrrrGrrG",
-        "GGGrrrrrrrrr",
-        "rrrGGGrrrrrr",
-        "rrrrrrGGGrrr",
-        "rrrrrrrrrGGG",
-    ]
 
 
 def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:

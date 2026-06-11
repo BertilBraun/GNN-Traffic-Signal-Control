@@ -14,10 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.movement.phase_synthesis import (
-    PhaseGenerationMode,
     TrafficLightLinkSpec,
     build_conflict_phase_states as synthesize_conflict_phase_states,
-    build_protected_phase_states as synthesize_protected_phase_states,
     synthesize_traffic_light_program,
 )
 from src.movement.schema import LaneId, TrafficLightId
@@ -199,13 +197,6 @@ def build_route_flows(
     return flows
 
 
-def build_safe_phase_states(
-    links: list[TrafficLightLinkSpec],
-    n_links: int,
-) -> list[str]:
-    return [str(state) for state in synthesize_protected_phase_states(links, n_links)]
-
-
 def build_conflict_phase_states(
     links: list[TrafficLightLinkSpec],
     n_links: int,
@@ -221,7 +212,6 @@ def generate_grid(
     spacing: float = 200.0,
     speed: float = 13.89,
     netconvert: bool = True,
-    phase_mode: PhaseGenerationMode = PhaseGenerationMode.CONFLICT_EDGE,
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
     edges = build_edge_specs(nodes, speed=speed)
@@ -242,8 +232,7 @@ def generate_grid(
 
     if netconvert:
         _run_netconvert(nod_path, edg_path, con_path, net_path)
-
-    _write_tll_from_net(net_path, out_dir / "grid.tll.xml", phase_mode=phase_mode)
+        _write_tll_from_net(net_path, out_dir / "grid.tll.xml")
     _print_summary(nodes, edges, connections, net_path)
     return net_path
 
@@ -462,7 +451,6 @@ def _run_netconvert(nod_path: Path, edg_path: Path, con_path: Path, net_path: Pa
 def _write_tll_from_net(
     net_path: Path,
     tll_path: Path,
-    phase_mode: PhaseGenerationMode = PhaseGenerationMode.CONFLICT_EDGE,
 ) -> None:
     if "SUMO_HOME" not in os.environ:
         raise EnvironmentError("SUMO_HOME environment variable is required to generate traffic lights.")
@@ -472,7 +460,7 @@ def _write_tll_from_net(
     net = sumolib.net.readNet(
         str(net_path),
         withConnections=True,
-        withFoes=phase_mode == PhaseGenerationMode.CONFLICT_EDGE,
+        withFoes=True,
     )
     root = ET.Element("additional")
     for node in sorted(net.getNodes(), key=lambda item: item.getID()):
@@ -503,7 +491,6 @@ def _write_tll_from_net(
         synthesized_program = synthesize_traffic_light_program(
             traffic_light_id=TrafficLightId(node.getID()),
             links=link_specs,
-            mode=phase_mode,
             are_foes=node.areFoes,
         )
         green_states = [str(phase.state) for phase in synthesized_program.selectable_phases]
@@ -564,12 +551,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--spacing", type=float, default=200.0, help="Distance between adjacent nodes in metres")
     parser.add_argument("--speed", type=float, default=13.89, help="Default speed in m/s")
     parser.add_argument("--no-netconvert", action="store_true", help="Only write plain XML files")
-    parser.add_argument(
-        "--phase-mode",
-        choices=tuple(mode.value for mode in PhaseGenerationMode),
-        default=PhaseGenerationMode.CONFLICT_EDGE.value,
-        help="How to synthesize generated grid traffic-light phases",
-    )
     return parser.parse_args()
 
 
@@ -582,7 +563,6 @@ def main() -> None:
         spacing=args.spacing,
         speed=args.speed,
         netconvert=not args.no_netconvert,
-        phase_mode=PhaseGenerationMode(args.phase_mode),
     )
 
 

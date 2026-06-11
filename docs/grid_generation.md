@@ -3,10 +3,10 @@
 Generate a dedicated-lane 6x6 SUMO grid:
 
 ```powershell
-python scripts\generate_grid_network.py --rows 6 --cols 6 --out configs\grid_6x6_dedicated --phase-mode conflict-edge
+python scripts\generate_grid_network.py --rows 6 --cols 6 --out configs\grid_6x6_dedicated
 ```
 
-`conflict-edge` synthesizes maximal green phases from SUMO movement foes plus an additional conflict when two movements enter the same outgoing edge. Use `--phase-mode protected` to generate the smaller hand-defined protected phase set.
+Grid generation synthesizes maximal green phases from SUMO movement foes plus an additional conflict when movements from different incoming lanes enter the same outgoing edge.
 
 Run the movement-aware max-pressure controller headless:
 
@@ -37,6 +37,6 @@ python scripts\tools\analyze_movement_conflicts.py --net configs\grid_3x3_dedica
 For the smaller 3x3 sample:
 
 ```powershell
-python scripts\generate_grid_network.py --rows 3 --cols 3 --out configs\grid_3x3_dedicated --phase-mode conflict-edge
+python scripts\generate_grid_network.py --rows 3 --cols 3 --out configs\grid_3x3_dedicated
 python scripts\run.py --cfg configs\grid_3x3_dedicated\grid.sumocfg --gui --verbose
 ```
