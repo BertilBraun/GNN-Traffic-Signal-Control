@@ -1,4 +1,5 @@
 """Collect movement-score imitation samples from SUMO."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +14,7 @@ import sumolib  # noqa: E402
 import traci  # noqa: E402
 
 from src.movement.dataset import build_dataset_sample, save_jsonl_samples  # noqa: E402
+from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
     MovementFeatureFrame,
@@ -29,10 +31,10 @@ def resolve_sumocfg_net_path(cfg_path: str | Path) -> Path:
     """Resolve the net-file referenced by a SUMO config."""
     cfg = Path(cfg_path)
     root = ET.parse(cfg).getroot()
-    net_file = root.find("./input/net-file")
-    if net_file is None or "value" not in net_file.attrib:
-        raise ValueError(f"{cfg} does not define input/net-file.")
-    net_path = Path(net_file.attrib["value"])
+    net_file = root.find('./input/net-file')
+    if net_file is None or 'value' not in net_file.attrib:
+        raise ValueError(f'{cfg} does not define input/net-file.')
+    net_path = Path(net_file.attrib['value'])
     if not net_path.is_absolute():
         net_path = cfg.parent / net_path
     return net_path
@@ -47,7 +49,7 @@ def lane_inputs_from_net(
     lane_geometries: dict[str, LaneGroupGeometry] = {}
     for edge in net.getEdges():
         edge_id = edge.getID()
-        if edge_id.startswith(":"):
+        if edge_id.startswith(':'):
             continue
         lanes = tuple(lane.getID() for lane in edge.getLanes())
         lane_ids_by_edge[edge_id] = lanes
@@ -82,13 +84,11 @@ def graph_max_pressure_scores_from_features(
 ) -> tuple[float, ...]:
     """Compute graph-level max-pressure scores from visible LaneGroup features."""
     halting_by_lane_group = {
-        row.lane_group_id: row.dynamic.halting_count_detector
-        for row in feature_frame.lane_group_rows
+        row.lane_group_id: row.dynamic.halting_count_detector for row in feature_frame.lane_group_rows
     }
     return tuple(
         float(
-            halting_by_lane_group[movement.input_lane_group_id]
-            - halting_by_lane_group[movement.output_lane_group_id]
+            halting_by_lane_group[movement.input_lane_group_id] - halting_by_lane_group[movement.output_lane_group_id]
         )
         for movement in graph.movements
     )
@@ -101,11 +101,21 @@ def collect_samples(
     decision_interval: int,
     seed: int,
     gui: bool = False,
+    demand_scale: float = 1.0,
 ) -> int:
     """Run max-pressure control and write one sample per decision time."""
     net_path = resolve_sumocfg_net_path(cfg_path)
     lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
-    runtime = MovementControlRuntime(cfg_path=cfg_path, gui=gui, seed=seed)
+    demand_route_files = route_files_for_demand_scale(
+        cfg_path=cfg_path,
+        demand_scale=demand_scale,
+    )
+    runtime = MovementControlRuntime(
+        cfg_path=cfg_path,
+        gui=gui,
+        seed=seed,
+        additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),
+    )
     samples = []
     try:
         runtime.start()
@@ -125,20 +135,17 @@ def collect_samples(
                         graph=graph,
                         feature_frame=feature_frame,
                         programs=runtime.programs,
-                        teacher_controlled_scores={
-                            tls_id: {}
-                            for tls_id in runtime.programs
-                        },
+                        teacher_controlled_scores={tls_id: {} for tls_id in runtime.programs},
                         teacher_graph_scores=graph_max_pressure_scores_from_features(
                             graph,
                             feature_frame,
                         ),
                         metadata={
-                            "cfg_path": str(cfg_path),
-                            "network_path": str(net_path),
-                            "seed": seed,
-                            "simulation_time_s": step,
-                            "teacher": "max-pressure",
+                            'cfg_path': str(cfg_path),
+                            'network_path': str(net_path),
+                            'seed': seed,
+                            'simulation_time_s': step,
+                            'teacher': 'max-pressure',
                         },
                     )
                 )
@@ -147,6 +154,7 @@ def collect_samples(
                 break
     finally:
         runtime.close()
+        demand_route_files.cleanup()
 
     save_jsonl_samples(output_path, samples)
     return len(samples)
@@ -154,15 +162,21 @@ def collect_samples(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect movement-score imitation samples.",
+        description='Collect movement-score imitation samples.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--cfg", required=True, type=Path, help="SUMO .sumocfg path")
-    parser.add_argument("--out", required=True, type=Path, help="Output JSONL path")
-    parser.add_argument("--steps", type=int, default=1800, help="Maximum simulation seconds")
-    parser.add_argument("--decision-interval", type=int, default=15, help="Sample interval")
-    parser.add_argument("--seed", type=int, default=42, help="SUMO random seed")
-    parser.add_argument("--gui", action="store_true", help="Run sumo-gui")
+    parser.add_argument('--cfg', required=True, type=Path, help='SUMO .sumocfg path')
+    parser.add_argument('--out', required=True, type=Path, help='Output JSONL path')
+    parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds')
+    parser.add_argument('--decision-interval', type=int, default=15, help='Sample interval')
+    parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
+    parser.add_argument(
+        '--demand-scale',
+        type=float,
+        default=1.0,
+        help='Multiplier applied to route-file flow demand at runtime',
+    )
+    parser.add_argument('--gui', action='store_true', help='Run sumo-gui')
     return parser.parse_args()
 
 
@@ -175,9 +189,10 @@ def main() -> None:
         decision_interval=args.decision_interval,
         seed=args.seed,
         gui=args.gui,
+        demand_scale=args.demand_scale,
     )
-    print(f"Wrote {count} samples to {args.out}")
+    print(f'Wrote {count} samples to {args.out}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

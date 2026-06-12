@@ -75,6 +75,7 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
             seed=7,
             num_hops=0,
         ),
+        observer=None,
     )
 
     assert result.final_loss < 0.05
@@ -110,6 +111,7 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
             seed=3,
             num_hops=1,
         ),
+        observer=None,
     )
 
     _model, metadata = load_movement_checkpoint(result.checkpoint_path)
@@ -129,6 +131,7 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
             seed=1,
             num_hops=0,
         ),
+        observer=None,
     )
 
     output = capsys.readouterr().out

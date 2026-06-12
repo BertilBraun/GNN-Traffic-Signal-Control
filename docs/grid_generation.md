@@ -6,6 +6,14 @@ Generate a dedicated-lane 6x6 SUMO grid:
 python scripts\generate_grid_network.py --rows 6 --cols 6 --out configs\grid_6x6_dedicated
 ```
 
+By default, generated grids use `900` total vehicles/hour distributed across all boundary route flows. This keeps larger grids from becoming overloaded just because they have more entry flows.
+
+Generate a lighter or heavier grid by choosing the total demand explicitly:
+
+```powershell
+python scripts\generate_grid_network.py --rows 4 --cols 4 --out configs\grid_4x4_dedicated --demand-vehicles-per-hour 700
+```
+
 Grid generation synthesizes maximal green phases from SUMO movement foes plus an additional conflict when movements from different incoming lanes enter the same outgoing edge.
 
 Run the movement-aware max-pressure controller headless:

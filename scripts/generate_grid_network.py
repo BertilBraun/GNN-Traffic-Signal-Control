@@ -231,7 +231,7 @@ def build_route_flows(
     edges: list[EdgeSpec],
     begin: int = 0,
     end: int = 3600,
-    probability: float = 0.03,
+    demand_vehicles_per_hour: float = 900.0,
 ) -> list[FlowSpec]:
     max_row, max_col = _internal_grid_bounds(edges)
     stub_source_edges = [edge for edge in edges if _is_stub_node(edge.from_node) and not _is_stub_node(edge.to_node)]
@@ -242,7 +242,7 @@ def build_route_flows(
             sink_edges=stub_sink_edges,
             begin=begin,
             end=end,
-            probability=probability,
+            demand_vehicles_per_hour=demand_vehicles_per_hour,
             max_row=max_row,
             max_col=max_col,
         )
@@ -254,7 +254,7 @@ def build_route_flows(
         sink_edges=corner_sink_edges,
         begin=begin,
         end=end,
-        probability=probability,
+        demand_vehicles_per_hour=demand_vehicles_per_hour,
         max_row=max_row,
         max_col=max_col,
     )
@@ -265,12 +265,19 @@ def _build_route_flows(
     sink_edges: list[EdgeSpec],
     begin: int,
     end: int,
-    probability: float,
+    demand_vehicles_per_hour: float,
     max_row: int,
     max_col: int,
 ) -> list[FlowSpec]:
+    if demand_vehicles_per_hour <= 0.0:
+        raise ValueError('demand_vehicles_per_hour must be positive.')
     flows: list[FlowSpec] = []
-    for source_index, source in enumerate(sorted(source_edges, key=lambda edge: edge.edge_id)):
+    sources = sorted(source_edges, key=lambda edge: edge.edge_id)
+    probability = _per_flow_probability(
+        flow_count=len(sources),
+        demand_vehicles_per_hour=demand_vehicles_per_hour,
+    )
+    for source_index, source in enumerate(sources):
         opposite = _opposite_boundary_edge(source, sink_edges, max_row, max_col)
         if opposite is None or opposite.edge_id == source.edge_id:
             continue
@@ -301,6 +308,7 @@ def generate_grid(
     output_dir: Path,
     spacing: float = 200.0,
     speed: float = 13.89,
+    demand_vehicles_per_hour: float = 900.0,
     netconvert: bool = True,
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
@@ -319,7 +327,13 @@ def generate_grid(
     _write_edges(edge_path, edges)
     _write_connections(connection_path, connections)
     _write_additional(output_dir / 'grid.add.xml')
-    _write_routes(output_dir / 'grid.rou.xml', build_route_flows(edges))
+    _write_routes(
+        output_dir / 'grid.rou.xml',
+        build_route_flows(
+            edges,
+            demand_vehicles_per_hour=demand_vehicles_per_hour,
+        ),
+    )
     _write_sumocfg(output_dir / 'grid.sumocfg')
 
     if netconvert:
@@ -454,6 +468,15 @@ def _write_routes(path: Path, flows: list[FlowSpec]) -> None:
             },
         )
     _write_xml(path, root)
+
+
+def _per_flow_probability(
+    flow_count: int,
+    demand_vehicles_per_hour: float,
+) -> float:
+    if flow_count <= 0:
+        return 0.0
+    return demand_vehicles_per_hour / 3600.0 / float(flow_count)
 
 
 def _opposite_boundary_edge(
@@ -689,6 +712,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--out', dest='output_dir', type=Path, required=True, help='Output directory')
     parser.add_argument('--spacing', type=float, default=200.0, help='Distance between adjacent nodes in metres')
     parser.add_argument('--speed', type=float, default=13.89, help='Default speed in m/s')
+    parser.add_argument(
+        '--demand-vehicles-per-hour',
+        type=float,
+        default=900.0,
+        help='Total generated route demand distributed across boundary flows',
+    )
     parser.add_argument('--no-netconvert', action='store_true', help='Only write plain XML files')
     return parser.parse_args()
 
@@ -701,6 +730,7 @@ def main() -> None:
         output_dir=args.output_dir,
         spacing=args.spacing,
         speed=args.speed,
+        demand_vehicles_per_hour=args.demand_vehicles_per_hour,
         netconvert=not args.no_netconvert,
     )
 

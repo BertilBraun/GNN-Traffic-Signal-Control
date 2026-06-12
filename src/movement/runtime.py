@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,6 +28,7 @@ class MovementControlRuntime:
     seed: int = 42
     yellow_duration: int = 3
     min_green_steps: int = 2
+    additional_sumo_args: Sequence[str] = ()
     programs: dict[str, TrafficLightProgram] = field(default_factory=dict, init=False)
     _transition_controller: SignalTransitionController = field(init=False)
     _min_green_controller: MinGreenController = field(init=False)
@@ -52,6 +54,7 @@ class MovementControlRuntime:
             '--no-step-log',
             'true',
         ]
+        command.extend(self.additional_sumo_args)
         traci.start(command)
         self.programs = extract_programs_from_trafficlight_api(traci.trafficlight)
         if not self.programs:

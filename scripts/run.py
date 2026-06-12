@@ -19,6 +19,7 @@ from scripts.collect_il_data import (  # noqa: E402
     resolve_sumocfg_net_path,
     vehicle_snapshots_from_api,
 )
+from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale  # noqa: E402
 from src.movement.dataset import build_dataset_sample  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneFeatureApi,
@@ -177,6 +178,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--device', default='cpu', help='Torch device for learned policy')
     parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
+    parser.add_argument(
+        '--demand-scale',
+        type=float,
+        default=1.0,
+        help='Multiplier applied to route-file flow demand at runtime',
+    )
     parser.add_argument('--verbose', action='store_true', help='Print selected phases each decision')
     return parser.parse_args()
 
@@ -187,12 +194,17 @@ def main() -> None:
     scoring_method = None if learned_policy else MovementScoringMethod(args.method)
     if learned_policy and args.checkpoint is None:
         raise SystemExit('--checkpoint is required when --method learned')
+    demand_route_files = route_files_for_demand_scale(
+        cfg_path=args.sumo_config_path,
+        demand_scale=args.demand_scale,
+    )
     runtime = MovementControlRuntime(
         cfg_path=args.sumo_config_path,
         gui=args.gui,
         seed=args.seed,
         yellow_duration=args.yellow_duration,
         min_green_steps=args.min_green_steps,
+        additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),
     )
 
     try:
@@ -252,6 +264,7 @@ def main() -> None:
                 break
     finally:
         runtime.close()
+        demand_route_files.cleanup()
 
 
 if __name__ == '__main__':

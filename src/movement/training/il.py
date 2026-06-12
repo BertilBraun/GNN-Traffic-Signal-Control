@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 import torch
 import torch.nn.functional as F
@@ -74,9 +74,28 @@ class MovementCheckpointMetadata:
     config: MovementILTrainingConfig
 
 
+@dataclass(frozen=True)
+class MovementILTrainingSnapshot:
+    epoch: int
+    epochs: int
+    loss: float
+    best_loss: float
+    model: MovementScorer
+    config: MovementILTrainingConfig
+    lane_feature_dim: int
+    movement_feature_dim: int
+    lane_normalizer: RunningNormalizer
+    movement_normalizer: RunningNormalizer
+
+
+class MovementILTrainingObserver(Protocol):
+    def on_epoch_completed(self, snapshot: MovementILTrainingSnapshot) -> None: ...
+
+
 def train_movement_il(
     samples: Sequence[MovementDatasetSample],
     config: MovementILTrainingConfig,
+    observer: MovementILTrainingObserver | None,
 ) -> MovementILTrainingResult:
     """Train a movement scorer on stored movement-score samples."""
     if not samples:
@@ -122,6 +141,21 @@ def train_movement_il(
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
         if _should_report_progress(epoch, config.epochs, config.progress_every):
             print(f'epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}')
+        if observer is not None:
+            observer.on_epoch_completed(
+                MovementILTrainingSnapshot(
+                    epoch=epoch + 1,
+                    epochs=config.epochs,
+                    loss=final_loss,
+                    best_loss=best_loss,
+                    model=model,
+                    config=config,
+                    lane_feature_dim=lane_feature_dim,
+                    movement_feature_dim=movement_feature_dim,
+                    lane_normalizer=lane_normalizer,
+                    movement_normalizer=movement_normalizer,
+                )
+            )
 
     checkpoint_dir = Path(config.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -179,9 +213,35 @@ def _checkpoint_payload(
 def train_movement_il_from_jsonl(
     dataset_path: Path | str,
     config: MovementILTrainingConfig,
+    observer: MovementILTrainingObserver | None,
 ) -> MovementILTrainingResult:
     """Load JSONL samples and train the movement scorer."""
-    return train_movement_il(load_jsonl_samples(dataset_path), config)
+    return train_movement_il(load_jsonl_samples(dataset_path), config, observer)
+
+
+def save_movement_checkpoint(
+    checkpoint_path: Path | str,
+    model: MovementScorer,
+    config: MovementILTrainingConfig,
+    lane_feature_dim: int,
+    movement_feature_dim: int,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    loss: float,
+) -> None:
+    """Save one movement policy checkpoint."""
+    path = Path(checkpoint_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint = _checkpoint_payload(
+        model_state=model.state_dict(),
+        config=config,
+        lane_feature_dim=lane_feature_dim,
+        movement_feature_dim=movement_feature_dim,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        loss=loss,
+    )
+    torch.save(checkpoint, path)
 
 
 def tensors_from_sample(

@@ -47,8 +47,14 @@ def test_train_il_cli_accepts_collection_args(monkeypatch) -> None:
             '12',
             '--decision-interval',
             '15',
+            '--demand-scale',
+            '0.5',
             '--seed',
             '7',
+            '--eval-cfg',
+            'configs/grid_3x3_dedicated/grid.sumocfg',
+            '--eval-demand-scale',
+            '0.75',
         ],
     )
 
@@ -58,4 +64,7 @@ def test_train_il_cli_accepts_collection_args(monkeypatch) -> None:
     assert args.sumo_config_path == Path('configs/grid_3x3_dedicated/grid.sumocfg')
     assert args.samples == 12
     assert args.decision_interval == 15
+    assert args.demand_scale == 0.5
     assert args.seed == 7
+    assert args.eval_cfg == Path('configs/grid_3x3_dedicated/grid.sumocfg')
+    assert args.eval_demand_scale == 0.75
