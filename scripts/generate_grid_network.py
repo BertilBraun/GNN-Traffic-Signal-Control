@@ -150,11 +150,19 @@ def build_edge_specs(
     speed: float = 13.89,
 ) -> list[EdgeSpec]:
     by_pos = {(node.row, node.col): node for node in nodes}
+    skip_perimeter_roads = any(_is_stub_node(node.node_id) for node in nodes)
+    max_row = max(node.row for node in nodes if not _is_stub_node(node.node_id))
+    max_col = max(node.col for node in nodes if not _is_stub_node(node.node_id))
     specs: list[EdgeSpec] = []
     for node in nodes:
         for d_row, d_col in ((0, 1), (1, 0)):
             other = by_pos.get((node.row + d_row, node.col + d_col))
             if other is None:
+                continue
+            if (
+                skip_perimeter_roads
+                and _is_perimeter_road(node, other, max_row, max_col)
+            ):
                 continue
             specs.append(_edge_between(node, other, speed))
             specs.append(_edge_between(other, node, speed))
@@ -522,6 +530,22 @@ def _internal_grid_bounds(edges: list[EdgeSpec]) -> tuple[int, int]:
 
 def _is_stub_node(node: str) -> bool:
     return node.startswith("S_")
+
+
+def _is_perimeter_road(
+    first: NodeSpec,
+    second: NodeSpec,
+    max_row: int,
+    max_col: int,
+) -> bool:
+    if _is_stub_node(first.node_id) or _is_stub_node(second.node_id):
+        return False
+    return (
+        first.row == second.row == 0
+        or first.row == second.row == max_row
+        or first.col == second.col == 0
+        or first.col == second.col == max_col
+    )
 
 
 def _opposite_stub_node(node: str, max_row: int, max_col: int) -> str:

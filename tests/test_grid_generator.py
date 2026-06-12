@@ -43,6 +43,24 @@ def test_edge_lanes_match_target_junction_complexity() -> None:
     assert lanes_by_edge["N0_1_to_N0_0"] == 2
 
 
+def test_edges_exclude_outer_perimeter_roads_when_stubs_are_present() -> None:
+    nodes = build_node_specs(rows=4, cols=4, spacing=200.0)
+    stubs = build_boundary_stub_specs(nodes, rows=4, cols=4, spacing=200.0)
+    edges = build_edge_specs(nodes + stubs)
+    edge_ids = {edge.edge_id for edge in edges}
+
+    assert "N0_0_to_N0_1" not in edge_ids
+    assert "N0_1_to_N0_0" not in edge_ids
+    assert "N3_2_to_N3_3" not in edge_ids
+    assert "N3_3_to_N3_2" not in edge_ids
+    assert "N1_0_to_N2_0" not in edge_ids
+    assert "N2_0_to_N1_0" not in edge_ids
+    assert "N1_3_to_N2_3" not in edge_ids
+    assert "N2_3_to_N1_3" not in edge_ids
+    assert "S_top_1_to_N0_1" in edge_ids
+    assert "N0_1_to_N1_1" in edge_ids
+
+
 def test_center_four_way_has_dedicated_left_straight_right_connections() -> None:
     nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
     edges = build_edge_specs(nodes)
