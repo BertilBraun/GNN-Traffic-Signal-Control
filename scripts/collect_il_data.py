@@ -10,11 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import sumolib  # noqa: E402
+import traci  # noqa: E402
 
 from src.movement.dataset import build_dataset_sample, save_jsonl_samples  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
     MovementControlState,
+    VehicleSnapshot,
     build_feature_frame,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
@@ -56,6 +58,23 @@ def lane_inputs_from_net(
     return lane_ids_by_edge, lane_geometries
 
 
+def vehicle_snapshots_from_api(vehicle_api) -> tuple[VehicleSnapshot, ...]:
+    """Capture current lane and next route edge for oracle movement demand."""
+    snapshots: list[VehicleSnapshot] = []
+    for vehicle_id in vehicle_api.getIDList():
+        route = tuple(vehicle_api.getRoute(vehicle_id))
+        route_index = int(vehicle_api.getRouteIndex(vehicle_id))
+        next_edge = route[route_index + 1] if route_index + 1 < len(route) else None
+        snapshots.append(
+            VehicleSnapshot(
+                vehicle_id=str(vehicle_id),
+                lane_id=vehicle_api.getLaneID(vehicle_id),
+                next_lane_id=next_edge,
+            )
+        )
+    return tuple(snapshots)
+
+
 def collect_samples(
     cfg_path: str | Path,
     output_path: str | Path,
@@ -84,7 +103,7 @@ def collect_samples(
                     lane_geometries=lane_geometries,
                     lane_api=runtime.lane_api,
                     control_state=MovementControlState(),
-                    vehicles=(),
+                    vehicles=vehicle_snapshots_from_api(traci.vehicle),
                 )
                 samples.append(
                     build_dataset_sample(
