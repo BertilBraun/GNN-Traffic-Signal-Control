@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from src.movement.dataset import MovementDatasetSample, load_jsonl_samples
-from src.movement.models.zero_hop import ZeroHopMovementScorer
+from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 
 
@@ -24,6 +24,7 @@ class ZeroHopTrainingConfig:
     loss: str = "huber"
     device: str = "cpu"
     progress_every: int = 0
+    num_hops: int = 0
 
 
 @dataclass(frozen=True)
@@ -46,13 +47,19 @@ def train_zero_hop_il(
     movement_normalizer = _fit_normalizer(sample.x_movement for sample in samples)
     lane_feature_dim = len(samples[0].x_lane[0])
     movement_feature_dim = len(samples[0].x_movement[0])
-    model = ZeroHopMovementScorer(
+    model = MovementScorer(
         lane_feature_dim=lane_feature_dim,
         movement_feature_dim=movement_feature_dim,
         hidden_dim=config.hidden_dim,
+        num_hops=config.num_hops,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     final_loss = 0.0
+    best_loss = float("inf")
+    best_state = {
+        key: value.detach().cpu().clone()
+        for key, value in model.state_dict().items()
+    }
     for epoch in range(config.epochs):
         total_loss = torch.zeros((), device=device)
         for sample in samples:
@@ -62,36 +69,79 @@ def train_zero_hop_il(
                 movement_normalizer=movement_normalizer,
                 device=device,
             )
-            prediction = model(x_lane=x_lane, x_movement=x_movement)
+            prediction = model(
+                x_lane=x_lane,
+                x_movement=x_movement,
+                edge_index_dict=edge_tensors_from_sample(sample, device=device),
+            )
             total_loss = total_loss + _loss(prediction, target, config.loss)
         loss = total_loss / len(samples)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         final_loss = float(loss.detach().cpu())
+        if final_loss < best_loss:
+            best_loss = final_loss
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
         if _should_report_progress(epoch, config.epochs, config.progress_every):
             print(f"epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}")
 
     checkpoint_dir = Path(config.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "zero_hop_il.pt"
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "config": asdict(config) | {"checkpoint_dir": str(config.checkpoint_dir)},
-            "lane_feature_dim": lane_feature_dim,
-            "movement_feature_dim": movement_feature_dim,
-            "hidden_dim": config.hidden_dim,
-            "lane_normalizer": _normalizer_state(lane_normalizer),
-            "movement_normalizer": _normalizer_state(movement_normalizer),
-        },
-        checkpoint_path,
+    last_checkpoint = _checkpoint_payload(
+        model_state=model.state_dict(),
+        config=config,
+        lane_feature_dim=lane_feature_dim,
+        movement_feature_dim=movement_feature_dim,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        loss=final_loss,
     )
+    best_checkpoint = _checkpoint_payload(
+        model_state=best_state,
+        config=config,
+        lane_feature_dim=lane_feature_dim,
+        movement_feature_dim=movement_feature_dim,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        loss=best_loss,
+    )
+    last_path = checkpoint_dir / "movement_policy_last.pt"
+    best_path = checkpoint_dir / "movement_policy_best.pt"
+    compatibility_path = checkpoint_dir / "zero_hop_il.pt"
+    torch.save(last_checkpoint, last_path)
+    torch.save(best_checkpoint, best_path)
+    torch.save(last_checkpoint, compatibility_path)
     return ZeroHopTrainingResult(
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=last_path,
         final_loss=final_loss,
         epochs=config.epochs,
     )
+
+
+def _checkpoint_payload(
+    model_state: dict[str, torch.Tensor],
+    config: ZeroHopTrainingConfig,
+    lane_feature_dim: int,
+    movement_feature_dim: int,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    loss: float,
+) -> dict[str, Any]:
+    return {
+        "model_state": model_state,
+        "config": asdict(config) | {"checkpoint_dir": str(config.checkpoint_dir)},
+        "lane_feature_dim": lane_feature_dim,
+        "movement_feature_dim": movement_feature_dim,
+        "hidden_dim": config.hidden_dim,
+        "num_hops": config.num_hops,
+        "lane_normalizer": _normalizer_state(lane_normalizer),
+        "movement_normalizer": _normalizer_state(movement_normalizer),
+        "loss": loss,
+    }
 
 
 def train_zero_hop_il_from_jsonl(
@@ -126,16 +176,29 @@ def tensors_from_sample(
     )
 
 
+def edge_tensors_from_sample(
+    sample: MovementDatasetSample,
+    device: torch.device | str = "cpu",
+) -> dict[str, torch.Tensor]:
+    """Convert stored typed edge lists to 2 x E long tensors."""
+    dev = torch.device(device)
+    return {
+        relation: torch.tensor(edges, dtype=torch.long, device=dev).t().contiguous()
+        for relation, edges in sample.edge_index_dict.items()
+    }
+
+
 def load_zero_hop_checkpoint(
     checkpoint_path: Path | str,
     device: str = "cpu",
-) -> tuple[ZeroHopMovementScorer, dict[str, Any]]:
-    """Load a zero-hop IL checkpoint."""
+) -> tuple[MovementScorer, dict[str, Any]]:
+    """Load a movement IL checkpoint."""
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    model = ZeroHopMovementScorer(
+    model = MovementScorer(
         lane_feature_dim=int(checkpoint["lane_feature_dim"]),
         movement_feature_dim=int(checkpoint["movement_feature_dim"]),
         hidden_dim=int(checkpoint["hidden_dim"]),
+        num_hops=int(checkpoint.get("num_hops", 0)),
     )
     model.load_state_dict(checkpoint["model_state"])
     model.to(torch.device(device))
@@ -143,6 +206,7 @@ def load_zero_hop_checkpoint(
         "lane_feature_dim": int(checkpoint["lane_feature_dim"]),
         "movement_feature_dim": int(checkpoint["movement_feature_dim"]),
         "hidden_dim": int(checkpoint["hidden_dim"]),
+        "num_hops": int(checkpoint.get("num_hops", 0)),
         "lane_normalizer": checkpoint["lane_normalizer"],
         "movement_normalizer": checkpoint["movement_normalizer"],
         "config": checkpoint.get("config", {}),

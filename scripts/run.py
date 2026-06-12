@@ -27,6 +27,7 @@ from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.runtime import LaneQueueApi, MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il import (  # noqa: E402
+    edge_tensors_from_sample,
     load_zero_hop_checkpoint,
     normalizer_from_state,
     tensors_from_sample,
@@ -110,7 +111,14 @@ def select_learned_control_states(
     )
     model.eval()
     with torch.no_grad():
-        scores = tuple(float(value) for value in model(x_lane, x_movement).cpu())
+        scores = tuple(
+            float(value)
+            for value in model(
+                x_lane,
+                x_movement,
+                edge_tensors_from_sample(sample, device=device),
+            ).cpu()
+        )
     return select_graph_score_control_states(
         programs=programs,
         graph=graph,
