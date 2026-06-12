@@ -1,13 +1,16 @@
 """Adapters between TraCI-style APIs and movement-aware control primitives."""
+
 from __future__ import annotations
 
-from typing import Any
+import traci._trafficlight
 
 from .extraction import extract_traffic_light_program
 from .schema import TrafficLightProgram
 
 
-def extract_programs_from_trafficlight_api(trafficlight_api: Any) -> dict[str, TrafficLightProgram]:
+def extract_programs_from_trafficlight_api(
+    trafficlight_api: traci._trafficlight.TrafficLightDomain,
+) -> dict[str, TrafficLightProgram]:
     """Extract movement-aware programs for every TraCI traffic light."""
     programs: dict[str, TrafficLightProgram] = {}
     for tls_id in trafficlight_api.getIDList():
@@ -16,11 +19,7 @@ def extract_programs_from_trafficlight_api(trafficlight_api: Any) -> dict[str, T
             continue
         active_program_id = trafficlight_api.getProgram(tls_id)
         logic = next(
-            (
-                candidate
-                for candidate in logics
-                if getattr(candidate, "programID", None) == active_program_id
-            ),
+            (candidate for candidate in logics if candidate.programID == active_program_id),
             logics[0],
         )
         phase_states = [phase.state for phase in logic.phases]

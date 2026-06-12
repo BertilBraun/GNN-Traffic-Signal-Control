@@ -1,13 +1,14 @@
 """Max-pressure movement scoring policy."""
+
 from __future__ import annotations
 
-from src.movement.runtime import LaneQueueApi
+from src.movement.features import LaneFeatureApi
 from src.movement.schema import MovementIndex, TrafficLightProgram
 
 
 def compute_max_pressure_scores(
     program: TrafficLightProgram,
-    lane_api: LaneQueueApi,
+    lane_api: LaneFeatureApi,
 ) -> dict[MovementIndex, float]:
     scores: dict[MovementIndex, float] = {}
     for movement in program.movements:

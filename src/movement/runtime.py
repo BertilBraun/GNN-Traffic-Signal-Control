@@ -5,24 +5,17 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
+from .features import LaneFeatureApi
 from .min_green import MinGreenController
-from .schema import LaneId, TrafficLightProgram
+from .schema import TrafficLightProgram
 from .sumo_adapter import extract_programs_from_trafficlight_api
 from .transition import SignalTransitionController
 
 if 'SUMO_HOME' not in os.environ:
-    raise EnvironmentError(
-        'SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.'
-    )
+    raise EnvironmentError('SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.')
 import traci
 import sumolib
-
-
-class LaneQueueApi(Protocol):
-    def getLastStepHaltingNumber(self, lane_id: LaneId) -> int:
-        ...
 
 
 @dataclass
@@ -39,13 +32,11 @@ class MovementControlRuntime:
     _min_green_controller: MinGreenController = field(init=False)
 
     def __post_init__(self) -> None:
-        self._transition_controller = SignalTransitionController(
-            yellow_duration=self.yellow_duration
-        )
+        self._transition_controller = SignalTransitionController(yellow_duration=self.yellow_duration)
         self._min_green_controller = MinGreenController(min_green_steps=self.min_green_steps)
 
     @property
-    def lane_api(self) -> LaneQueueApi:
+    def lane_api(self) -> LaneFeatureApi:
         self._require_started()
         return traci.lane
 

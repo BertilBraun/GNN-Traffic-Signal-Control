@@ -1,8 +1,9 @@
 """Feature extraction for movement-score learning samples."""
+
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from .graph_schema import GraphMovementId, LaneGroupId, MovementGraph
@@ -14,8 +15,15 @@ DEFAULT_SPEED_LIMIT_MPS = 13.89
 
 
 class LaneFeatureApi(Protocol):
-    def getLastStepHaltingNumber(self, lane_id: LaneId | str) -> int:
-        ...
+    def getLastStepHaltingNumber(self, lane_id: LaneId | str) -> int: ...
+
+    def getLastStepVehicleNumber(self, lane_id: LaneId | str) -> int: ...
+
+    def getLastStepLength(self, lane_id: LaneId | str) -> float: ...
+
+    def getLastStepOccupancy(self, lane_id: LaneId | str) -> float: ...
+
+    def getLastStepMeanSpeed(self, lane_id: LaneId | str) -> float: ...
 
 
 @dataclass(frozen=True)
@@ -121,7 +129,7 @@ def detector_capacity(
 ) -> float:
     """Approximate detector vehicle storage capacity."""
     if effective_vehicle_spacing_m <= 0.0:
-        raise ValueError("effective_vehicle_spacing_m must be positive.")
+        raise ValueError('effective_vehicle_spacing_m must be positive.')
     return max(0.0, float(detector_length_m) * float(num_lanes) / effective_vehicle_spacing_m)
 
 
@@ -150,10 +158,7 @@ def build_feature_frame(
         )
         for lane_group in graph.lane_groups
     )
-    lane_capacity_by_group = {
-        row.lane_group_id: row.static.estimated_storage_capacity
-        for row in lane_rows
-    }
+    lane_capacity_by_group = {row.lane_group_id: row.static.estimated_storage_capacity for row in lane_rows}
     movement_rows = tuple(
         _movement_row(
             graph=graph,
@@ -182,18 +187,29 @@ def _lane_group_row(
 ) -> LaneGroupFeatureRow:
     num_lanes = geometry.num_lanes if geometry is not None else max(1, len(lane_ids))
     length_m = geometry.length_m if geometry is not None else 0.0
-    speed_limit_mps = (
-        geometry.speed_limit_mps
-        if geometry is not None
-        else DEFAULT_SPEED_LIMIT_MPS
-    )
+    speed_limit_mps = geometry.speed_limit_mps if geometry is not None else DEFAULT_SPEED_LIMIT_MPS
     detector_length_m = detector_length(length_m)
     capacity = detector_capacity(detector_length_m, num_lanes)
-    vehicle_count = _sum_lane_metric(lane_api, "getLastStepVehicleNumber", lane_ids)
-    halting_count = _sum_lane_metric(lane_api, "getLastStepHaltingNumber", lane_ids)
-    queue_length_m = _sum_lane_metric(lane_api, "getLastStepLength", lane_ids)
-    occupancy = _mean_lane_metric(lane_api, "getLastStepOccupancy", lane_ids)
-    mean_speed = _mean_lane_metric(lane_api, "getLastStepMeanSpeed", lane_ids)
+    vehicle_count = _sum_lane_metric(
+        lane_ids=lane_ids,
+        lane_metric=lane_api.getLastStepVehicleNumber,
+    )
+    halting_count = _sum_lane_metric(
+        lane_ids=lane_ids,
+        lane_metric=lane_api.getLastStepHaltingNumber,
+    )
+    queue_length_m = _sum_lane_metric(
+        lane_ids=lane_ids,
+        lane_metric=lane_api.getLastStepLength,
+    )
+    occupancy = _mean_lane_metric(
+        lane_ids=lane_ids,
+        lane_metric=lane_api.getLastStepOccupancy,
+    )
+    mean_speed = _mean_lane_metric(
+        lane_ids=lane_ids,
+        lane_metric=lane_api.getLastStepMeanSpeed,
+    )
     vehicle_count_norm = _safe_div(vehicle_count, capacity)
     queue_length_norm = _safe_div(queue_length_m, detector_length_m)
     saturation = 1.0 if vehicle_count_norm >= 0.95 or queue_length_norm >= 0.95 else 0.0
@@ -251,7 +267,7 @@ def _movement_row(
     previous_enabled = set(control_state.previous_enabled_movement_ids)
     time_since_enabled = control_state.time_since_enabled_s or {}
     static = StaticMovementFeatures(
-        turn_type="unknown",
+        turn_type='unknown',
         num_underlying_controlled_links=float(num_controlled_links),
         saturation_flow_estimate=float(num_controlled_links),
         input_lane_group_id=input_lane_group_id,
@@ -292,34 +308,26 @@ def _oracle_movement_demand(
 
 def _lane_edge(lane_id: LaneId | str) -> EdgeId:
     text = str(lane_id)
-    edge_text, separator, lane_index = text.rpartition("_")
+    edge_text, separator, lane_index = text.rpartition('_')
     if separator and lane_index.isdigit() and edge_text:
         return EdgeId(edge_text)
     return EdgeId(text)
 
 
 def _sum_lane_metric(
-    lane_api: LaneFeatureApi,
-    method_name: str,
     lane_ids: tuple[LaneId, ...],
+    lane_metric: Callable[[LaneId | str], int | float],
 ) -> float:
-    method = getattr(lane_api, method_name, None)
-    if method is None:
-        return 0.0
-    return float(sum(float(method(lane_id)) for lane_id in lane_ids))
+    return float(sum(float(lane_metric(lane_id)) for lane_id in lane_ids))
 
 
 def _mean_lane_metric(
-    lane_api: LaneFeatureApi,
-    method_name: str,
     lane_ids: tuple[LaneId, ...],
+    lane_metric: Callable[[LaneId | str], int | float],
 ) -> float:
     if not lane_ids:
         return 0.0
-    method = getattr(lane_api, method_name, None)
-    if method is None:
-        return 0.0
-    values = [float(method(lane_id)) for lane_id in lane_ids]
+    values = [float(lane_metric(lane_id)) for lane_id in lane_ids]
     return sum(values) / len(values)
 
 

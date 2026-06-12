@@ -21,6 +21,7 @@ from scripts.collect_il_data import (  # noqa: E402
 )
 from src.movement.dataset import build_dataset_sample  # noqa: E402
 from src.movement.features import (  # noqa: E402
+    LaneFeatureApi,
     LaneGroupGeometry,
     MovementControlState,
     build_feature_frame,
@@ -31,7 +32,7 @@ from src.movement.models.bipartite_gnn import MovementScorer  # noqa: E402
 from src.movement.normalization import RunningNormalizer  # noqa: E402
 from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
-from src.movement.runtime import LaneQueueApi, MovementControlRuntime
+from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il import (  # noqa: E402
     edge_tensors_from_sample,
@@ -45,7 +46,7 @@ DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
 
 def select_control_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneQueueApi,
+    lane_api: LaneFeatureApi,
     method: MovementScoringMethod,
 ) -> dict[str, str]:
     """Return held green states selected by the runner's scoring method."""
@@ -84,7 +85,7 @@ def select_graph_score_control_states(
 
 def select_learned_control_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneQueueApi,
+    lane_api: LaneFeatureApi,
     graph: MovementGraph,
     lane_ids_by_edge: dict[str, tuple[str, ...]],
     lane_geometries: dict[str, LaneGroupGeometry],
