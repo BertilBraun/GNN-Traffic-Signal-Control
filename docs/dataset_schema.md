@@ -37,11 +37,17 @@ metadata
 
 ## Teacher Target
 
-The first imitation target is the current max-pressure movement-scoring policy.
+The first imitation target is graph-level max pressure over the LaneGroup
+features visible to the zero-hop model:
 
-When multiple SUMO controlled links collapse into one graph movement, their
-controlled-link teacher scores are summed so graph-level phase aggregation
-preserves the deterministic movement-score interface.
+```text
+score(M) = halting_count(input LaneGroup) - halting_count(output LaneGroup)
+```
+
+This differs intentionally from the lower-level SUMO controlled-link teacher.
+The model sees collapsed LaneGroup features, not per-controlled-link lane
+queues, so the stored regression target must be defined at the same graph level
+or the exact teacher is partially unobservable.
 
 ## Replay Check
 

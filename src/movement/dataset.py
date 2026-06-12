@@ -37,13 +37,23 @@ def build_dataset_sample(
         str | TrafficLightId,
         Mapping[MovementIndex, float],
     ],
+    teacher_graph_scores: Sequence[float] | None = None,
     metadata: Mapping[str, Any] | None = None,
 ) -> MovementDatasetSample:
     """Build a serializable imitation sample aligned with graph movement IDs."""
-    teacher_scores = _teacher_scores_by_graph_movement(
-        graph=graph,
-        teacher_controlled_scores=teacher_controlled_scores,
+    teacher_scores = (
+        tuple(float(value) for value in teacher_graph_scores)
+        if teacher_graph_scores is not None
+        else _teacher_scores_by_graph_movement(
+            graph=graph,
+            teacher_controlled_scores=teacher_controlled_scores,
+        )
     )
+    if len(teacher_scores) != len(graph.movements):
+        raise ValueError(
+            f"Expected {len(graph.movements)} graph teacher scores, "
+            f"got {len(teacher_scores)}."
+        )
     teacher_selected = _teacher_selected_phases(
         graph=graph,
         programs=programs,

@@ -15,12 +15,13 @@ import traci  # noqa: E402
 from src.movement.dataset import build_dataset_sample, save_jsonl_samples  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
+    MovementFeatureFrame,
     MovementControlState,
     VehicleSnapshot,
     build_feature_frame,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
-from src.movement.policies.max_pressure import compute_max_pressure_scores  # noqa: E402
+from src.movement.graph_schema import MovementGraph  # noqa: E402
 from src.movement.runtime import MovementControlRuntime  # noqa: E402
 
 
@@ -75,6 +76,24 @@ def vehicle_snapshots_from_api(vehicle_api) -> tuple[VehicleSnapshot, ...]:
     return tuple(snapshots)
 
 
+def graph_max_pressure_scores_from_features(
+    graph: MovementGraph,
+    feature_frame: MovementFeatureFrame,
+) -> tuple[float, ...]:
+    """Compute graph-level max-pressure scores from visible LaneGroup features."""
+    halting_by_lane_group = {
+        row.lane_group_id: row.dynamic.halting_count_detector
+        for row in feature_frame.lane_group_rows
+    }
+    return tuple(
+        float(
+            halting_by_lane_group[movement.input_lane_group_id]
+            - halting_by_lane_group[movement.output_lane_group_id]
+        )
+        for movement in graph.movements
+    )
+
+
 def collect_samples(
     cfg_path: str | Path,
     output_path: str | Path,
@@ -93,10 +112,6 @@ def collect_samples(
         graph = build_movement_graph(runtime.programs)
         for step in range(steps):
             if step % decision_interval == 0:
-                teacher_scores = {
-                    tls_id: compute_max_pressure_scores(program, runtime.lane_api)
-                    for tls_id, program in runtime.programs.items()
-                }
                 feature_frame = build_feature_frame(
                     graph=graph,
                     lane_ids_by_edge=lane_ids_by_edge,
@@ -110,7 +125,14 @@ def collect_samples(
                         graph=graph,
                         feature_frame=feature_frame,
                         programs=runtime.programs,
-                        teacher_controlled_scores=teacher_scores,
+                        teacher_controlled_scores={
+                            tls_id: {}
+                            for tls_id in runtime.programs
+                        },
+                        teacher_graph_scores=graph_max_pressure_scores_from_features(
+                            graph,
+                            feature_frame,
+                        ),
                         metadata={
                             "cfg_path": str(cfg_path),
                             "network_path": str(net_path),

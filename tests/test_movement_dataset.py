@@ -104,6 +104,41 @@ def test_build_dataset_sample_stores_graph_arrays_and_teacher_replay() -> None:
     assert sample.edge_index_dict["input_lane_to_movement"] == ((1, 0), (0, 1))
 
 
+def test_build_dataset_sample_can_use_graph_level_teacher_scores() -> None:
+    program = _program()
+    graph = build_movement_graph({"J0": program})
+    frame = build_feature_frame(
+        graph=graph,
+        lane_ids_by_edge={
+            "north_in": ("north_in_0", "north_in_1"),
+            "south_out": ("south_out_0", "south_out_1"),
+            "east_in": ("east_in_0",),
+            "west_out": ("west_out_0",),
+        },
+        lane_geometries={
+            "north_in": LaneGroupGeometry(length_m=200.0, num_lanes=2, speed_limit_mps=10.0),
+            "south_out": LaneGroupGeometry(length_m=200.0, num_lanes=2, speed_limit_mps=10.0),
+            "east_in": LaneGroupGeometry(length_m=200.0, num_lanes=1, speed_limit_mps=10.0),
+            "west_out": LaneGroupGeometry(length_m=200.0, num_lanes=1, speed_limit_mps=10.0),
+        },
+        lane_api=FakeLaneApi(),
+        control_state=MovementControlState(),
+        vehicles=(),
+    )
+
+    sample = build_dataset_sample(
+        graph=graph,
+        feature_frame=frame,
+        programs={"J0": program},
+        teacher_controlled_scores={"J0": {}},
+        teacher_graph_scores=(8.0, 3.0),
+        metadata={},
+    )
+
+    assert sample.teacher_movement_scores == (8.0, 3.0)
+    assert sample.teacher_selected_phase_by_tls == {"J0": 0}
+
+
 def test_jsonl_samples_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "samples.jsonl"
     sample = _sample()
