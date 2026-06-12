@@ -1,4 +1,4 @@
-"""Train a zero-hop movement-score imitation model from JSONL samples."""
+"""Train a movement-score imitation model from JSONL samples."""
 from __future__ import annotations
 
 import argparse
@@ -11,15 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.movement.training.il import (  # noqa: E402
-    ZeroHopTrainingConfig,
-    train_zero_hop_il_from_jsonl,
+    MovementILTrainingConfig,
+    train_movement_il_from_jsonl,
 )
 from scripts.collect_il_data import collect_samples  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train zero-hop movement-score imitation from collected JSONL data.",
+        description="Train movement-score imitation from collected JSONL data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--data", type=Path, default=None, help="Input JSONL dataset")
@@ -59,7 +59,7 @@ def main() -> None:
     checkpoint_dir = args.ckpt_dir or ROOT / "checkpoints" / "il" / stamp
     if args.data is None and args.cfg is None:
         raise SystemExit("Either --data or --cfg is required.")
-    config = ZeroHopTrainingConfig(
+    config = MovementILTrainingConfig(
         epochs=args.epochs,
         lr=args.lr,
         hidden_dim=args.hidden_dim,
@@ -71,7 +71,7 @@ def main() -> None:
         num_hops=args.num_hops,
     )
     if args.data is not None:
-        result = train_zero_hop_il_from_jsonl(dataset_path=args.data, config=config)
+        result = train_movement_il_from_jsonl(dataset_path=args.data, config=config)
     else:
         with tempfile.TemporaryDirectory(prefix="movement_il_") as tmp_dir:
             dataset_path = Path(tmp_dir) / "samples.jsonl"
@@ -82,7 +82,7 @@ def main() -> None:
                 decision_interval=args.decision_interval,
                 seed=args.seed,
             )
-            result = train_zero_hop_il_from_jsonl(dataset_path=dataset_path, config=config)
+            result = train_movement_il_from_jsonl(dataset_path=dataset_path, config=config)
     print(
         f"Training complete: epochs={result.epochs} "
         f"final_loss={result.final_loss:.6f} checkpoint={result.checkpoint_path}"

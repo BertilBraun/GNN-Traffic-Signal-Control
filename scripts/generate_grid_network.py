@@ -173,11 +173,11 @@ def build_route_flows(
     max_col = max(max(_parse_node_id(edge.from_node)[1], _parse_node_id(edge.to_node)[1]) for edge in edges)
     source_edges = [
         edge for edge in edges
-        if _is_boundary_node(edge.from_node, max_row, max_col)
+        if _is_corner_node(edge.from_node, max_row, max_col)
     ]
     sink_edges = [
         edge for edge in edges
-        if _is_boundary_node(edge.to_node, max_row, max_col)
+        if _is_corner_node(edge.to_node, max_row, max_col)
     ]
     flows: list[FlowSpec] = []
     for idx, source in enumerate(sorted(source_edges, key=lambda edge: edge.edge_id)):
@@ -386,9 +386,9 @@ def _opposite_boundary_edge(
     return sorted(far_side, key=lambda edge: edge.edge_id)[0] if far_side else None
 
 
-def _is_boundary_node(node: str, max_row: int, max_col: int) -> bool:
+def _is_corner_node(node: str, max_row: int, max_col: int) -> bool:
     row, col = _parse_node_id(node)
-    return row == 0 or row == max_row or col == 0 or col == max_col
+    return row in {0, max_row} and col in {0, max_col}
 
 
 def _boundary_side(pos: tuple[int, int], max_row: int, max_col: int) -> str:

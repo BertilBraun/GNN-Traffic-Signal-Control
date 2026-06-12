@@ -113,6 +113,22 @@ def test_default_route_flows_include_bottom_and_right_boundary_sources() -> None
     assert any(edge.endswith("_to_N2_2") for edge in destination_edges)
 
 
+def test_default_route_flows_use_only_corner_entry_and_exit_nodes() -> None:
+    nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
+    edges = build_edge_specs(nodes)
+    traffic_lights = {node.node_id for node in nodes if node.node_type == "traffic_light"}
+    corners = {"N0_0", "N0_2", "N2_0", "N2_2"}
+
+    flows = build_route_flows(edges)
+    source_nodes = {_edge_nodes(flow.from_edge)[0] for flow in flows}
+    destination_nodes = {_edge_nodes(flow.to_edge)[1] for flow in flows}
+
+    assert source_nodes <= corners
+    assert destination_nodes <= corners
+    assert source_nodes.isdisjoint(traffic_lights)
+    assert destination_nodes.isdisjoint(traffic_lights)
+
+
 def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
     links = [
         TrafficLightLinkSpec(0, outgoing_edge_id="west_out", request_index=0),
@@ -145,3 +161,8 @@ def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
         "rGrGGr",
         "rrrGGG",
     ]
+
+
+def _edge_nodes(edge_id: str) -> tuple[str, str]:
+    from_node, to_node = edge_id.split("_to_", 1)
+    return from_node, to_node

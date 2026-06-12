@@ -15,11 +15,11 @@ from src.movement.normalization import RunningNormalizer
 
 
 @dataclass(frozen=True)
-class ZeroHopTrainingConfig:
+class MovementILTrainingConfig:
     epochs: int = 200
     lr: float = 1e-3
     hidden_dim: int = 64
-    checkpoint_dir: Path | str = Path("checkpoints/il/zero_hop")
+    checkpoint_dir: Path | str = Path("checkpoints/il")
     seed: int = 42
     loss: str = "huber"
     device: str = "cpu"
@@ -28,17 +28,17 @@ class ZeroHopTrainingConfig:
 
 
 @dataclass(frozen=True)
-class ZeroHopTrainingResult:
+class MovementILTrainingResult:
     checkpoint_path: Path
     final_loss: float
     epochs: int
 
 
-def train_zero_hop_il(
+def train_movement_il(
     samples: Sequence[MovementDatasetSample],
-    config: ZeroHopTrainingConfig,
-) -> ZeroHopTrainingResult:
-    """Train a zero-hop scorer on stored movement-score samples."""
+    config: MovementILTrainingConfig,
+) -> MovementILTrainingResult:
+    """Train a movement scorer on stored movement-score samples."""
     if not samples:
         raise ValueError("At least one sample is required.")
     torch.manual_seed(config.seed)
@@ -111,11 +111,9 @@ def train_zero_hop_il(
     )
     last_path = checkpoint_dir / "movement_policy_last.pt"
     best_path = checkpoint_dir / "movement_policy_best.pt"
-    compatibility_path = checkpoint_dir / "zero_hop_il.pt"
     torch.save(last_checkpoint, last_path)
     torch.save(best_checkpoint, best_path)
-    torch.save(last_checkpoint, compatibility_path)
-    return ZeroHopTrainingResult(
+    return MovementILTrainingResult(
         checkpoint_path=last_path,
         final_loss=final_loss,
         epochs=config.epochs,
@@ -124,7 +122,7 @@ def train_zero_hop_il(
 
 def _checkpoint_payload(
     model_state: dict[str, torch.Tensor],
-    config: ZeroHopTrainingConfig,
+    config: MovementILTrainingConfig,
     lane_feature_dim: int,
     movement_feature_dim: int,
     lane_normalizer: RunningNormalizer,
@@ -144,12 +142,12 @@ def _checkpoint_payload(
     }
 
 
-def train_zero_hop_il_from_jsonl(
+def train_movement_il_from_jsonl(
     dataset_path: Path | str,
-    config: ZeroHopTrainingConfig,
-) -> ZeroHopTrainingResult:
-    """Load JSONL samples and train the zero-hop model."""
-    return train_zero_hop_il(load_jsonl_samples(dataset_path), config)
+    config: MovementILTrainingConfig,
+) -> MovementILTrainingResult:
+    """Load JSONL samples and train the movement scorer."""
+    return train_movement_il(load_jsonl_samples(dataset_path), config)
 
 
 def tensors_from_sample(
@@ -188,7 +186,7 @@ def edge_tensors_from_sample(
     }
 
 
-def load_zero_hop_checkpoint(
+def load_movement_checkpoint(
     checkpoint_path: Path | str,
     device: str = "cpu",
 ) -> tuple[MovementScorer, dict[str, Any]]:

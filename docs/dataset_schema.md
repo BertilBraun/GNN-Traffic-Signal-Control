@@ -38,7 +38,7 @@ metadata
 ## Teacher Target
 
 The first imitation target is graph-level max pressure over the LaneGroup
-features visible to the zero-hop model:
+features visible to the movement model:
 
 ```text
 score(M) = halting_count(input LaneGroup) - halting_count(output LaneGroup)

@@ -8,13 +8,13 @@ import torch
 
 from src.movement.dataset import MovementDatasetSample
 from src.movement.training.il import (
-    ZeroHopTrainingConfig,
-    load_zero_hop_checkpoint,
+    MovementILTrainingConfig,
+    load_movement_checkpoint,
     normalizer_from_state,
     tensors_from_sample,
-    train_zero_hop_il,
+    train_movement_il,
 )
-from src.movement.models.zero_hop import ZeroHopMovementScorer
+from src.movement.models.bipartite_gnn import MovementScorer
 
 
 def _sample() -> MovementDatasetSample:
@@ -47,11 +47,12 @@ def _sample() -> MovementDatasetSample:
     )
 
 
-def test_zero_hop_model_scores_one_value_per_movement() -> None:
-    model = ZeroHopMovementScorer(
+def test_local_model_scores_one_value_per_movement() -> None:
+    model = MovementScorer(
         lane_feature_dim=2,
         movement_feature_dim=5,
         hidden_dim=8,
+        num_hops=0,
     )
 
     scores = model(
@@ -62,11 +63,11 @@ def test_zero_hop_model_scores_one_value_per_movement() -> None:
     assert tuple(scores.shape) == (2,)
 
 
-def test_zero_hop_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) -> None:
+def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) -> None:
     checkpoint_dir = tmp_path / "ckpt"
-    result = train_zero_hop_il(
+    result = train_movement_il(
         samples=[_sample()],
-        config=ZeroHopTrainingConfig(
+        config=MovementILTrainingConfig(
             epochs=250,
             lr=0.03,
             hidden_dim=32,
@@ -79,8 +80,7 @@ def test_zero_hop_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
     assert result.final_loss < 0.05
     assert (checkpoint_dir / "movement_policy_last.pt").exists()
     assert (checkpoint_dir / "movement_policy_best.pt").exists()
-    assert (checkpoint_dir / "zero_hop_il.pt").exists()
-    loaded_model, metadata = load_zero_hop_checkpoint(checkpoint_dir / "zero_hop_il.pt")
+    loaded_model, metadata = load_movement_checkpoint(checkpoint_dir / "movement_policy_last.pt")
     loaded_model.eval()
     with torch.no_grad():
         x_lane, x_movement, _target = tensors_from_sample(
@@ -100,9 +100,9 @@ def test_zero_hop_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
 
 
 def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
-    result = train_zero_hop_il(
+    result = train_movement_il(
         samples=[_sample()],
-        config=ZeroHopTrainingConfig(
+        config=MovementILTrainingConfig(
             epochs=10,
             lr=0.01,
             hidden_dim=16,
@@ -112,15 +112,15 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
         ),
     )
 
-    _model, metadata = load_zero_hop_checkpoint(result.checkpoint_path)
+    _model, metadata = load_movement_checkpoint(result.checkpoint_path)
 
     assert metadata["num_hops"] == 1
 
 
-def test_zero_hop_il_reports_progress_when_requested(tmp_path: Path, capsys) -> None:
-    train_zero_hop_il(
+def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> None:
+    train_movement_il(
         samples=[_sample()],
-        config=ZeroHopTrainingConfig(
+        config=MovementILTrainingConfig(
             epochs=3,
             lr=0.01,
             hidden_dim=8,

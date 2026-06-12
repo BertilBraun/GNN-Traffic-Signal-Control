@@ -28,7 +28,7 @@ from src.movement.runtime import LaneQueueApi, MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il import (  # noqa: E402
     edge_tensors_from_sample,
-    load_zero_hop_checkpoint,
+    load_movement_checkpoint,
     normalizer_from_state,
     tensors_from_sample,
 )
@@ -87,7 +87,7 @@ def select_learned_control_states(
     movement_normalizer,
     device: str,
 ) -> dict[str, str]:
-    """Score graph movements with a learned zero-hop checkpoint."""
+    """Score graph movements with a learned checkpoint."""
     feature_frame = build_feature_frame(
         graph=graph,
         lane_ids_by_edge=lane_ids_by_edge,
@@ -168,7 +168,7 @@ def parse_args() -> argparse.Namespace:
         '--checkpoint',
         type=Path,
         default=None,
-        help='zero_hop_il.pt checkpoint, required for --method learned',
+        help='movement policy checkpoint, required for --method learned',
     )
     parser.add_argument('--device', default='cpu', help='Torch device for learned policy')
     parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
@@ -209,7 +209,7 @@ def main() -> None:
         print(f'Loaded {len(runtime.programs)} movement-aware traffic-light programs.')
         learned_context = None
         if learned_policy:
-            model, metadata = load_zero_hop_checkpoint(args.checkpoint, device=args.device)
+            model, metadata = load_movement_checkpoint(args.checkpoint, device=args.device)
             graph = build_movement_graph(runtime.programs)
             lane_ids_by_edge, lane_geometries = lane_inputs_from_net(
                 resolve_sumocfg_net_path(args.cfg)

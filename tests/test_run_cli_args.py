@@ -16,11 +16,11 @@ def test_run_cli_accepts_learned_checkpoint(monkeypatch) -> None:
             "--method",
             "learned",
             "--checkpoint",
-            "checkpoints/il/example/zero_hop_il.pt",
+            "checkpoints/il/example/movement_policy_best.pt",
         ],
     )
 
     args = run.parse_args()
 
     assert args.method == "learned"
-    assert args.checkpoint == Path("checkpoints/il/example/zero_hop_il.pt")
+    assert args.checkpoint == Path("checkpoints/il/example/movement_policy_best.pt")

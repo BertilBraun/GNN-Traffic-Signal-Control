@@ -28,7 +28,7 @@ def test_movement_scorer_supports_zero_and_one_hop_outputs() -> None:
         dtype=torch.float32,
     )
 
-    zero_hop = MovementScorer(
+    local_model = MovementScorer(
         lane_feature_dim=4,
         movement_feature_dim=5,
         hidden_dim=8,
@@ -41,7 +41,7 @@ def test_movement_scorer_supports_zero_and_one_hop_outputs() -> None:
         num_hops=1,
     )
 
-    assert tuple(zero_hop(x_lane, x_movement).shape) == (2,)
+    assert tuple(local_model(x_lane, x_movement).shape) == (2,)
     assert tuple(one_hop(x_lane, x_movement, _edges()).shape) == (2,)
 
 
