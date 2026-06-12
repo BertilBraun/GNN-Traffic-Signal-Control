@@ -23,6 +23,7 @@ class ZeroHopTrainingConfig:
     seed: int = 42
     loss: str = "huber"
     device: str = "cpu"
+    progress_every: int = 0
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ def train_zero_hop_il(
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     final_loss = 0.0
-    for _ in range(config.epochs):
+    for epoch in range(config.epochs):
         total_loss = torch.zeros((), device=device)
         for sample in samples:
             x_lane, x_movement, target = tensors_from_sample(
@@ -68,6 +69,8 @@ def train_zero_hop_il(
         loss.backward()
         optimizer.step()
         final_loss = float(loss.detach().cpu())
+        if _should_report_progress(epoch, config.epochs, config.progress_every):
+            print(f"epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}")
 
     checkpoint_dir = Path(config.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -194,3 +197,9 @@ def _loss(prediction: torch.Tensor, target: torch.Tensor, loss_name: str) -> tor
     if loss_name == "mse":
         return F.mse_loss(prediction, target)
     raise ValueError(f"Unsupported loss: {loss_name}")
+
+
+def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:
+    if progress_every <= 0:
+        return False
+    return (epoch + 1) % progress_every == 0 or epoch == epochs - 1

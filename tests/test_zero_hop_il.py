@@ -87,3 +87,22 @@ def test_zero_hop_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
     assert torch.allclose(scores, torch.tensor([7.0, -3.0]), atol=0.3)
     assert metadata["lane_feature_dim"] == 2
     assert metadata["movement_feature_dim"] == 5
+
+
+def test_zero_hop_il_reports_progress_when_requested(tmp_path: Path, capsys) -> None:
+    train_zero_hop_il(
+        samples=[_sample()],
+        config=ZeroHopTrainingConfig(
+            epochs=3,
+            lr=0.01,
+            hidden_dim=8,
+            checkpoint_dir=tmp_path / "ckpt",
+            progress_every=2,
+            seed=1,
+        ),
+    )
+
+    output = capsys.readouterr().out
+    assert "epoch=2/3" in output
+    assert "epoch=3/3" in output
+    assert "loss=" in output

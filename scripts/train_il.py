@@ -33,6 +33,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="Torch random seed")
     parser.add_argument("--device", default="cpu", help="Torch device")
     parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=10,
+        help="Print loss every N epochs (0 disables progress output)",
+    )
+    parser.add_argument(
         "--ckpt-dir",
         type=Path,
         default=None,
@@ -55,6 +61,7 @@ def main() -> None:
             seed=args.seed,
             loss=args.loss,
             device=args.device,
+            progress_every=args.progress_every,
         ),
     )
     print(

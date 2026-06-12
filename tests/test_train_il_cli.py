@@ -17,6 +17,8 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
             "data/il/samples.jsonl",
             "--epochs",
             "3",
+            "--progress-every",
+            "1",
             "--ckpt-dir",
             "checkpoints/il/unit",
         ],
@@ -26,4 +28,5 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
 
     assert args.data == Path("data/il/samples.jsonl")
     assert args.epochs == 3
+    assert args.progress_every == 1
     assert args.ckpt_dir == Path("checkpoints/il/unit")
