@@ -7,13 +7,30 @@ from collections.abc import Mapping
 import sys
 from pathlib import Path
 
+import torch
+import traci
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.collect_il_data import (  # noqa: E402
+    lane_inputs_from_net,
+    resolve_sumocfg_net_path,
+    vehicle_snapshots_from_api,
+)
+from src.movement.dataset import build_dataset_sample  # noqa: E402
+from src.movement.features import MovementControlState, build_feature_frame  # noqa: E402
+from src.movement.graph import build_movement_graph  # noqa: E402
+from src.movement.graph_schema import MovementGraph  # noqa: E402
 from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.runtime import LaneQueueApi, MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
+from src.movement.training.il import (  # noqa: E402
+    load_zero_hop_checkpoint,
+    normalizer_from_state,
+    tensors_from_sample,
+)
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
 
@@ -30,6 +47,87 @@ def select_control_states(
         selection = select_highest_scoring_phase(program, movement_scores)
         states[tls_id] = program.selectable_phases[selection.local_phase_index].state
     return states
+
+
+def select_graph_score_control_states(
+    programs: Mapping[str, TrafficLightProgram],
+    graph: MovementGraph,
+    graph_movement_scores: tuple[float, ...],
+) -> dict[str, str]:
+    """Select phase states from graph-level movement scores."""
+    states: dict[str, str] = {}
+    for tls_id, program in programs.items():
+        incidence = graph.phase_incidences[program.traffic_light_id]
+        movement_ids = tuple(int(value) for value in incidence.movement_ids)
+        best_local_idx = 0
+        best_score = _phase_incidence_score(
+            incidence.rows[0],
+            movement_ids,
+            graph_movement_scores,
+        )
+        for local_idx, row in enumerate(incidence.rows[1:], start=1):
+            score = _phase_incidence_score(row, movement_ids, graph_movement_scores)
+            if score > best_score:
+                best_local_idx = local_idx
+                best_score = score
+        states[tls_id] = program.selectable_phases[best_local_idx].state
+    return states
+
+
+def select_learned_control_states(
+    programs: Mapping[str, TrafficLightProgram],
+    lane_api: LaneQueueApi,
+    graph: MovementGraph,
+    lane_ids_by_edge,
+    lane_geometries,
+    vehicle_api,
+    model,
+    lane_normalizer,
+    movement_normalizer,
+    device: str,
+) -> dict[str, str]:
+    """Score graph movements with a learned zero-hop checkpoint."""
+    feature_frame = build_feature_frame(
+        graph=graph,
+        lane_ids_by_edge=lane_ids_by_edge,
+        lane_geometries=lane_geometries,
+        lane_api=lane_api,
+        control_state=MovementControlState(),
+        vehicles=vehicle_snapshots_from_api(vehicle_api),
+    )
+    sample = build_dataset_sample(
+        graph=graph,
+        feature_frame=feature_frame,
+        programs=programs,
+        teacher_controlled_scores={tls_id: {} for tls_id in programs},
+        metadata={},
+    )
+    x_lane, x_movement, _target = tensors_from_sample(
+        sample=sample,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        device=device,
+    )
+    model.eval()
+    with torch.no_grad():
+        scores = tuple(float(value) for value in model(x_lane, x_movement).cpu())
+    return select_graph_score_control_states(
+        programs=programs,
+        graph=graph,
+        graph_movement_scores=scores,
+    )
+
+
+def _phase_incidence_score(
+    row: tuple[int, ...],
+    movement_ids: tuple[int, ...],
+    graph_movement_scores: tuple[float, ...],
+) -> float:
+    return sum(
+        graph_movement_scores[movement_id]
+        for enabled, movement_id in zip(row, movement_ids)
+        if enabled
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,10 +152,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--method',
-        choices=tuple(method.value for method in MovementScoringMethod),
+        choices=tuple(method.value for method in MovementScoringMethod) + ("learned",),
         default=MovementScoringMethod.MAX_PRESSURE.value,
-        help='Control heuristic used to score selectable phases',
+        help='Control method used to score selectable phases',
     )
+    parser.add_argument(
+        '--checkpoint',
+        type=Path,
+        default=None,
+        help='zero_hop_il.pt checkpoint, required for --method learned',
+    )
+    parser.add_argument('--device', default='cpu', help='Torch device for learned policy')
     parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
     parser.add_argument(
         '--verbose', action='store_true', help='Print selected phases each decision'
@@ -67,7 +172,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    scoring_method = MovementScoringMethod(args.method)
+    learned_policy = args.method == "learned"
+    scoring_method = None if learned_policy else MovementScoringMethod(args.method)
+    if learned_policy and args.checkpoint is None:
+        raise SystemExit("--checkpoint is required when --method learned")
     runtime = MovementControlRuntime(
         cfg_path=args.cfg,
         gui=args.gui,
@@ -91,17 +199,54 @@ def main() -> None:
     try:
         runtime.start()
         print(f'Loaded {len(runtime.programs)} movement-aware traffic-light programs.')
+        learned_context = None
+        if learned_policy:
+            model, metadata = load_zero_hop_checkpoint(args.checkpoint, device=args.device)
+            graph = build_movement_graph(runtime.programs)
+            lane_ids_by_edge, lane_geometries = lane_inputs_from_net(
+                resolve_sumocfg_net_path(args.cfg)
+            )
+            learned_context = (
+                model,
+                graph,
+                lane_ids_by_edge,
+                lane_geometries,
+                normalizer_from_state(metadata["lane_normalizer"]),
+                normalizer_from_state(metadata["movement_normalizer"]),
+            )
         for step in range(args.steps):
             if step % args.decision_interval == 0:
-                desired_states = select_control_states(
-                    runtime.programs,
-                    runtime.lane_api,
-                    method=scoring_method,
-                )
+                if learned_policy:
+                    (
+                        model,
+                        graph,
+                        lane_ids_by_edge,
+                        lane_geometries,
+                        lane_normalizer,
+                        movement_normalizer,
+                    ) = learned_context
+                    desired_states = select_learned_control_states(
+                        programs=runtime.programs,
+                        lane_api=runtime.lane_api,
+                        graph=graph,
+                        lane_ids_by_edge=lane_ids_by_edge,
+                        lane_geometries=lane_geometries,
+                        vehicle_api=traci.vehicle,
+                        model=model,
+                        lane_normalizer=lane_normalizer,
+                        movement_normalizer=movement_normalizer,
+                        device=args.device,
+                    )
+                else:
+                    desired_states = select_control_states(
+                        runtime.programs,
+                        runtime.lane_api,
+                        method=scoring_method,
+                    )
                 accepted_states = runtime.request_targets(desired_states)
                 if args.verbose:
                     print(
-                        f't={step:5d}s method={scoring_method.value} '
+                        f't={step:5d}s method={args.method} '
                         f'desired={desired_states} accepted={accepted_states}'
                     )
 

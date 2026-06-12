@@ -4,8 +4,9 @@ import sys
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.run import select_control_states
+from scripts.run import select_control_states, select_graph_score_control_states
 from src.movement.extraction import extract_traffic_light_program
+from src.movement.graph import build_movement_graph
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.schema import MovementIndex
 
@@ -102,3 +103,23 @@ def test_select_control_states_rejects_unknown_method() -> None:
         assert "Unsupported control method" in str(exc)
     else:
         raise AssertionError("expected unknown method to raise ValueError")
+
+
+def test_select_graph_score_control_states_uses_phase_incidence_once_per_graph_movement() -> None:
+    program = extract_traffic_light_program(
+        tls_id="J0",
+        phase_states=["Gr", "rG"],
+        controlled_links=[
+            [("north_in_0", "south_out_0", None), ("north_in_1", "south_out_1", None)],
+            [("east_in_0", "west_out_0", None)],
+        ],
+    )
+    graph = build_movement_graph({"J0": program})
+
+    states = select_graph_score_control_states(
+        programs={"J0": program},
+        graph=graph,
+        graph_movement_scores=(4.0, 5.0),
+    )
+
+    assert states == {"J0": "rG"}
