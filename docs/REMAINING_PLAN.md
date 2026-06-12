@@ -737,7 +737,7 @@ placed near the downstream signalized junction
 Default detector region:
 
 ```text
-last min(300 m, lane_group_length) before the downstream junction
+last min(200 m, lane_group_length) before the downstream junction
 ```
 
 For short road segments, the detector covers the whole lane group.
@@ -753,8 +753,6 @@ Use both short and longer windows initially:
 60 s window:
     smoother recent-flow context
 ```
-
-If 60 s proves too stale, it can be ablated.
 
 ---
 
@@ -2050,65 +2048,3 @@ Acceptance:
 * results table covers train-network set vs evaluation-network set;
 * transfer performance is reported relative to max pressure and queue;
 * normalization sensitivity is documented.
-
----
-
-# 21. Deferred Items
-
-The following are explicitly deferred:
-
-```text
-raw lane-level graph nodes
-splitting LaneGroups into left/through/right lane-use groups
-realistic non-oracle movement demand
-conflict edges in the GNN
-signal/intersection graph nodes
-three-hop message passing
-phase-level cross-entropy IL
-manual/protected phase generation
-full OSM transfer before generated-grid IL works
-```
-
-Potential future work:
-
-* turn-lane-based movement demand estimation;
-* camera/tracking-style detector assumptions;
-* residual max-pressure model;
-* explicit conflict/competition edges;
-* capacity-capped phase aggregation;
-* lane-use group splitting for turn pockets;
-* multi-agent credit assignment;
-* curriculum from generated grids to OSM cities.
-
----
-
-# 22. Immediate Next Step
-
-Start with Milestone 1.
-
-The first concrete implementation should produce:
-
-```text
-LaneGroup node table
-Movement node table
-typed LaneGroup ↔ Movement edges
-movement feature matrix placeholder
-lane-group feature matrix placeholder
-phase incidence matrix
-stable graph IDs
-```
-
-Then Milestone 2 can fill the feature values.
-
-The first end-to-end validation target is:
-
-```text
-fixed generated grid
-fixed demand seed
-current max-pressure teacher
-zero-hop model
-movement-score overfit
-phase-choice reproduction through deterministic aggregation
-```
-
-Once that works, the rest of the pipeline can be built incrementally.
