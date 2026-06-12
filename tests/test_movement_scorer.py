@@ -11,10 +11,10 @@ from src.movement.models.bipartite_gnn import MovementScorer
 
 def _edges() -> dict[str, torch.Tensor]:
     return {
-        "input_lane_to_movement": torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
-        "output_lane_to_movement": torch.tensor([[1, 2], [0, 1]], dtype=torch.long),
-        "movement_to_input_lane": torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
-        "movement_to_output_lane": torch.tensor([[0, 1], [1, 2]], dtype=torch.long),
+        'input_lane_to_movement': torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
+        'output_lane_to_movement': torch.tensor([[1, 2], [0, 1]], dtype=torch.long),
+        'movement_to_input_lane': torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
+        'movement_to_output_lane': torch.tensor([[0, 1], [1, 2]], dtype=torch.long),
     }
 
 
@@ -56,6 +56,6 @@ def test_one_hop_scorer_requires_edges() -> None:
     try:
         model(torch.randn(3, 4), torch.randn(2, 5))
     except ValueError as exc:
-        assert "edge_index_dict" in str(exc)
+        assert 'edge_index_dict' in str(exc)
     else:
-        raise AssertionError("expected one-hop model to require graph edges")
+        raise AssertionError('expected one-hop model to require graph edges')

@@ -29,21 +29,21 @@ def _sample() -> MovementDatasetSample:
             (4.0, 5.0, 6.0, 1.0, 2.0),
         ),
         edge_index_dict={
-            "input_lane_to_movement": ((0, 0), (1, 1)),
-            "output_lane_to_movement": ((1, 0), (2, 1)),
-            "movement_to_input_lane": ((0, 0), (1, 1)),
-            "movement_to_output_lane": ((0, 1), (1, 2)),
+            'input_lane_to_movement': ((0, 0), (1, 1)),
+            'output_lane_to_movement': ((1, 0), (2, 1)),
+            'movement_to_input_lane': ((0, 0), (1, 1)),
+            'movement_to_output_lane': ((0, 1), (1, 2)),
         },
         phase_incidences={
-            "J0": {
-                "sumo_phase_indices": (0, 1),
-                "movement_ids": (0, 1),
-                "rows": ((1, 0), (0, 1)),
+            'J0': {
+                'sumo_phase_indices': (0, 1),
+                'movement_ids': (0, 1),
+                'rows': ((1, 0), (0, 1)),
             }
         },
         teacher_movement_scores=(7.0, -3.0),
-        teacher_selected_phase_by_tls={"J0": 0},
-        metadata={"network_id": "unit"},
+        teacher_selected_phase_by_tls={'J0': 0},
+        metadata={'network_id': 'unit'},
     )
 
 
@@ -64,7 +64,7 @@ def test_local_model_scores_one_value_per_movement() -> None:
 
 
 def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) -> None:
-    checkpoint_dir = tmp_path / "ckpt"
+    checkpoint_dir = tmp_path / 'ckpt'
     result = train_movement_il(
         samples=[_sample()],
         config=MovementILTrainingConfig(
@@ -78,15 +78,15 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
     )
 
     assert result.final_loss < 0.05
-    assert (checkpoint_dir / "movement_policy_last.pt").exists()
-    assert (checkpoint_dir / "movement_policy_best.pt").exists()
-    loaded_model, metadata = load_movement_checkpoint(checkpoint_dir / "movement_policy_last.pt")
+    assert (checkpoint_dir / 'movement_policy_last.pt').exists()
+    assert (checkpoint_dir / 'movement_policy_best.pt').exists()
+    loaded_model, metadata = load_movement_checkpoint(checkpoint_dir / 'movement_policy_last.pt')
     loaded_model.eval()
     with torch.no_grad():
         x_lane, x_movement, _target = tensors_from_sample(
             sample=_sample(),
-            lane_normalizer=normalizer_from_state(metadata["lane_normalizer"]),
-            movement_normalizer=normalizer_from_state(metadata["movement_normalizer"]),
+            lane_normalizer=normalizer_from_state(metadata.lane_normalizer),
+            movement_normalizer=normalizer_from_state(metadata.movement_normalizer),
         )
         scores = loaded_model(
             x_lane=x_lane,
@@ -94,9 +94,9 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
         )
 
     assert torch.allclose(scores, torch.tensor([7.0, -3.0]), atol=0.3)
-    assert metadata["lane_feature_dim"] == 2
-    assert metadata["movement_feature_dim"] == 5
-    assert metadata["num_hops"] == 0
+    assert metadata.lane_feature_dim == 2
+    assert metadata.movement_feature_dim == 5
+    assert metadata.num_hops == 0
 
 
 def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
@@ -106,7 +106,7 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
             epochs=10,
             lr=0.01,
             hidden_dim=16,
-            checkpoint_dir=tmp_path / "ckpt",
+            checkpoint_dir=tmp_path / 'ckpt',
             seed=3,
             num_hops=1,
         ),
@@ -114,7 +114,7 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
 
     _model, metadata = load_movement_checkpoint(result.checkpoint_path)
 
-    assert metadata["num_hops"] == 1
+    assert metadata.num_hops == 1
 
 
 def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> None:
@@ -124,7 +124,7 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
             epochs=3,
             lr=0.01,
             hidden_dim=8,
-            checkpoint_dir=tmp_path / "ckpt",
+            checkpoint_dir=tmp_path / 'ckpt',
             progress_every=2,
             seed=1,
             num_hops=0,
@@ -132,6 +132,6 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
     )
 
     output = capsys.readouterr().out
-    assert "epoch=2/3" in output
-    assert "epoch=3/3" in output
-    assert "loss=" in output
+    assert 'epoch=2/3' in output
+    assert 'epoch=3/3' in output
+    assert 'loss=' in output

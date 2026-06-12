@@ -1,10 +1,12 @@
 """Offline movement-score imitation learning."""
+
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
 from collections.abc import Sequence
-from typing import Any
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import cast
 
 import torch
 import torch.nn.functional as F
@@ -14,15 +16,20 @@ from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 
 
+class MovementILLoss(str, Enum):
+    HUBER = 'huber'
+    MEAN_SQUARED_ERROR = 'mse'
+
+
 @dataclass(frozen=True)
 class MovementILTrainingConfig:
     epochs: int = 200
     lr: float = 1e-3
     hidden_dim: int = 64
-    checkpoint_dir: Path | str = Path("checkpoints/il")
+    checkpoint_dir: Path | str = Path('checkpoints/il')
     seed: int = 42
-    loss: str = "huber"
-    device: str = "cpu"
+    loss: MovementILLoss = MovementILLoss.HUBER
+    device: str = 'cpu'
     progress_every: int = 0
     num_hops: int = 0
 
@@ -34,13 +41,46 @@ class MovementILTrainingResult:
     epochs: int
 
 
+@dataclass(frozen=True)
+class NormalizerState:
+    count: int
+    mean: tuple[float, ...]
+    squared_differences: tuple[float, ...]
+    frozen: bool
+    epsilon: float
+
+
+@dataclass(frozen=True)
+class MovementCheckpointPayload:
+    model_state: dict[str, torch.Tensor]
+    config: MovementILTrainingConfig
+    lane_feature_dim: int
+    movement_feature_dim: int
+    hidden_dim: int
+    num_hops: int
+    lane_normalizer: NormalizerState
+    movement_normalizer: NormalizerState
+    loss: float
+
+
+@dataclass(frozen=True)
+class MovementCheckpointMetadata:
+    lane_feature_dim: int
+    movement_feature_dim: int
+    hidden_dim: int
+    num_hops: int
+    lane_normalizer: NormalizerState
+    movement_normalizer: NormalizerState
+    config: MovementILTrainingConfig
+
+
 def train_movement_il(
     samples: Sequence[MovementDatasetSample],
     config: MovementILTrainingConfig,
 ) -> MovementILTrainingResult:
     """Train a movement scorer on stored movement-score samples."""
     if not samples:
-        raise ValueError("At least one sample is required.")
+        raise ValueError('At least one sample is required.')
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     lane_normalizer = _fit_normalizer(sample.x_lane for sample in samples)
@@ -55,11 +95,8 @@ def train_movement_il(
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     final_loss = 0.0
-    best_loss = float("inf")
-    best_state = {
-        key: value.detach().cpu().clone()
-        for key, value in model.state_dict().items()
-    }
+    best_loss = float('inf')
+    best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
     for epoch in range(config.epochs):
         total_loss = torch.zeros((), device=device)
         for sample in samples:
@@ -82,12 +119,9 @@ def train_movement_il(
         final_loss = float(loss.detach().cpu())
         if final_loss < best_loss:
             best_loss = final_loss
-            best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
-            }
+            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
         if _should_report_progress(epoch, config.epochs, config.progress_every):
-            print(f"epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}")
+            print(f'epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}')
 
     checkpoint_dir = Path(config.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -109,8 +143,8 @@ def train_movement_il(
         movement_normalizer=movement_normalizer,
         loss=best_loss,
     )
-    last_path = checkpoint_dir / "movement_policy_last.pt"
-    best_path = checkpoint_dir / "movement_policy_best.pt"
+    last_path = checkpoint_dir / 'movement_policy_last.pt'
+    best_path = checkpoint_dir / 'movement_policy_best.pt'
     torch.save(last_checkpoint, last_path)
     torch.save(best_checkpoint, best_path)
     return MovementILTrainingResult(
@@ -128,18 +162,18 @@ def _checkpoint_payload(
     lane_normalizer: RunningNormalizer,
     movement_normalizer: RunningNormalizer,
     loss: float,
-) -> dict[str, Any]:
-    return {
-        "model_state": model_state,
-        "config": asdict(config) | {"checkpoint_dir": str(config.checkpoint_dir)},
-        "lane_feature_dim": lane_feature_dim,
-        "movement_feature_dim": movement_feature_dim,
-        "hidden_dim": config.hidden_dim,
-        "num_hops": config.num_hops,
-        "lane_normalizer": _normalizer_state(lane_normalizer),
-        "movement_normalizer": _normalizer_state(movement_normalizer),
-        "loss": loss,
-    }
+) -> MovementCheckpointPayload:
+    return MovementCheckpointPayload(
+        model_state=model_state,
+        config=config,
+        lane_feature_dim=lane_feature_dim,
+        movement_feature_dim=movement_feature_dim,
+        hidden_dim=config.hidden_dim,
+        num_hops=config.num_hops,
+        lane_normalizer=_normalizer_state(lane_normalizer),
+        movement_normalizer=_normalizer_state(movement_normalizer),
+        loss=loss,
+    )
 
 
 def train_movement_il_from_jsonl(
@@ -154,7 +188,7 @@ def tensors_from_sample(
     sample: MovementDatasetSample,
     lane_normalizer: RunningNormalizer | None = None,
     movement_normalizer: RunningNormalizer | None = None,
-    device: torch.device | str = "cpu",
+    device: torch.device | str = 'cpu',
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Convert one dataset sample to tensors."""
     x_lane_rows = sample.x_lane
@@ -162,62 +196,62 @@ def tensors_from_sample(
     if lane_normalizer is not None:
         x_lane_rows = tuple(lane_normalizer.transform_row(row) for row in x_lane_rows)
     if movement_normalizer is not None:
-        x_movement_rows = tuple(
-            _normalize_movement_row(row, movement_normalizer)
-            for row in x_movement_rows
-        )
-    dev = torch.device(device)
+        x_movement_rows = tuple(_normalize_movement_row(row, movement_normalizer) for row in x_movement_rows)
+    torch_device = torch.device(device)
     return (
-        torch.tensor(x_lane_rows, dtype=torch.float32, device=dev),
-        torch.tensor(x_movement_rows, dtype=torch.float32, device=dev),
-        torch.tensor(sample.teacher_movement_scores, dtype=torch.float32, device=dev),
+        torch.tensor(x_lane_rows, dtype=torch.float32, device=torch_device),
+        torch.tensor(x_movement_rows, dtype=torch.float32, device=torch_device),
+        torch.tensor(sample.teacher_movement_scores, dtype=torch.float32, device=torch_device),
     )
 
 
 def edge_tensors_from_sample(
     sample: MovementDatasetSample,
-    device: torch.device | str = "cpu",
+    device: torch.device | str = 'cpu',
 ) -> dict[str, torch.Tensor]:
     """Convert stored typed edge lists to 2 x E long tensors."""
-    dev = torch.device(device)
+    torch_device = torch.device(device)
     return {
-        relation: torch.tensor(edges, dtype=torch.long, device=dev).t().contiguous()
+        relation: torch.tensor(edges, dtype=torch.long, device=torch_device).t().contiguous()
         for relation, edges in sample.edge_index_dict.items()
     }
 
 
 def load_movement_checkpoint(
     checkpoint_path: Path | str,
-    device: str = "cpu",
-) -> tuple[MovementScorer, dict[str, Any]]:
+    device: str = 'cpu',
+) -> tuple[MovementScorer, MovementCheckpointMetadata]:
     """Load a movement IL checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    model = MovementScorer(
-        lane_feature_dim=int(checkpoint["lane_feature_dim"]),
-        movement_feature_dim=int(checkpoint["movement_feature_dim"]),
-        hidden_dim=int(checkpoint["hidden_dim"]),
-        num_hops=int(checkpoint.get("num_hops", 0)),
+    checkpoint = cast(
+        MovementCheckpointPayload,
+        torch.load(checkpoint_path, map_location=device, weights_only=False),
     )
-    model.load_state_dict(checkpoint["model_state"])
+    model = MovementScorer(
+        lane_feature_dim=checkpoint.lane_feature_dim,
+        movement_feature_dim=checkpoint.movement_feature_dim,
+        hidden_dim=checkpoint.hidden_dim,
+        num_hops=checkpoint.num_hops,
+    )
+    model.load_state_dict(checkpoint.model_state)
     model.to(torch.device(device))
-    return model, {
-        "lane_feature_dim": int(checkpoint["lane_feature_dim"]),
-        "movement_feature_dim": int(checkpoint["movement_feature_dim"]),
-        "hidden_dim": int(checkpoint["hidden_dim"]),
-        "num_hops": int(checkpoint.get("num_hops", 0)),
-        "lane_normalizer": checkpoint["lane_normalizer"],
-        "movement_normalizer": checkpoint["movement_normalizer"],
-        "config": checkpoint.get("config", {}),
-    }
+    return model, MovementCheckpointMetadata(
+        lane_feature_dim=checkpoint.lane_feature_dim,
+        movement_feature_dim=checkpoint.movement_feature_dim,
+        hidden_dim=checkpoint.hidden_dim,
+        num_hops=checkpoint.num_hops,
+        lane_normalizer=checkpoint.lane_normalizer,
+        movement_normalizer=checkpoint.movement_normalizer,
+        config=checkpoint.config,
+    )
 
 
-def normalizer_from_state(state: dict[str, Any]) -> RunningNormalizer:
+def normalizer_from_state(state: NormalizerState) -> RunningNormalizer:
     """Reconstruct a running normalizer from checkpoint metadata."""
-    normalizer = RunningNormalizer(epsilon=float(state.get("epsilon", 1e-8)))
-    normalizer.count = int(state["count"])
-    normalizer.mean = tuple(float(value) for value in state["mean"])
-    normalizer.m2 = tuple(float(value) for value in state["m2"])
-    normalizer.frozen = bool(state.get("frozen", True))
+    normalizer = RunningNormalizer(epsilon=state.epsilon)
+    normalizer.count = state.count
+    normalizer.mean = state.mean
+    normalizer.m2 = state.squared_differences
+    normalizer.frozen = state.frozen
     normalizer._dimension = len(normalizer.mean)
     return normalizer
 
@@ -232,14 +266,14 @@ def _fit_normalizer(
     return normalizer
 
 
-def _normalizer_state(normalizer: RunningNormalizer) -> dict[str, Any]:
-    return {
-        "count": normalizer.count,
-        "mean": normalizer.mean,
-        "m2": normalizer.m2,
-        "frozen": normalizer.frozen,
-        "epsilon": normalizer.epsilon,
-    }
+def _normalizer_state(normalizer: RunningNormalizer) -> NormalizerState:
+    return NormalizerState(
+        count=normalizer.count,
+        mean=normalizer.mean,
+        squared_differences=normalizer.m2,
+        frozen=normalizer.frozen,
+        epsilon=normalizer.epsilon,
+    )
 
 
 def _normalize_movement_row(
@@ -253,12 +287,16 @@ def _normalize_movement_row(
     return tuple(normalized)
 
 
-def _loss(prediction: torch.Tensor, target: torch.Tensor, loss_name: str) -> torch.Tensor:
-    if loss_name == "huber":
-        return F.smooth_l1_loss(prediction, target)
-    if loss_name == "mse":
-        return F.mse_loss(prediction, target)
-    raise ValueError(f"Unsupported loss: {loss_name}")
+def _loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    loss_name: MovementILLoss,
+) -> torch.Tensor:
+    match loss_name:
+        case MovementILLoss.HUBER:
+            return F.smooth_l1_loss(prediction, target)
+        case MovementILLoss.MEAN_SQUARED_ERROR:
+            return F.mse_loss(prediction, target)
 
 
 def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:

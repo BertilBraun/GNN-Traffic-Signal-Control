@@ -1,4 +1,5 @@
 """Bipartite LaneGroup/Movement scorer with configurable macro-hops."""
+
 from __future__ import annotations
 
 import torch
@@ -17,11 +18,11 @@ class MovementScorer(nn.Module):
     ) -> None:
         super().__init__()
         if lane_feature_dim <= 0:
-            raise ValueError("lane_feature_dim must be positive.")
+            raise ValueError('lane_feature_dim must be positive.')
         if movement_feature_dim <= 0:
-            raise ValueError("movement_feature_dim must be positive.")
+            raise ValueError('movement_feature_dim must be positive.')
         if num_hops < 0:
-            raise ValueError("num_hops must be non-negative.")
+            raise ValueError('num_hops must be non-negative.')
         self.lane_feature_dim = lane_feature_dim
         self.movement_feature_dim = movement_feature_dim
         self.hidden_dim = hidden_dim
@@ -34,10 +35,7 @@ class MovementScorer(nn.Module):
             nn.Linear(movement_feature_dim + 2 * hidden_dim, hidden_dim),
             nn.ReLU(),
         )
-        self.hops = nn.ModuleList(
-            MovementLaneHop(hidden_dim)
-            for _ in range(num_hops)
-        )
+        self.hops = nn.ModuleList(MovementLaneHop(hidden_dim) for _ in range(num_hops))
         self.score_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -52,23 +50,28 @@ class MovementScorer(nn.Module):
     ) -> torch.Tensor:
         """Return one scalar score per movement."""
         if self.num_hops > 0 and edge_index_dict is None:
-            raise ValueError("edge_index_dict is required when num_hops > 0.")
-        h_lane = self.lane_encoder(x_lane)
+            raise ValueError('edge_index_dict is required when num_hops > 0.')
+        lane_embeddings = self.lane_encoder(x_lane)
         input_lane_ids = x_movement[:, 3].long()
         output_lane_ids = x_movement[:, 4].long()
-        h_move = self.movement_encoder(
+        movement_embeddings = self.movement_encoder(
             torch.cat(
                 (
                     x_movement,
-                    h_lane[input_lane_ids],
-                    h_lane[output_lane_ids],
+                    lane_embeddings[input_lane_ids],
+                    lane_embeddings[output_lane_ids],
                 ),
                 dim=-1,
             )
         )
+        assert edge_index_dict is not None or self.num_hops == 0
         for hop in self.hops:
-            h_lane, h_move = hop(h_lane, h_move, edge_index_dict or {})
-        return self.score_head(h_move).squeeze(-1)
+            lane_embeddings, movement_embeddings = hop(
+                lane_embeddings,
+                movement_embeddings,
+                edge_index_dict,
+            )
+        return self.score_head(movement_embeddings).squeeze(-1)
 
 
 class MovementLaneHop(nn.Module):
@@ -91,36 +94,32 @@ class MovementLaneHop(nn.Module):
 
     def forward(
         self,
-        h_lane: torch.Tensor,
-        h_move: torch.Tensor,
+        lane_embeddings: torch.Tensor,
+        movement_embeddings: torch.Tensor,
         edge_index_dict: dict[str, torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
         move_to_input = _aggregate(
-            edge_index_dict["movement_to_input_lane"],
-            self.move_to_input(h_move),
-            num_targets=h_lane.shape[0],
+            edge_index_dict['movement_to_input_lane'],
+            self.move_to_input(movement_embeddings),
+            num_targets=lane_embeddings.shape[0],
         )
         move_to_output = _aggregate(
-            edge_index_dict["movement_to_output_lane"],
-            self.move_to_output(h_move),
-            num_targets=h_lane.shape[0],
+            edge_index_dict['movement_to_output_lane'],
+            self.move_to_output(movement_embeddings),
+            num_targets=lane_embeddings.shape[0],
         )
-        updated_lane = self.lane_update(
-            torch.cat((h_lane, move_to_input, move_to_output), dim=-1)
-        )
+        updated_lane = self.lane_update(torch.cat((lane_embeddings, move_to_input, move_to_output), dim=-1))
         input_to_move = _aggregate(
-            edge_index_dict["input_lane_to_movement"],
+            edge_index_dict['input_lane_to_movement'],
             self.input_to_move(updated_lane),
-            num_targets=h_move.shape[0],
+            num_targets=movement_embeddings.shape[0],
         )
         output_to_move = _aggregate(
-            edge_index_dict["output_lane_to_movement"],
+            edge_index_dict['output_lane_to_movement'],
             self.output_to_move(updated_lane),
-            num_targets=h_move.shape[0],
+            num_targets=movement_embeddings.shape[0],
         )
-        updated_move = self.move_update(
-            torch.cat((h_move, input_to_move, output_to_move), dim=-1)
-        )
+        updated_move = self.move_update(torch.cat((movement_embeddings, input_to_move, output_to_move), dim=-1))
         return updated_lane, updated_move
 
 
@@ -132,10 +131,18 @@ def _aggregate(
     """Mean-aggregate source features along a 2 x E edge index."""
     if edge_index.numel() == 0:
         return source_features.new_zeros((num_targets, source_features.shape[-1]))
-    src = edge_index[0].long()
-    dst = edge_index[1].long()
-    out = source_features.new_zeros((num_targets, source_features.shape[-1]))
-    out.index_add_(0, dst, source_features[src])
+    source_indices = edge_index[0].long()
+    target_indices = edge_index[1].long()
+    aggregated_features = source_features.new_zeros((num_targets, source_features.shape[-1]))
+    aggregated_features.index_add_(
+        0,
+        target_indices,
+        source_features[source_indices],
+    )
     counts = source_features.new_zeros((num_targets, 1))
-    counts.index_add_(0, dst, torch.ones((dst.numel(), 1), device=source_features.device))
-    return out / counts.clamp_min(1.0)
+    counts.index_add_(
+        0,
+        target_indices,
+        torch.ones((target_indices.numel(), 1), device=source_features.device),
+    )
+    return aggregated_features / counts.clamp_min(1.0)
