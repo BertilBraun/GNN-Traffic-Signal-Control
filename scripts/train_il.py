@@ -1,27 +1,4 @@
-"""Entry point: Imitation Learning on the irregular 4×4 grid (PLAN Stage 2).
-
-Trains a GATv2 policy to mimic the GreedyExpert controller using
-cross-entropy loss on (graph, expert_phase) pairs collected from live
-SUMO episodes.
-
-Usage
------
-    # Default: 50 episodes × 1200 s, grid_4x4
-    python scripts/train_il.py
-
-    # Custom run
-    python scripts/train_il.py \\
-        --cfg      configs/grid_4x4/grid.sumocfg \\
-        --episodes 100 \\
-        --ep-len   3600 \\
-        --lr       3e-4 \\
-        --log-dir  runs/il_grid \\
-        --ckpt-dir checkpoints/il_grid
-
-    # Watch training in TensorBoard (separate terminal)
-    tensorboard --logdir runs/
-"""
-
+"""Train a zero-hop movement-score imitation model from JSONL samples."""
 from __future__ import annotations
 
 import argparse
@@ -29,179 +6,62 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.training.imitation import train_il
-
-# ---------------------------------------------------------------------------
-# Default paths
-# ---------------------------------------------------------------------------
-
-DEFAULT_CFG = str(ROOT / 'configs' / 'grid_4x4' / 'grid.sumocfg')
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+from src.movement.training.il import (  # noqa: E402
+    ZeroHopTrainingConfig,
+    train_zero_hop_il_from_jsonl,
+)
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description='Imitation Learning — GATv2 policy on the irregular 4×4 grid',
+    parser = argparse.ArgumentParser(
+        description="Train zero-hop movement-score imitation from collected JSONL data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument(
-        '--cfg',
-        default=DEFAULT_CFG,
-        help='Path to .sumocfg file',
+    parser.add_argument("--data", required=True, type=Path, help="Input JSONL dataset")
+    parser.add_argument("--epochs", type=int, default=200, help="Training epochs")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Adam learning rate")
+    parser.add_argument("--hidden-dim", type=int, default=64, help="MLP hidden dimension")
+    parser.add_argument(
+        "--loss",
+        choices=("huber", "mse"),
+        default="huber",
+        help="Movement-score regression loss",
     )
-    p.add_argument(
-        '--flow-range',
-        nargs=2,
-        type=int,
-        default=[300, 1000],
-        metavar=('MIN', 'MAX'),
-        help='Total vehicles/hour range for demand randomisation (default: 300 1000)',
-    )
-    p.add_argument(
-        '--demand-min-rate',
-        type=float,
-        default=5.0,
-        metavar='R',
-        help='Minimum vehicles/hour per active O-D pair in generated demand.',
-    )
-    p.add_argument(
-        '--episodes',
-        type=int,
-        default=20,
-        help='Number of training episodes',
-    )
-    p.add_argument(
-        '--ep-len',
-        type=int,
-        default=1200,
-        help='Simulation seconds per episode (Stage 2 default: 1200 s)',
-    )
-    p.add_argument(
-        '--lr',
-        type=float,
-        default=3e-4,
-        help='Adam learning rate',
-    )
-    p.add_argument(
-        '--log-dir',
+    parser.add_argument("--seed", type=int, default=42, help="Torch random seed")
+    parser.add_argument("--device", default="cpu", help="Torch device")
+    parser.add_argument(
+        "--ckpt-dir",
+        type=Path,
         default=None,
-        help='TensorBoard log directory (default: runs/il/<timestamp>)',
+        help="Checkpoint directory (default: checkpoints/il/<timestamp>)",
     )
-    p.add_argument(
-        '--ckpt-dir',
-        default=None,
-        help='Checkpoint directory (default: checkpoints/il/<timestamp>)',
-    )
-    p.add_argument(
-        '--resume-from',
-        default=None,
-        metavar='DIR',
-        help='Resume IL from a checkpoint directory containing il_policy_<tag>.pt and normalizer_<tag>.npz',
-    )
-    p.add_argument(
-        '--resume-tag',
-        default='best',
-        choices=['best', 'final'],
-        help='Checkpoint tag to load when --resume-from is set',
-    )
-    p.add_argument(
-        '--device',
-        default=None,
-        help="PyTorch device (e.g. 'cpu', 'cuda').  Auto-detected if omitted.",
-    )
-    p.add_argument(
-        '--eval-every',
-        type=int,
-        default=5,
-        help='Run model-vs-expert eval every N episodes (0 = only at end)',
-    )
-    p.add_argument(
-        '--print-every',
-        type=int,
-        default=1,
-        help='Print episode summary every N episodes',
-    )
-    p.add_argument(
-        '--n-eval-seeds',
-        type=int,
-        default=5,
-        help='Number of demand seeds averaged in the final evaluation',
-    )
-    p.add_argument(
-        '--periodic-eval-seeds',
-        type=int,
-        default=1,
-        help='Number of demand seeds averaged for periodic eval and best-checkpoint selection',
-    )
-    p.add_argument(
-        '--dagger-beta-end',
-        type=float,
-        default=0.0,
-        help='Final expert-driving probability (DAgger). 0.0=model drives by end, 1.0=pure BC',
-    )
-    p.add_argument(
-        '--demand-seed',
-        type=int,
-        default=None,
-        help='Fix demand RNG to this seed every episode (overfit probe). Omit for randomised demand.',
-    )
-    p.add_argument(
-        '--debug',
-        action='store_true',
-        help='Log per-step grad norm, logit entropy, and per-episode obs stats to TensorBoard.',
-    )
-    p.add_argument(
-        '--min-green-steps',
-        type=int,
-        default=2,
-        help='Minimum decision steps before a phase switch is allowed (2 × 15 s = 30 s)',
-    )
-    return p.parse_args()
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-
-    # Generate a single timestamp so log_dir and ckpt_dir are always paired,
-    # but only when the user hasn't provided explicit paths.
-    stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_dir = args.log_dir or str(ROOT / 'runs' / 'il' / stamp)
-    ckpt_dir = args.ckpt_dir or str(ROOT / 'checkpoints' / 'il' / stamp)
-
-    train_il(
-        cfg_path=args.cfg,
-        n_episodes=args.episodes,
-        episode_length=args.ep_len,
-        lr=args.lr,
-        log_dir=log_dir,
-        checkpoint_dir=ckpt_dir,
-        device=args.device,
-        eval_every=args.eval_every,
-        print_every=args.print_every,
-        n_eval_seeds=args.n_eval_seeds,
-        dagger_beta_end=args.dagger_beta_end,
-        demand_seed=args.demand_seed,
-        debug=args.debug,
-        flow_range=tuple(args.flow_range),
-        demand_min_rate=args.demand_min_rate,
-        periodic_eval_seeds=args.periodic_eval_seeds,
-        resume_from=args.resume_from,
-        resume_tag=args.resume_tag,
-        min_green_steps=args.min_green_steps,
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    checkpoint_dir = args.ckpt_dir or ROOT / "checkpoints" / "il" / stamp
+    result = train_zero_hop_il_from_jsonl(
+        dataset_path=args.data,
+        config=ZeroHopTrainingConfig(
+            epochs=args.epochs,
+            lr=args.lr,
+            hidden_dim=args.hidden_dim,
+            checkpoint_dir=checkpoint_dir,
+            seed=args.seed,
+            loss=args.loss,
+            device=args.device,
+        ),
+    )
+    print(
+        f"Training complete: epochs={result.epochs} "
+        f"final_loss={result.final_loss:.6f} checkpoint={result.checkpoint_path}"
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
