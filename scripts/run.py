@@ -27,10 +27,7 @@ def select_control_states(
     states: dict[str, str] = {}
     for tls_id, program in programs.items():
         movement_scores = compute_movement_scores(program, lane_api, method)
-        selection = select_highest_scoring_phase(
-            program,
-            movement_scores,
-        )
+        selection = select_highest_scoring_phase(program, movement_scores)
         states[tls_id] = program.selectable_phases[selection.local_phase_index].state
     return states
 
@@ -87,7 +84,9 @@ def main() -> None:
             )
             accepted_states = decision.request_targets(desired_states)
             if args.verbose:
-                print(f'method={scoring_method.value} desired={desired_states} accepted={accepted_states}')
+                print(
+                    f'method={scoring_method.value} desired={desired_states} accepted={accepted_states}'
+                )
 
     try:
         runtime.start()
