@@ -84,6 +84,67 @@ def build_node_specs(rows: int, cols: int, spacing: float) -> list[NodeSpec]:
     return specs
 
 
+def build_boundary_stub_specs(
+    nodes: list[NodeSpec],
+    rows: int,
+    cols: int,
+    spacing: float,
+) -> list[NodeSpec]:
+    _validate_dimensions(rows, cols)
+    stubs: list[NodeSpec] = []
+    half_spacing = spacing / 2
+    for node in sorted(nodes, key=lambda item: (item.row, item.col)):
+        if node.row == 0:
+            stubs.append(
+                NodeSpec(
+                    node_id=f"S_top_{node.col}",
+                    row=-1,
+                    col=node.col,
+                    degree=1,
+                    x=node.x,
+                    y=node.y + half_spacing,
+                    node_type=None,
+                )
+            )
+        if node.row == rows - 1:
+            stubs.append(
+                NodeSpec(
+                    node_id=f"S_bottom_{node.col}",
+                    row=rows,
+                    col=node.col,
+                    degree=1,
+                    x=node.x,
+                    y=node.y - half_spacing,
+                    node_type=None,
+                )
+            )
+        if node.col == 0:
+            stubs.append(
+                NodeSpec(
+                    node_id=f"S_left_{node.row}",
+                    row=node.row,
+                    col=-1,
+                    degree=1,
+                    x=node.x - half_spacing,
+                    y=node.y,
+                    node_type=None,
+                )
+            )
+        if node.col == cols - 1:
+            stubs.append(
+                NodeSpec(
+                    node_id=f"S_right_{node.row}",
+                    row=node.row,
+                    col=cols,
+                    degree=1,
+                    x=node.x + half_spacing,
+                    y=node.y,
+                    node_type=None,
+                )
+            )
+    return stubs
+
+
 def build_edge_specs(
     nodes: list[NodeSpec],
     speed: float = 13.89,
@@ -169,16 +230,54 @@ def build_route_flows(
     end: int = 3600,
     probability: float = 0.03,
 ) -> list[FlowSpec]:
-    max_row = max(max(_parse_node_id(edge.from_node)[0], _parse_node_id(edge.to_node)[0]) for edge in edges)
-    max_col = max(max(_parse_node_id(edge.from_node)[1], _parse_node_id(edge.to_node)[1]) for edge in edges)
-    source_edges = [
+    max_row, max_col = _internal_grid_bounds(edges)
+    stub_source_edges = [
+        edge for edge in edges
+        if _is_stub_node(edge.from_node) and not _is_stub_node(edge.to_node)
+    ]
+    stub_sink_edges = [
+        edge for edge in edges
+        if not _is_stub_node(edge.from_node) and _is_stub_node(edge.to_node)
+    ]
+    if stub_source_edges and stub_sink_edges:
+        return _build_route_flows(
+            source_edges=stub_source_edges,
+            sink_edges=stub_sink_edges,
+            begin=begin,
+            end=end,
+            probability=probability,
+            max_row=max_row,
+            max_col=max_col,
+        )
+
+    corner_source_edges = [
         edge for edge in edges
         if _is_corner_node(edge.from_node, max_row, max_col)
     ]
-    sink_edges = [
+    corner_sink_edges = [
         edge for edge in edges
         if _is_corner_node(edge.to_node, max_row, max_col)
     ]
+    return _build_route_flows(
+        source_edges=corner_source_edges,
+        sink_edges=corner_sink_edges,
+        begin=begin,
+        end=end,
+        probability=probability,
+        max_row=max_row,
+        max_col=max_col,
+    )
+
+
+def _build_route_flows(
+    source_edges: list[EdgeSpec],
+    sink_edges: list[EdgeSpec],
+    begin: int,
+    end: int,
+    probability: float,
+    max_row: int,
+    max_col: int,
+) -> list[FlowSpec]:
     flows: list[FlowSpec] = []
     for idx, source in enumerate(sorted(source_edges, key=lambda edge: edge.edge_id)):
         opposite = _opposite_boundary_edge(source, sink_edges, max_row, max_col)
@@ -214,8 +313,10 @@ def generate_grid(
     netconvert: bool = True,
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
-    edges = build_edge_specs(nodes, speed=speed)
-    connections = build_connection_specs(nodes, edges)
+    stubs = build_boundary_stub_specs(nodes, rows=rows, cols=cols, spacing=spacing)
+    all_nodes = nodes + stubs
+    edges = build_edge_specs(all_nodes, speed=speed)
+    connections = build_connection_specs(all_nodes, edges)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     nod_path = out_dir / "grid.nod.xml"
@@ -223,7 +324,7 @@ def generate_grid(
     con_path = out_dir / "grid.con.xml"
     net_path = out_dir / "grid.net.xml"
 
-    _write_nodes(nod_path, nodes)
+    _write_nodes(nod_path, all_nodes)
     _write_edges(edg_path, edges)
     _write_connections(con_path, connections)
     _write_additional(out_dir / "grid.add.xml")
@@ -233,7 +334,7 @@ def generate_grid(
     if netconvert:
         _run_netconvert(nod_path, edg_path, con_path, net_path)
         _write_tll_from_net(net_path, out_dir / "grid.tll.xml")
-    _print_summary(nodes, edges, connections, net_path)
+    _print_summary(all_nodes, edges, connections, net_path)
     return net_path
 
 
@@ -370,6 +471,20 @@ def _opposite_boundary_edge(
     max_row: int,
     max_col: int,
 ) -> EdgeSpec | None:
+    if _is_stub_node(source.from_node):
+        opposite_stub = _opposite_stub_node(source.from_node, max_row, max_col)
+        candidates = [
+            edge for edge in sink_edges
+            if edge.to_node == opposite_stub
+        ]
+        if candidates:
+            return sorted(candidates, key=lambda edge: edge.edge_id)[0]
+        far_side = [
+            edge for edge in sink_edges
+            if _stub_side(edge.to_node) != _stub_side(source.from_node)
+        ]
+        return sorted(far_side, key=lambda edge: edge.edge_id)[0] if far_side else None
+
     source_from = _parse_node_id(source.from_node)
     mirror = (max_row - source_from[0], max_col - source_from[1])
     candidates = [
@@ -389,6 +504,46 @@ def _opposite_boundary_edge(
 def _is_corner_node(node: str, max_row: int, max_col: int) -> bool:
     row, col = _parse_node_id(node)
     return row in {0, max_row} and col in {0, max_col}
+
+
+def _internal_grid_bounds(edges: list[EdgeSpec]) -> tuple[int, int]:
+    positions = [
+        _parse_node_id(node)
+        for edge in edges
+        for node in (edge.from_node, edge.to_node)
+        if not _is_stub_node(node)
+    ]
+    return (
+        max(row for row, _col in positions),
+        max(col for _row, col in positions),
+    )
+
+
+def _is_stub_node(node: str) -> bool:
+    return node.startswith("S_")
+
+
+def _opposite_stub_node(node: str, max_row: int, max_col: int) -> str:
+    side = _stub_side(node)
+    index = _stub_index(node)
+    if side == "top":
+        return f"S_bottom_{max_col - index}"
+    if side == "bottom":
+        return f"S_top_{max_col - index}"
+    if side == "left":
+        return f"S_right_{max_row - index}"
+    if side == "right":
+        return f"S_left_{max_row - index}"
+    raise ValueError(f"Unknown stub side: {side}")
+
+
+def _stub_side(node: str) -> str:
+    _prefix, side, _index = node.split("_", 2)
+    return side
+
+
+def _stub_index(node: str) -> int:
+    return int(node.rsplit("_", 1)[1])
 
 
 def _boundary_side(pos: tuple[int, int], max_row: int, max_col: int) -> str:

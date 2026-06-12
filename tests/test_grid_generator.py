@@ -5,6 +5,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts.generate_grid_network import (
+    build_boundary_stub_specs,
     build_connection_specs,
     build_edge_specs,
     build_node_specs,
@@ -101,32 +102,38 @@ def test_default_route_flows_are_nonempty() -> None:
     assert all(flow.from_edge != flow.to_edge for flow in flows)
 
 
-def test_default_route_flows_include_bottom_and_right_boundary_sources() -> None:
+def test_boundary_stubs_add_external_spawn_nodes_on_every_boundary_approach() -> None:
     nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
-    edges = build_edge_specs(nodes)
+    stubs = build_boundary_stub_specs(nodes, rows=3, cols=3, spacing=200.0)
 
-    flows = build_route_flows(edges)
-    source_edges = {flow.from_edge for flow in flows}
-    destination_edges = {flow.to_edge for flow in flows}
+    assert len(stubs) == 12
+    assert {stub.node_type for stub in stubs} == {None}
+    assert {stub.node_id for stub in stubs} >= {
+        "S_top_0",
+        "S_bottom_2",
+        "S_left_1",
+        "S_right_1",
+    }
 
-    assert any(edge.startswith("N2_2_to_") for edge in source_edges)
-    assert any(edge.endswith("_to_N2_2") for edge in destination_edges)
 
-
-def test_default_route_flows_use_only_corner_entry_and_exit_nodes() -> None:
+def test_default_route_flows_use_external_stubs_on_all_boundary_sides() -> None:
     nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
-    edges = build_edge_specs(nodes)
-    traffic_lights = {node.node_id for node in nodes if node.node_type == "traffic_light"}
-    corners = {"N0_0", "N0_2", "N2_0", "N2_2"}
+    stubs = build_boundary_stub_specs(nodes, rows=3, cols=3, spacing=200.0)
+    edges = build_edge_specs(nodes + stubs)
 
     flows = build_route_flows(edges)
     source_nodes = {_edge_nodes(flow.from_edge)[0] for flow in flows}
     destination_nodes = {_edge_nodes(flow.to_edge)[1] for flow in flows}
 
-    assert source_nodes <= corners
-    assert destination_nodes <= corners
-    assert source_nodes.isdisjoint(traffic_lights)
-    assert destination_nodes.isdisjoint(traffic_lights)
+    assert len(flows) == 12
+    assert source_nodes == {stub.node_id for stub in stubs}
+    assert destination_nodes == {stub.node_id for stub in stubs}
+    assert {node.split("_", 2)[1] for node in source_nodes} == {
+        "top",
+        "bottom",
+        "left",
+        "right",
+    }
 
 
 def test_conflict_phase_states_use_sumo_foes_and_same_outgoing_edge() -> None:
