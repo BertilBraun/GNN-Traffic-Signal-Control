@@ -92,6 +92,20 @@ def test_t_junction_connects_extra_center_bound_lane() -> None:
     assert 2 in {connection.to_lane for connection in to_center}
 
 
+def test_connections_only_reference_existing_source_lanes_with_stubs() -> None:
+    nodes = build_node_specs(rows=4, cols=4, spacing=200.0)
+    stubs = build_boundary_stub_specs(nodes, rows=4, cols=4, spacing=200.0)
+    edges = build_edge_specs(nodes + stubs)
+    lanes_by_edge = {edge.edge_id: edge.lanes for edge in edges}
+
+    connections = build_connection_specs(nodes + stubs, edges)
+
+    assert all(
+        connection.from_lane < lanes_by_edge[connection.from_edge]
+        for connection in connections
+    )
+
+
 def test_default_route_flows_are_nonempty() -> None:
     nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
     edges = build_edge_specs(nodes)

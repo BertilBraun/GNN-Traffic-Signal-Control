@@ -200,13 +200,14 @@ def build_connection_specs(
                 [node_by_id[edge.to_node] for edge in candidates],
             )
             for lane_idx, target_node in enumerate(ordered):
+                source_lane = min(lane_idx, incoming.lanes - 1)
                 to_edge = edge_by_pair[(current.node_id, target_node.node_id)]
                 specs.append(
                     ConnectionSpec(
                         node_id=current.node_id,
                         from_edge=incoming.edge_id,
                         to_edge=to_edge.edge_id,
-                        from_lane=lane_idx,
+                        from_lane=source_lane,
                         to_lane=min(lane_idx, to_edge.lanes - 1),
                     )
                 )
@@ -217,7 +218,7 @@ def build_connection_specs(
                                 node_id=current.node_id,
                                 from_edge=incoming.edge_id,
                                 to_edge=to_edge.edge_id,
-                                from_lane=lane_idx,
+                                from_lane=source_lane,
                                 to_lane=extra_to_lane,
                             )
                         )
