@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import torch
 from torch import nn
 
@@ -42,13 +44,13 @@ class MovementScorer(nn.Module):
             nn.Linear(hidden_dim, 1),
         )
 
-    def forward(
+    def movement_embeddings(
         self,
         x_lane: torch.Tensor,
         x_movement: torch.Tensor,
         edge_index_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        """Return one scalar score per movement."""
+        """Return one embedding per movement."""
         if self.num_hops > 0 and edge_index_dict is None:
             raise ValueError('edge_index_dict is required when num_hops > 0.')
         lane_embeddings = self.lane_encoder(x_lane)
@@ -71,7 +73,71 @@ class MovementScorer(nn.Module):
                 movement_embeddings,
                 edge_index_dict,
             )
-        return self.score_head(movement_embeddings).squeeze(-1)
+        return movement_embeddings
+
+    def forward(
+        self,
+        x_lane: torch.Tensor,
+        x_movement: torch.Tensor,
+        edge_index_dict: dict[str, torch.Tensor] | None = None,
+    ) -> torch.Tensor:
+        """Return one scalar score per movement."""
+        return self.score_head(
+            self.movement_embeddings(
+                x_lane=x_lane,
+                x_movement=x_movement,
+                edge_index_dict=edge_index_dict,
+            )
+        ).squeeze(-1)
+
+
+class MovementActorCritic(MovementScorer):
+    """Movement-score actor plus per-traffic-light value critic."""
+
+    def __init__(
+        self,
+        lane_feature_dim: int,
+        movement_feature_dim: int,
+        hidden_dim: int = 64,
+        num_hops: int = 1,
+    ) -> None:
+        super().__init__(
+            lane_feature_dim=lane_feature_dim,
+            movement_feature_dim=movement_feature_dim,
+            hidden_dim=hidden_dim,
+            num_hops=num_hops,
+        )
+        self.value_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward_actor_critic(
+        self,
+        x_lane: torch.Tensor,
+        x_movement: torch.Tensor,
+        movement_ids_by_traffic_light: Sequence[Sequence[int]],
+        edge_index_dict: dict[str, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return movement scores and one value per traffic light."""
+        movement_embeddings = self.movement_embeddings(
+            x_lane=x_lane,
+            x_movement=x_movement,
+            edge_index_dict=edge_index_dict,
+        )
+        movement_scores = self.score_head(movement_embeddings).squeeze(-1)
+        traffic_light_embeddings = torch.stack(
+            tuple(
+                movement_embeddings[
+                    torch.tensor(tuple(movement_ids), dtype=torch.long, device=movement_embeddings.device)
+                ].mean(dim=0)
+                for movement_ids in movement_ids_by_traffic_light
+            )
+        )
+        values = self.value_head(traffic_light_embeddings).squeeze(-1)
+        return movement_scores, values
 
 
 class MovementLaneHop(nn.Module):

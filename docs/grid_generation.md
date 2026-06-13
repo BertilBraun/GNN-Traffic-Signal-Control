@@ -6,13 +6,18 @@ Generate a dedicated-lane 6x6 SUMO grid:
 python scripts\generate_grid_network.py --rows 6 --cols 6 --out configs\grid_6x6_dedicated
 ```
 
-By default, generated grids use `900` total vehicles/hour distributed across all boundary route flows. This keeps larger grids from becoming overloaded just because they have more entry flows.
+Generated demand targets a steady background occupancy of approximately 8%:
 
-Generate a lighter or heavier grid by choosing the total demand explicitly:
-
-```powershell
-python scripts\generate_grid_network.py --rows 4 --cols 4 --out configs\grid_4x4_dedicated --demand-vehicles-per-hour 700
+```text
+target vehicles = directed lane storage x 8%
+total demand = target vehicles / estimated trip duration
 ```
+
+Lane storage assumes 8 m per vehicle. Estimated trip duration is three times the
+shortest free-flow boundary-to-boundary travel time to account for signal delay.
+The resulting demand is distributed evenly across all generated boundary flows.
+With the default 200 m spacing, this produces approximately `2,923`, `4,000`,
+and `6,519` vehicles/hour for 3x3, 4x4, and 6x6 grids.
 
 Grid generation synthesizes maximal green phases from SUMO movement foes plus an additional conflict when movements from different incoming lanes enter the same outgoing edge.
 

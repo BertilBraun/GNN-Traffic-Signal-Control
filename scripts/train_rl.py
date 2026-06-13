@@ -1,195 +1,125 @@
-"""Entry point: PPO reinforcement learning on the irregular 4×4 grid (PLAN Stage 4).
-
-Fine-tunes a GATv2 policy that was pre-trained via imitation learning (Stage 2)
-using Proximal Policy Optimisation with a per-junction actor-critic architecture.
-
-Usage
------
-    # Quickstart: point at your IL checkpoint
-    python scripts/train_rl.py --il-ckpt checkpoints/il/<timestamp>
-
-    # Full custom run
-    python scripts/train_rl.py \\
-        --il-ckpt      checkpoints/il/<timestamp> \\
-        --cfg          configs/grid_4x4/grid.sumocfg \\
-        --iterations   500 \\
-        --ep-len       3600 \\
-        --burn-in      20 \\
-        --episodes     1 \\
-        --lr           3e-4 \\
-        --epochs       10 \\
-        --clip         0.2 \\
-        --eval-every   50 \\
-        --save-every   50 \\
-        --log-dir      runs/rl/my_run \\
-        --ckpt-dir     checkpoints/rl/my_run \\
-        --device       cuda
-
-    # Resume from latest RL checkpoint (re-use same log/ckpt dirs)
-    python scripts/train_rl.py \\
-        --il-ckpt  checkpoints/rl/<timestamp> \\
-        ...
-
-    # Watch training in TensorBoard (separate terminal)
-    tensorboard --logdir runs/
-"""
+"""Train a movement-score policy with PPO."""
 
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime
 from pathlib import Path
+import sys
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.training.ppo import train_rl
+from src.movement.evaluation import EvaluationPolicy
+from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
 
-# ---------------------------------------------------------------------------
-# Default paths
-# ---------------------------------------------------------------------------
-
-DEFAULT_CFG = str(ROOT / 'configs' / 'grid_4x4' / 'grid.sumocfg')
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description='PPO RL fine-tuning — GATv2 policy on the irregular 4×4 grid',
+    parser = argparse.ArgumentParser(
+        description='PPO fine-tuning for movement-score traffic signal policies.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-
-    # Required
-    p.add_argument(
-        '--il-ckpt',
-        required=True,
-        metavar='DIR',
-        help='Directory containing il_policy.pt and normalizer.npz (IL checkpoint)',
-    )
-
-    # Environment
-    p.add_argument('--cfg', default=DEFAULT_CFG, help='Path to .sumocfg file')
-    p.add_argument('--ep-len', type=int, default=3600, help='Simulation seconds per episode')
-    p.add_argument(
-        '--flow-range',
-        nargs=2,
-        type=int,
-        default=[300, 1000],
-        metavar=('MIN', 'MAX'),
-        help='Total vehicles/hour range for demand randomisation (default: 300 1000)',
-    )
-    p.add_argument(
-        '--demand-min-rate',
+    parser.add_argument('--il-checkpoint', type=Path, required=True, help='IL movement checkpoint path')
+    parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
+    parser.add_argument('--iterations', type=int, default=50, help='PPO collect-update iterations')
+    parser.add_argument('--steps-per-rollout', type=int, default=120, help='Decision steps collected per iteration')
+    parser.add_argument('--decision-interval', type=int, default=15, help='Simulation seconds per decision')
+    parser.add_argument('--lr', type=float, default=3e-4, help='Adam learning rate')
+    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--lam', type=float, default=0.95, help='GAE lambda')
+    parser.add_argument('--clip', type=float, default=0.2, help='PPO clipping epsilon')
+    parser.add_argument('--epochs', type=int, default=4, help='PPO update epochs')
+    parser.add_argument('--value-warmup-iterations', type=int, default=10, help='Value-only warmup iterations')
+    parser.add_argument('--warmup-epochs', type=int, default=8, help='Update epochs during value warmup')
+    parser.add_argument('--value-coeff', type=float, default=0.5, help='Value loss coefficient')
+    parser.add_argument('--entropy-coeff', type=float, default=0.02, help='Entropy bonus coefficient')
+    parser.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clipping norm')
+    parser.add_argument('--transitions-per-batch', type=int, default=8, help='Decision transitions per minibatch')
+    parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
+    parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
+    parser.add_argument('--demand-scale', type=float, default=1.0, help='Rollout demand multiplier')
+    parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
+    parser.add_argument(
+        '--initial-occupancy-min',
         type=float,
-        default=5.0,
-        metavar='R',
-        help='Minimum vehicles/hour per active O-D pair in generated demand.',
+        default=0.08,
+        help='Minimum sampled initial network occupancy',
     )
-    p.add_argument('--burn-in', type=int, default=20, help='Fixed-time warm-up steps before GNN takes over (× 15 s)')
-
-    # PPO knobs
-    p.add_argument('--iterations', type=int, default=500, help='Total collect→update cycles')
-    p.add_argument('--episodes', type=int, default=1, help='Episodes collected per iteration')
-    p.add_argument('--workers', type=int, default=1, help='Parallel SUMO processes for collection (1 = sequential)')
-    p.add_argument(
-        '--min-green-steps',
-        type=int,
-        default=2,
-        help='Minimum decision steps before a phase switch is allowed (2 × 15 s = 30 s)',
+    parser.add_argument(
+        '--initial-occupancy-max',
+        type=float,
+        default=0.16,
+        help='Maximum sampled initial network occupancy',
     )
-    p.add_argument('--lr', type=float, default=3e-4, help='Adam learning rate')
-    p.add_argument('--gamma', type=float, default=0.99, help='Discount factor γ')
-    p.add_argument('--lam', type=float, default=0.95, help='GAE smoothing λ')
-    p.add_argument('--clip', type=float, default=0.2, help='PPO clip ε')
-    p.add_argument('--epochs', type=int, default=4, help='PPO update epochs per iteration')
-    p.add_argument(
-        '--warmup', type=int, default=20, help='Iterations to train value head only (backbone frozen) before PPO starts'
+    parser.add_argument('--eval-every', type=int, default=10, help='Evaluate every N iterations')
+    parser.add_argument('--eval-steps', type=int, default=600, help='Evaluation simulation seconds')
+    parser.add_argument('--eval-seeds', nargs='+', type=int, default=[42], help='Evaluation SUMO seeds')
+    parser.add_argument(
+        '--eval-policies',
+        nargs='+',
+        choices=tuple(policy.value for policy in EvaluationPolicy),
+        default=[
+            EvaluationPolicy.MAX_PRESSURE.value,
+            EvaluationPolicy.QUEUE.value,
+            EvaluationPolicy.LEARNED.value,
+        ],
+        help='Policies included in periodic evaluation',
     )
-    p.add_argument(
-        '--warmup-epochs',
-        type=int,
-        default=10,
-        help='PPO epochs per iteration during value warmup (more than n_epochs to converge faster)',
-    )
-    p.add_argument('--value-coeff', type=float, default=0.5, help='Value loss weight')
-    p.add_argument('--entropy-coeff', type=float, default=0.05, help='Entropy bonus weight')
-    p.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clip norm')
-    p.add_argument(
-        '--minibatch', type=int, default=256, help='Target junction-transitions per minibatch (rounded to whole graphs)'
-    )
-
-    # Logging / checkpointing
-    p.add_argument('--eval-every', type=int, default=5, help='Run model-vs-expert eval every N iterations (0 = never)')
-    p.add_argument(
-        '--n-eval-seeds', type=int, default=5, help='Number of demand seeds averaged in the final evaluation'
-    )
-    p.add_argument('--save-every', type=int, default=20, help='Save numbered checkpoint every N iterations')
-    p.add_argument('--print-every', type=int, default=1, help='Print console summary every N iterations')
-    p.add_argument('--log-dir', default=None, help='TensorBoard log directory (default: runs/rl/<timestamp>)')
-    p.add_argument('--ckpt-dir', default=None, help='Checkpoint directory (default: checkpoints/rl/<timestamp>)')
-
-    # Hardware
-    p.add_argument('--device', default=None, help="PyTorch device ('cpu', 'cuda').  Auto-detected if omitted.")
-
-    # Reproducibility / debugging
-    p.add_argument(
-        '--demand-seed',
-        type=int,
-        default=None,
-        help='Fix demand RNG to this seed every episode (deterministic traffic). Omit for randomised demand.',
-    )
-
-    return p.parse_args()
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    parser.add_argument('--eval-demand-scale', type=float, default=1.0, help='Evaluation demand multiplier')
+    parser.add_argument('--save-every', type=int, default=10, help='Save numbered checkpoint every N iterations')
+    parser.add_argument('--print-every', type=int, default=1, help='Print every N iterations')
+    parser.add_argument('--ckpt-dir', type=Path, default=None, help='Checkpoint directory')
+    parser.add_argument('--log-dir', type=Path, default=None, help='TensorBoard log directory')
+    parser.add_argument('--device', default='cpu', help='Torch device')
+    parser.add_argument('--seed', type=int, default=42, help='Torch and SUMO seed')
+    return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_dir = args.log_dir or str(ROOT / 'runs' / 'rl' / stamp)
-    ckpt_dir = args.ckpt_dir or str(ROOT / 'checkpoints' / 'rl' / stamp)
-
-    train_rl(
-        cfg_path=args.cfg,
-        il_checkpoint_dir=args.il_ckpt,
-        n_iterations=args.iterations,
-        episodes_per_update=args.episodes,
-        n_workers=args.workers,
-        episode_length=args.ep_len,
-        burn_in_steps=args.burn_in,
-        lr=args.lr,
-        gamma=args.gamma,
-        lam=args.lam,
-        clip_eps=args.clip,
-        n_epochs=args.epochs,
-        value_warmup_iters=args.warmup,
-        warmup_epochs=args.warmup_epochs,
-        value_coeff=args.value_coeff,
-        entropy_coeff=args.entropy_coeff,
-        max_grad_norm=args.grad_clip,
-        min_green_steps=args.min_green_steps,
-        minibatch_junctions=args.minibatch,
-        eval_every=args.eval_every,
-        n_eval_seeds=args.n_eval_seeds,
-        save_every=args.save_every,
-        print_every=args.print_every,
-        log_dir=log_dir,
-        checkpoint_dir=ckpt_dir,
-        device=args.device,
-        demand_seed=args.demand_seed,
-        flow_range=tuple(args.flow_range),
-        demand_min_rate=args.demand_min_rate,
+    checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / stamp
+    log_dir = args.log_dir or ROOT / 'runs' / 'rl' / stamp
+    result = train_movement_ppo(
+        MovementPpoConfig(
+            cfg_path=args.cfg,
+            il_checkpoint_path=args.il_checkpoint,
+            iterations=args.iterations,
+            steps_per_rollout=args.steps_per_rollout,
+            decision_interval=args.decision_interval,
+            learning_rate=args.lr,
+            gamma=args.gamma,
+            lam=args.lam,
+            clip_epsilon=args.clip,
+            update_epochs=args.epochs,
+            value_warmup_iterations=args.value_warmup_iterations,
+            warmup_epochs=args.warmup_epochs,
+            value_coefficient=args.value_coeff,
+            entropy_coefficient=args.entropy_coeff,
+            max_grad_norm=args.grad_clip,
+            transitions_per_batch=args.transitions_per_batch,
+            yellow_duration=args.yellow_duration,
+            min_green_steps=args.min_green_steps,
+            demand_scale=args.demand_scale,
+            gui=args.gui,
+            initial_occupancy_min=args.initial_occupancy_min,
+            initial_occupancy_max=args.initial_occupancy_max,
+            eval_every=args.eval_every,
+            eval_steps=args.eval_steps,
+            eval_seeds=tuple(args.eval_seeds),
+            eval_policies=tuple(EvaluationPolicy(policy) for policy in args.eval_policies),
+            eval_demand_scale=args.eval_demand_scale,
+            save_every=args.save_every,
+            print_every=args.print_every,
+            checkpoint_dir=checkpoint_dir,
+            log_dir=log_dir,
+            device=args.device,
+            seed=args.seed,
+        )
     )
+    print(f'PPO training complete: iterations={result.iterations} checkpoint={result.checkpoint_path}')
 
 
 if __name__ == '__main__':

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import heapq
+import math
 import os
 import subprocess
 import sys
@@ -23,6 +25,10 @@ from src.movement.phase_synthesis import (
 )
 from src.movement.schema import LaneId, TrafficLightId
 
+BACKGROUND_TARGET_OCCUPANCY = 0.08
+EFFECTIVE_VEHICLE_SPACING_M = 8.0
+EXPECTED_TRIP_TIME_MULTIPLIER = 3.0
+
 
 @dataclass(frozen=True)
 class NodeSpec:
@@ -42,6 +48,7 @@ class EdgeSpec:
     to_node: str
     lanes: int
     speed: float
+    length_m: float
 
 
 @dataclass(frozen=True)
@@ -61,6 +68,12 @@ class FlowSpec:
     begin: int
     end: int
     probability: float
+
+
+@dataclass(frozen=True)
+class RouteEdgePair:
+    source: EdgeSpec
+    destination: EdgeSpec
 
 
 def node_id(row: int, col: int) -> str:
@@ -231,67 +244,57 @@ def build_route_flows(
     edges: list[EdgeSpec],
     begin: int = 0,
     end: int = 3600,
-    demand_vehicles_per_hour: float = 900.0,
 ) -> list[FlowSpec]:
-    max_row, max_col = _internal_grid_bounds(edges)
-    stub_source_edges = [edge for edge in edges if _is_stub_node(edge.from_node) and not _is_stub_node(edge.to_node)]
-    stub_sink_edges = [edge for edge in edges if not _is_stub_node(edge.from_node) and _is_stub_node(edge.to_node)]
-    if stub_source_edges and stub_sink_edges:
-        return _build_route_flows(
-            source_edges=stub_source_edges,
-            sink_edges=stub_sink_edges,
+    route_pairs = _route_edge_pairs(edges)
+    probability = _per_flow_probability(
+        flow_count=len(route_pairs),
+        demand_vehicles_per_hour=demand_vehicles_per_hour_for_edges(edges),
+    )
+    return [
+        FlowSpec(
+            flow_id=f'flow_{route_index}',
+            from_edge=route_pair.source.edge_id,
+            to_edge=route_pair.destination.edge_id,
             begin=begin,
             end=end,
-            demand_vehicles_per_hour=demand_vehicles_per_hour,
-            max_row=max_row,
-            max_col=max_col,
+            probability=probability,
         )
-
-    corner_source_edges = [edge for edge in edges if _is_corner_node(edge.from_node, max_row, max_col)]
-    corner_sink_edges = [edge for edge in edges if _is_corner_node(edge.to_node, max_row, max_col)]
-    return _build_route_flows(
-        source_edges=corner_source_edges,
-        sink_edges=corner_sink_edges,
-        begin=begin,
-        end=end,
-        demand_vehicles_per_hour=demand_vehicles_per_hour,
-        max_row=max_row,
-        max_col=max_col,
-    )
+        for route_index, route_pair in enumerate(route_pairs)
+    ]
 
 
-def _build_route_flows(
+def _build_route_edge_pairs(
     source_edges: list[EdgeSpec],
     sink_edges: list[EdgeSpec],
-    begin: int,
-    end: int,
-    demand_vehicles_per_hour: float,
     max_row: int,
     max_col: int,
-) -> list[FlowSpec]:
-    if demand_vehicles_per_hour <= 0.0:
-        raise ValueError('demand_vehicles_per_hour must be positive.')
-    flows: list[FlowSpec] = []
-    sources = sorted(source_edges, key=lambda edge: edge.edge_id)
-    probability = _per_flow_probability(
-        flow_count=len(sources),
-        demand_vehicles_per_hour=demand_vehicles_per_hour,
-    )
-    for source_index, source in enumerate(sources):
+) -> list[RouteEdgePair]:
+    route_pairs: list[RouteEdgePair] = []
+    for source in sorted(source_edges, key=lambda edge: edge.edge_id):
         opposite = _opposite_boundary_edge(source, sink_edges, max_row, max_col)
         if opposite is None or opposite.edge_id == source.edge_id:
             continue
-        flows.append(
-            FlowSpec(
-                flow_id=f'flow_{source_index}',
-                from_edge=source.edge_id,
-                to_edge=opposite.edge_id,
-                begin=begin,
-                end=end,
-                probability=probability,
-            )
+        route_pairs.append(RouteEdgePair(source=source, destination=opposite))
+    return route_pairs
+
+
+def _route_edge_pairs(edges: list[EdgeSpec]) -> list[RouteEdgePair]:
+    max_row, max_col = _internal_grid_bounds(edges)
+    stub_sources = [edge for edge in edges if _is_stub_node(edge.from_node) and not _is_stub_node(edge.to_node)]
+    stub_sinks = [edge for edge in edges if not _is_stub_node(edge.from_node) and _is_stub_node(edge.to_node)]
+    if stub_sources and stub_sinks:
+        return _build_route_edge_pairs(
+            source_edges=stub_sources,
+            sink_edges=stub_sinks,
+            max_row=max_row,
+            max_col=max_col,
         )
-    return flows
+    return _build_route_edge_pairs(
+        source_edges=[edge for edge in edges if _is_corner_node(edge.from_node, max_row, max_col)],
+        sink_edges=[edge for edge in edges if _is_corner_node(edge.to_node, max_row, max_col)],
+        max_row=max_row,
+        max_col=max_col,
+    )
 
 
 def build_conflict_phase_states(
@@ -308,7 +311,6 @@ def generate_grid(
     output_dir: Path,
     spacing: float = 200.0,
     speed: float = 13.89,
-    demand_vehicles_per_hour: float = 900.0,
     netconvert: bool = True,
 ) -> Path:
     nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
@@ -329,10 +331,7 @@ def generate_grid(
     _write_additional(output_dir / 'grid.add.xml')
     _write_routes(
         output_dir / 'grid.rou.xml',
-        build_route_flows(
-            edges,
-            demand_vehicles_per_hour=demand_vehicles_per_hour,
-        ),
+        build_route_flows(edges),
     )
     _write_sumocfg(output_dir / 'grid.sumocfg')
 
@@ -350,6 +349,10 @@ def _edge_between(from_node: NodeSpec, to_node: NodeSpec, speed: float) -> EdgeS
         to_node=to_node.node_id,
         lanes=_incoming_lanes_for_target(to_node),
         speed=speed,
+        length_m=math.hypot(
+            to_node.x - from_node.x,
+            to_node.y - from_node.y,
+        ),
     )
 
 
@@ -477,6 +480,64 @@ def _per_flow_probability(
     if flow_count <= 0:
         return 0.0
     return demand_vehicles_per_hour / 3600.0 / float(flow_count)
+
+
+def demand_vehicles_per_hour_for_edges(edges: list[EdgeSpec]) -> float:
+    """Estimate arrivals required to sustain the target network occupancy."""
+    storage_capacity = sum(edge.length_m * edge.lanes for edge in edges) / EFFECTIVE_VEHICLE_SPACING_M
+    mean_free_flow_trip_time = _mean_free_flow_trip_time(edges, _route_edge_pairs(edges))
+    expected_trip_time = mean_free_flow_trip_time * EXPECTED_TRIP_TIME_MULTIPLIER
+    target_vehicle_count = storage_capacity * BACKGROUND_TARGET_OCCUPANCY
+    return float(round(target_vehicle_count * 3600.0 / expected_trip_time))
+
+
+def _mean_free_flow_trip_time(
+    edges: list[EdgeSpec],
+    route_pairs: list[RouteEdgePair],
+) -> float:
+    if not route_pairs:
+        raise ValueError('Cannot estimate demand without generated route pairs.')
+    edge_by_id = {edge.edge_id: edge for edge in edges}
+    outgoing_by_node: dict[str, list[EdgeSpec]] = {}
+    for edge in edges:
+        outgoing_by_node.setdefault(edge.from_node, []).append(edge)
+    trip_times = [
+        _shortest_free_flow_trip_time(
+            source=route_pair.source,
+            destination=route_pair.destination,
+            edge_by_id=edge_by_id,
+            outgoing_by_node=outgoing_by_node,
+        )
+        for route_pair in route_pairs
+    ]
+    return sum(trip_times) / len(trip_times)
+
+
+def _shortest_free_flow_trip_time(
+    source: EdgeSpec,
+    destination: EdgeSpec,
+    edge_by_id: dict[str, EdgeSpec],
+    outgoing_by_node: dict[str, list[EdgeSpec]],
+) -> float:
+    source_travel_time = source.length_m / source.speed
+    pending: list[tuple[float, str]] = [(source_travel_time, source.edge_id)]
+    best_time_by_edge = {source.edge_id: source_travel_time}
+    while pending:
+        elapsed_time, edge_id = heapq.heappop(pending)
+        if elapsed_time > best_time_by_edge[edge_id]:
+            continue
+        if edge_id == destination.edge_id:
+            return elapsed_time
+        current = edge_by_id[edge_id]
+        for next_edge in outgoing_by_node.get(current.to_node, []):
+            if next_edge.to_node == current.from_node:
+                continue
+            next_time = elapsed_time + next_edge.length_m / next_edge.speed
+            if next_time >= best_time_by_edge.get(next_edge.edge_id, math.inf):
+                continue
+            best_time_by_edge[next_edge.edge_id] = next_time
+            heapq.heappush(pending, (next_time, next_edge.edge_id))
+    raise ValueError(f'No route from {source.edge_id} to {destination.edge_id}.')
 
 
 def _opposite_boundary_edge(
@@ -702,6 +763,7 @@ def _print_summary(
     tls = [node.node_id for node in nodes if node.node_type == 'traffic_light']
     print(f'Wrote {net_path}')
     print(f'  nodes={len(nodes)} edges={len(edges)} traffic_lights={len(tls)} connections={len(connections)}')
+    print(f'  demand={demand_vehicles_per_hour_for_edges(edges):.0f} vehicles/hour')
     print(f'  traffic lights: {", ".join(tls)}')
 
 
@@ -712,12 +774,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--out', dest='output_dir', type=Path, required=True, help='Output directory')
     parser.add_argument('--spacing', type=float, default=200.0, help='Distance between adjacent nodes in metres')
     parser.add_argument('--speed', type=float, default=13.89, help='Default speed in m/s')
-    parser.add_argument(
-        '--demand-vehicles-per-hour',
-        type=float,
-        default=900.0,
-        help='Total generated route demand distributed across boundary flows',
-    )
     parser.add_argument('--no-netconvert', action='store_true', help='Only write plain XML files')
     return parser.parse_args()
 
@@ -730,7 +786,6 @@ def main() -> None:
         output_dir=args.output_dir,
         spacing=args.spacing,
         speed=args.speed,
-        demand_vehicles_per_hour=args.demand_vehicles_per_hour,
         netconvert=not args.no_netconvert,
     )
 

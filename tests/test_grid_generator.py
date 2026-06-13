@@ -10,6 +10,7 @@ from scripts.generate_grid_network import (
     build_edge_specs,
     build_node_specs,
     build_route_flows,
+    demand_vehicles_per_hour_for_edges,
 )
 from src.movement.phase_synthesis import (
     TrafficLightLinkSpec,
@@ -135,26 +136,28 @@ def test_default_route_flows_are_nonempty() -> None:
     assert all(flow.from_edge != flow.to_edge for flow in flows)
 
 
-def test_default_route_flows_distribute_total_demand_across_flows() -> None:
+def test_route_flows_distribute_occupancy_based_demand_across_flows() -> None:
     nodes = build_node_specs(rows=4, cols=4, spacing=200.0)
     stub_nodes = build_boundary_stub_specs(nodes, rows=4, cols=4, spacing=200.0)
     edges = build_edge_specs(nodes + stub_nodes)
 
     flows = build_route_flows(edges)
+    total_demand = demand_vehicles_per_hour_for_edges(edges)
 
     assert len(flows) == 16
-    assert {round(flow.probability, 6) for flow in flows} == {round(900.0 / 3600.0 / 16.0, 6)}
+    assert total_demand == 4000.0
+    assert {round(flow.probability, 6) for flow in flows} == {round(total_demand / 3600.0 / 16.0, 6)}
 
 
-def test_route_flow_total_demand_is_configurable() -> None:
-    nodes = build_node_specs(rows=3, cols=3, spacing=200.0)
-    stub_nodes = build_boundary_stub_specs(nodes, rows=3, cols=3, spacing=200.0)
-    edges = build_edge_specs(nodes + stub_nodes)
+def test_route_flow_demand_scales_with_network_storage_and_trip_time() -> None:
+    demands = []
+    for size in (3, 4, 6):
+        nodes = build_node_specs(rows=size, cols=size, spacing=200.0)
+        stub_nodes = build_boundary_stub_specs(nodes, rows=size, cols=size, spacing=200.0)
+        edges = build_edge_specs(nodes + stub_nodes)
+        demands.append(demand_vehicles_per_hour_for_edges(edges))
 
-    flows = build_route_flows(edges, demand_vehicles_per_hour=450.0)
-
-    assert len(flows) == 12
-    assert {round(flow.probability, 6) for flow in flows} == {round(450.0 / 3600.0 / 12.0, 6)}
+    assert demands == [2923.0, 4000.0, 6519.0]
 
 
 def test_boundary_stubs_add_external_spawn_nodes_on_every_boundary_approach() -> None:
