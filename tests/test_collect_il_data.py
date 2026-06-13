@@ -7,13 +7,14 @@ sys.path.insert(0, str(ROOT))
 from scripts.collect_il_data import (
     graph_max_pressure_scores_from_features,
     resolve_sumocfg_net_path,
-    vehicle_snapshots_from_api,
 )
 from src.movement.extraction import extract_traffic_light_program
 from src.movement.features import (
     LaneGroupGeometry,
     MovementControlState,
+    VehicleSnapshot,
     build_feature_frame,
+    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph
 
@@ -45,38 +46,26 @@ class FakeVehicleApi:
     def getRouteIndex(self, vehicle_id: str) -> int:
         return {'v0': 0, 'v1': 0}[vehicle_id]
 
+    def getLanePosition(self, vehicle_id: str) -> float:
+        return {'v0': 175.0, 'v1': 50.0}[vehicle_id]
+
+    def getSpeed(self, vehicle_id: str) -> float:
+        return {'v0': 12.0, 'v1': 0.0}[vehicle_id]
+
+    def getLength(self, vehicle_id: str) -> float:
+        return 5.0
+
 
 def test_vehicle_snapshots_use_next_route_edge_for_oracle_demand() -> None:
     snapshots = vehicle_snapshots_from_api(FakeVehicleApi())
 
     assert snapshots[0].vehicle_id == 'v0'
     assert snapshots[0].lane_id == 'north_in_0'
-    assert snapshots[0].next_lane_id == 'south_out'
-    assert snapshots[1].next_lane_id is None
-
-
-class FakeLaneApi:
-    def getLastStepVehicleNumber(self, lane_id: str) -> int:
-        return 0
-
-    def getLastStepHaltingNumber(self, lane_id: str) -> int:
-        return {
-            'north_in_0': 5,
-            'north_in_1': 4,
-            'south_out_0': 2,
-            'south_out_1': 1,
-            'east_in_0': 6,
-            'west_out_0': 2,
-        }.get(str(lane_id), 0)
-
-    def getLastStepLength(self, lane_id: str) -> float:
-        return 0.0
-
-    def getLastStepOccupancy(self, lane_id: str) -> float:
-        return 0.0
-
-    def getLastStepMeanSpeed(self, lane_id: str) -> float:
-        return 0.0
+    assert snapshots[0].next_edge_id == 'south_out'
+    assert snapshots[0].lane_position_m == 175.0
+    assert snapshots[0].speed_mps == 12.0
+    assert snapshots[0].length_m == 5.0
+    assert snapshots[1].next_edge_id is None
 
 
 def test_graph_max_pressure_scores_use_visible_lane_group_features() -> None:
@@ -103,9 +92,27 @@ def test_graph_max_pressure_scores_use_visible_lane_group_features() -> None:
             'east_in': LaneGroupGeometry(length_m=200.0, num_lanes=1),
             'west_out': LaneGroupGeometry(length_m=200.0, num_lanes=1),
         },
-        lane_api=FakeLaneApi(),
         control_state=MovementControlState(),
-        vehicles=(),
+        vehicles=(
+            *_halted_vehicles('north', 'north_in', 9),
+            *_halted_vehicles('south', 'south_out', 3),
+            *_halted_vehicles('east', 'east_in', 6),
+            *_halted_vehicles('west', 'west_out', 2),
+        ),
     )
 
     assert graph_max_pressure_scores_from_features(graph, frame) == (6.0, 4.0)
+
+
+def _halted_vehicles(prefix: str, edge_id: str, count: int) -> tuple[VehicleSnapshot, ...]:
+    return tuple(
+        VehicleSnapshot(
+            vehicle_id=f'{prefix}_{index}',
+            lane_id=f'{edge_id}_0',
+            next_edge_id=None,
+            lane_position_m=150.0 + index,
+            speed_mps=0.0,
+            length_m=5.0,
+        )
+        for index in range(count)
+    )

@@ -19,8 +19,8 @@ from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
     MovementFeatureFrame,
     MovementControlState,
-    VehicleSnapshot,
     build_feature_frame,
+    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
@@ -59,23 +59,6 @@ def lane_inputs_from_net(
             speed_limit_mps=float(edge.getSpeed()),
         )
     return lane_ids_by_edge, lane_geometries
-
-
-def vehicle_snapshots_from_api(vehicle_api) -> tuple[VehicleSnapshot, ...]:
-    """Capture current lane and next route edge for oracle movement demand."""
-    snapshots: list[VehicleSnapshot] = []
-    for vehicle_id in vehicle_api.getIDList():
-        route = tuple(vehicle_api.getRoute(vehicle_id))
-        route_index = int(vehicle_api.getRouteIndex(vehicle_id))
-        next_edge = route[route_index + 1] if route_index + 1 < len(route) else None
-        snapshots.append(
-            VehicleSnapshot(
-                vehicle_id=str(vehicle_id),
-                lane_id=vehicle_api.getLaneID(vehicle_id),
-                next_lane_id=next_edge,
-            )
-        )
-    return tuple(snapshots)
 
 
 def graph_max_pressure_scores_from_features(
@@ -126,7 +109,6 @@ def collect_samples(
                     graph=graph,
                     lane_ids_by_edge=lane_ids_by_edge,
                     lane_geometries=lane_geometries,
-                    lane_api=runtime.lane_api,
                     control_state=MovementControlState(),
                     vehicles=vehicle_snapshots_from_api(traci.vehicle),
                 )

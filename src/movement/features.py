@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
+
+from traci._vehicle import VehicleDomain
 
 from .graph_schema import GraphMovementId, LaneGroupId, MovementGraph
 from .schema import EdgeId, LaneId
@@ -12,18 +14,11 @@ from .schema import EdgeId, LaneId
 DEFAULT_DETECTOR_LENGTH_M = 200.0
 EFFECTIVE_VEHICLE_SPACING_M = 8.0
 DEFAULT_SPEED_LIMIT_MPS = 13.89
+HALTING_SPEED_THRESHOLD_MPS = 0.1
 
 
 class LaneFeatureApi(Protocol):
     def getLastStepHaltingNumber(self, lane_id: LaneId | str) -> int: ...
-
-    def getLastStepVehicleNumber(self, lane_id: LaneId | str) -> int: ...
-
-    def getLastStepLength(self, lane_id: LaneId | str) -> float: ...
-
-    def getLastStepOccupancy(self, lane_id: LaneId | str) -> float: ...
-
-    def getLastStepMeanSpeed(self, lane_id: LaneId | str) -> float: ...
 
 
 @dataclass(frozen=True)
@@ -49,6 +44,7 @@ class StaticLaneGroupFeatures:
 @dataclass(frozen=True)
 class DynamicLaneGroupFeatures:
     vehicle_count_detector: float
+    moving_count_detector: float
     halting_count_detector: float
     queue_length_m_detector: float
     queue_length_vehicles_detector: float
@@ -62,6 +58,7 @@ class DynamicLaneGroupFeatures:
     departure_rate_60s: float
     detector_saturation: float
     vehicle_count_norm_detector: float
+    moving_count_norm_detector: float
     queue_length_norm_detector: float
 
 
@@ -114,7 +111,30 @@ class MovementControlState:
 class VehicleSnapshot:
     vehicle_id: str
     lane_id: LaneId | str
-    next_lane_id: LaneId | str | None
+    next_edge_id: EdgeId | str | None
+    lane_position_m: float
+    speed_mps: float
+    length_m: float
+
+
+def vehicle_snapshots_from_api(vehicle_api: VehicleDomain) -> tuple[VehicleSnapshot, ...]:
+    """Capture vehicle state used by detector-local and movement features."""
+    snapshots: list[VehicleSnapshot] = []
+    for vehicle_id in vehicle_api.getIDList():
+        route = tuple(str(edge_id) for edge_id in vehicle_api.getRoute(vehicle_id))
+        route_index = int(vehicle_api.getRouteIndex(vehicle_id))
+        next_edge = route[route_index + 1] if route_index + 1 < len(route) else None
+        snapshots.append(
+            VehicleSnapshot(
+                vehicle_id=str(vehicle_id),
+                lane_id=LaneId(str(vehicle_api.getLaneID(vehicle_id))),
+                next_edge_id=EdgeId(next_edge) if next_edge is not None else None,
+                lane_position_m=float(vehicle_api.getLanePosition(vehicle_id)),
+                speed_mps=float(vehicle_api.getSpeed(vehicle_id)),
+                length_m=float(vehicle_api.getLength(vehicle_id)),
+            )
+        )
+    return tuple(snapshots)
 
 
 def detector_length(lane_group_length: float) -> float:
@@ -137,9 +157,8 @@ def build_feature_frame(
     graph: MovementGraph,
     lane_ids_by_edge: Mapping[EdgeId | str, Sequence[LaneId | str]],
     lane_geometries: Mapping[EdgeId | str, LaneGroupGeometry],
-    lane_api: LaneFeatureApi,
-    control_state: MovementControlState | None = None,
-    vehicles: Sequence[VehicleSnapshot] = (),
+    control_state: MovementControlState,
+    vehicles: Sequence[VehicleSnapshot],
 ) -> MovementFeatureFrame:
     """Extract lane-group and movement feature rows aligned with graph IDs."""
     geometries = {EdgeId(str(edge_id)): geometry for edge_id, geometry in lane_geometries.items()}
@@ -154,7 +173,7 @@ def build_feature_frame(
             edge_id=lane_group.edge_id,
             lane_ids=lanes_by_edge.get(lane_group.edge_id, ()),
             geometry=geometries.get(lane_group.edge_id),
-            lane_api=lane_api,
+            vehicles=vehicles,
         )
         for lane_group in graph.lane_groups
     )
@@ -166,7 +185,7 @@ def build_feature_frame(
             input_lane_group_id=movement.input_lane_group_id,
             output_lane_group_id=movement.output_lane_group_id,
             num_controlled_links=len(movement.controlled_movement_indices),
-            control_state=control_state or MovementControlState(),
+            control_state=control_state,
             vehicles=vehicles,
             lane_capacity_by_group=lane_capacity_by_group,
         )
@@ -183,34 +202,39 @@ def _lane_group_row(
     edge_id: EdgeId,
     lane_ids: tuple[LaneId, ...],
     geometry: LaneGroupGeometry | None,
-    lane_api: LaneFeatureApi,
+    vehicles: Sequence[VehicleSnapshot],
 ) -> LaneGroupFeatureRow:
     num_lanes = geometry.num_lanes if geometry is not None else max(1, len(lane_ids))
     length_m = geometry.length_m if geometry is not None else 0.0
     speed_limit_mps = geometry.speed_limit_mps if geometry is not None else DEFAULT_SPEED_LIMIT_MPS
     detector_length_m = detector_length(length_m)
     capacity = detector_capacity(detector_length_m, num_lanes)
-    vehicle_count = _sum_lane_metric(
+    detector_vehicles = _detector_vehicles(
+        edge_id=edge_id,
         lane_ids=lane_ids,
-        lane_metric=lane_api.getLastStepVehicleNumber,
+        lane_group_length_m=length_m,
+        detector_length_m=detector_length_m,
+        vehicles=vehicles,
     )
-    halting_count = _sum_lane_metric(
-        lane_ids=lane_ids,
-        lane_metric=lane_api.getLastStepHaltingNumber,
+    moving_vehicles = tuple(vehicle for vehicle in detector_vehicles if vehicle.speed_mps > HALTING_SPEED_THRESHOLD_MPS)
+    halting_vehicles = tuple(
+        vehicle for vehicle in detector_vehicles if vehicle.speed_mps <= HALTING_SPEED_THRESHOLD_MPS
     )
-    queue_length_m = _sum_lane_metric(
-        lane_ids=lane_ids,
-        lane_metric=lane_api.getLastStepLength,
+    vehicle_count = float(len(detector_vehicles))
+    moving_count = float(len(moving_vehicles))
+    halting_count = float(len(halting_vehicles))
+    queue_length_m = _queue_length_m(
+        halting_vehicles=halting_vehicles,
+        lane_group_length_m=length_m,
     )
-    occupancy = _mean_lane_metric(
-        lane_ids=lane_ids,
-        lane_metric=lane_api.getLastStepOccupancy,
+    occupancy = _detector_occupancy_percent(
+        vehicles=detector_vehicles,
+        detector_length_m=detector_length_m,
+        num_lanes=num_lanes,
     )
-    mean_speed = _mean_lane_metric(
-        lane_ids=lane_ids,
-        lane_metric=lane_api.getLastStepMeanSpeed,
-    )
+    mean_speed = _mean_vehicle_speed(detector_vehicles)
     vehicle_count_norm = _safe_div(vehicle_count, capacity)
+    moving_count_norm = _safe_div(moving_count, capacity)
     queue_length_norm = _safe_div(queue_length_m, detector_length_m)
     saturation = 1.0 if vehicle_count_norm >= 0.95 or queue_length_norm >= 0.95 else 0.0
     static = StaticLaneGroupFeatures(
@@ -224,6 +248,7 @@ def _lane_group_row(
     )
     dynamic = DynamicLaneGroupFeatures(
         vehicle_count_detector=vehicle_count,
+        moving_count_detector=moving_count,
         halting_count_detector=halting_count,
         queue_length_m_detector=queue_length_m,
         queue_length_vehicles_detector=halting_count,
@@ -237,6 +262,7 @@ def _lane_group_row(
         departure_rate_60s=0.0,
         detector_saturation=saturation,
         vehicle_count_norm_detector=vehicle_count_norm,
+        moving_count_norm_detector=moving_count_norm,
         queue_length_norm_detector=queue_length_norm,
     )
     return LaneGroupFeatureRow(
@@ -300,8 +326,8 @@ def _oracle_movement_demand(
             1
             for vehicle in vehicles
             if _lane_edge(vehicle.lane_id) == input_edge
-            and vehicle.next_lane_id is not None
-            and _lane_edge(vehicle.next_lane_id) == output_edge
+            and vehicle.next_edge_id is not None
+            and EdgeId(str(vehicle.next_edge_id)) == output_edge
         )
     )
 
@@ -314,21 +340,47 @@ def _lane_edge(lane_id: LaneId | str) -> EdgeId:
     return EdgeId(text)
 
 
-def _sum_lane_metric(
+def _detector_vehicles(
+    edge_id: EdgeId,
     lane_ids: tuple[LaneId, ...],
-    lane_metric: Callable[[LaneId | str], int | float],
-) -> float:
-    return float(sum(float(lane_metric(lane_id)) for lane_id in lane_ids))
+    lane_group_length_m: float,
+    detector_length_m: float,
+    vehicles: Sequence[VehicleSnapshot],
+) -> tuple[VehicleSnapshot, ...]:
+    detector_start_m = max(0.0, lane_group_length_m - detector_length_m)
+    lane_id_set = set(lane_ids)
+    return tuple(
+        vehicle
+        for vehicle in vehicles
+        if (vehicle.lane_id in lane_id_set or (not lane_id_set and _lane_edge(vehicle.lane_id) == edge_id))
+        and detector_start_m <= vehicle.lane_position_m <= lane_group_length_m
+    )
 
 
-def _mean_lane_metric(
-    lane_ids: tuple[LaneId, ...],
-    lane_metric: Callable[[LaneId | str], int | float],
+def _queue_length_m(
+    halting_vehicles: Sequence[VehicleSnapshot],
+    lane_group_length_m: float,
 ) -> float:
-    if not lane_ids:
+    if not halting_vehicles:
         return 0.0
-    values = [float(lane_metric(lane_id)) for lane_id in lane_ids]
-    return sum(values) / len(values)
+    queue_start_m = min(vehicle.lane_position_m for vehicle in halting_vehicles)
+    return max(0.0, lane_group_length_m - queue_start_m)
+
+
+def _detector_occupancy_percent(
+    vehicles: Sequence[VehicleSnapshot],
+    detector_length_m: float,
+    num_lanes: int,
+) -> float:
+    observed_lane_length_m = detector_length_m * num_lanes
+    occupied_length_m = sum(vehicle.length_m for vehicle in vehicles)
+    return min(100.0, 100.0 * _safe_div(occupied_length_m, observed_lane_length_m))
+
+
+def _mean_vehicle_speed(vehicles: Sequence[VehicleSnapshot]) -> float:
+    if not vehicles:
+        return 0.0
+    return sum(vehicle.speed_mps for vehicle in vehicles) / len(vehicles)
 
 
 def _safe_div(numerator: float, denominator: float) -> float:

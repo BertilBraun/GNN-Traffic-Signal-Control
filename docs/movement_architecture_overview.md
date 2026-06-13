@@ -101,6 +101,7 @@ Most sensor-like state belongs to `LaneGroup` nodes.
 Recommended `LaneGroup` features:
 
 - detector vehicle count;
+- moving vehicle count;
 - halting count;
 - queue length;
 - occupancy;
@@ -130,6 +131,17 @@ Recommended `Movement` features:
 - time since enabled.
 
 For the first implementation, movement demand is allowed to use SUMO oracle information from routes/next links. Realistic turn-demand estimation from detectors, turn lanes, historical ratios, or camera assumptions is deferred.
+
+Detector-local counts are computed from vehicle lane positions. A vehicle belongs
+to a lane-group detector only when it is within the final
+`min(200 m, lane-group length)` before the downstream junction. Moving count uses
+SUMO's 0.1 m/s halting threshold, so an accelerating platoon remains explicitly
+visible after its queue has cleared.
+
+For a movement at junction A, the output LaneGroup is the road leaving A. Its
+detector is at that road's downstream end, near junction B. The output feature
+therefore observes the approach to B for spillback pressure; it is not a detector
+immediately after A's stop line.
 
 ## Detector and Normalization Decision
 

@@ -1,4 +1,5 @@
 """Dataset sample schema and serialization for movement-score imitation."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -12,7 +13,7 @@ from .features import (
     MovementFeatureFrame,
     MovementFeatureRow,
 )
-from .graph_schema import GraphMovementId, MovementGraph, PhaseIncidence
+from .graph_schema import MovementGraph, PhaseIncidence
 from .schema import MovementIndex, TrafficLightId, TrafficLightProgram
 
 
@@ -50,10 +51,7 @@ def build_dataset_sample(
         )
     )
     if len(teacher_scores) != len(graph.movements):
-        raise ValueError(
-            f"Expected {len(graph.movements)} graph teacher scores, "
-            f"got {len(teacher_scores)}."
-        )
+        raise ValueError(f'Expected {len(graph.movements)} graph teacher scores, got {len(teacher_scores)}.')
     teacher_selected = _teacher_selected_phases(
         graph=graph,
         programs=programs,
@@ -64,8 +62,7 @@ def build_dataset_sample(
         x_movement=tuple(_movement_row_vector(row) for row in feature_frame.movement_rows),
         edge_index_dict=_edge_index_dict(graph),
         phase_incidences={
-            str(tls_id): _phase_incidence_dict(incidence)
-            for tls_id, incidence in graph.phase_incidences.items()
+            str(tls_id): _phase_incidence_dict(incidence) for tls_id, incidence in graph.phase_incidences.items()
         },
         teacher_movement_scores=teacher_scores,
         teacher_selected_phase_by_tls=teacher_selected,
@@ -77,8 +74,8 @@ def replay_teacher_selected_phases(sample: MovementDatasetSample) -> dict[str, i
     """Recompute selected local phase indices from stored teacher scores."""
     selected: dict[str, int] = {}
     for tls_id, incidence in sample.phase_incidences.items():
-        movement_ids = tuple(int(value) for value in incidence["movement_ids"])
-        rows = tuple(tuple(int(value) for value in row) for row in incidence["rows"])
+        movement_ids = tuple(int(value) for value in incidence['movement_ids'])
+        rows = tuple(tuple(int(value) for value in row) for row in incidence['rows'])
         best_local_idx = 0
         best_score = _phase_score(rows[0], movement_ids, sample.teacher_movement_scores)
         for local_idx, row in enumerate(rows[1:], start=1):
@@ -97,16 +94,16 @@ def save_jsonl_samples(
     """Write samples as one JSON object per line."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as handle:
+    with output_path.open('w', encoding='utf-8') as handle:
         for sample in samples:
             handle.write(json.dumps(asdict(sample), sort_keys=True))
-            handle.write("\n")
+            handle.write('\n')
 
 
 def load_jsonl_samples(path: str | Path) -> list[MovementDatasetSample]:
     """Load samples written by `save_jsonl_samples`."""
     samples: list[MovementDatasetSample] = []
-    with Path(path).open("r", encoding="utf-8") as handle:
+    with Path(path).open('r', encoding='utf-8') as handle:
         for line in handle:
             if not line.strip():
                 continue
@@ -123,14 +120,12 @@ def _teacher_scores_by_graph_movement(
 ) -> tuple[float, ...]:
     scores: list[float] = [0.0 for _ in graph.movements]
     teacher_by_tls = {
-        str(tls_id): scores_by_movement
-        for tls_id, scores_by_movement in teacher_controlled_scores.items()
+        str(tls_id): scores_by_movement for tls_id, scores_by_movement in teacher_controlled_scores.items()
     }
     for movement in graph.movements:
         local_scores = teacher_by_tls.get(str(movement.traffic_light_id), {})
         scores[int(movement.movement_id)] = sum(
-            float(local_scores.get(controlled_idx, 0.0))
-            for controlled_idx in movement.controlled_movement_indices
+            float(local_scores.get(controlled_idx, 0.0)) for controlled_idx in movement.controlled_movement_indices
         )
     return tuple(scores)
 
@@ -166,10 +161,10 @@ def _select_from_incidence(
 
 def _edge_index_dict(graph: MovementGraph) -> dict[str, tuple[tuple[int, int], ...]]:
     return {
-        "input_lane_to_movement": _int_edges(graph.edges.input_lane_to_movement),
-        "output_lane_to_movement": _int_edges(graph.edges.output_lane_to_movement),
-        "movement_to_input_lane": _int_edges(graph.edges.movement_to_input_lane),
-        "movement_to_output_lane": _int_edges(graph.edges.movement_to_output_lane),
+        'input_lane_to_movement': _int_edges(graph.edges.input_lane_to_movement),
+        'output_lane_to_movement': _int_edges(graph.edges.output_lane_to_movement),
+        'movement_to_input_lane': _int_edges(graph.edges.movement_to_input_lane),
+        'movement_to_output_lane': _int_edges(graph.edges.movement_to_output_lane),
     }
 
 
@@ -179,9 +174,9 @@ def _int_edges(edges: Iterable[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
 
 def _phase_incidence_dict(incidence: PhaseIncidence) -> dict[str, Any]:
     return {
-        "sumo_phase_indices": tuple(int(value) for value in incidence.sumo_phase_indices),
-        "movement_ids": tuple(int(value) for value in incidence.movement_ids),
-        "rows": tuple(tuple(int(value) for value in row) for row in incidence.rows),
+        'sumo_phase_indices': tuple(int(value) for value in incidence.sumo_phase_indices),
+        'movement_ids': tuple(int(value) for value in incidence.movement_ids),
+        'rows': tuple(tuple(int(value) for value in row) for row in incidence.rows),
     }
 
 
@@ -197,6 +192,7 @@ def _lane_row_vector(row: LaneGroupFeatureRow) -> tuple[float, ...]:
         static.estimated_storage_capacity,
         static.is_short_link,
         dynamic.vehicle_count_detector,
+        dynamic.moving_count_detector,
         dynamic.halting_count_detector,
         dynamic.queue_length_m_detector,
         dynamic.queue_length_vehicles_detector,
@@ -210,6 +206,7 @@ def _lane_row_vector(row: LaneGroupFeatureRow) -> tuple[float, ...]:
         dynamic.departure_rate_60s,
         dynamic.detector_saturation,
         dynamic.vehicle_count_norm_detector,
+        dynamic.moving_count_norm_detector,
         dynamic.queue_length_norm_detector,
     )
 
@@ -233,9 +230,9 @@ def _movement_row_vector(row: MovementFeatureRow) -> tuple[float, ...]:
 
 def _turn_type_code(turn_type: str) -> float:
     return {
-        "right": 1.0,
-        "straight": 2.0,
-        "left": 3.0,
+        'right': 1.0,
+        'straight': 2.0,
+        'left': 3.0,
     }.get(turn_type, 0.0)
 
 
@@ -244,35 +241,27 @@ def _phase_score(
     movement_ids: Sequence[int],
     teacher_scores: Sequence[float],
 ) -> float:
-    return sum(
-        float(teacher_scores[movement_id])
-        for enabled, movement_id in zip(row, movement_ids)
-        if enabled
-    )
+    return sum(float(teacher_scores[movement_id]) for enabled, movement_id in zip(row, movement_ids) if enabled)
 
 
 def _sample_from_dict(data: Mapping[str, Any]) -> MovementDatasetSample:
     return MovementDatasetSample(
-        x_lane=_tuple2_float(data["x_lane"]),
-        x_movement=_tuple2_float(data["x_movement"]),
-        edge_index_dict={
-            key: _tuple2_int(value)
-            for key, value in data["edge_index_dict"].items()
-        },
+        x_lane=_tuple2_float(data['x_lane']),
+        x_movement=_tuple2_float(data['x_movement']),
+        edge_index_dict={key: _tuple2_int(value) for key, value in data['edge_index_dict'].items()},
         phase_incidences={
             str(tls_id): {
-                "sumo_phase_indices": tuple(int(value) for value in incidence["sumo_phase_indices"]),
-                "movement_ids": tuple(int(value) for value in incidence["movement_ids"]),
-                "rows": _tuple2_int(incidence["rows"]),
+                'sumo_phase_indices': tuple(int(value) for value in incidence['sumo_phase_indices']),
+                'movement_ids': tuple(int(value) for value in incidence['movement_ids']),
+                'rows': _tuple2_int(incidence['rows']),
             }
-            for tls_id, incidence in data["phase_incidences"].items()
+            for tls_id, incidence in data['phase_incidences'].items()
         },
-        teacher_movement_scores=tuple(float(value) for value in data["teacher_movement_scores"]),
+        teacher_movement_scores=tuple(float(value) for value in data['teacher_movement_scores']),
         teacher_selected_phase_by_tls={
-            str(tls_id): int(local_idx)
-            for tls_id, local_idx in data["teacher_selected_phase_by_tls"].items()
+            str(tls_id): int(local_idx) for tls_id, local_idx in data['teacher_selected_phase_by_tls'].items()
         },
-        metadata=dict(data["metadata"]),
+        metadata=dict(data['metadata']),
     )
 
 

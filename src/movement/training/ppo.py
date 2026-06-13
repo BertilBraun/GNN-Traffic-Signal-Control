@@ -18,7 +18,6 @@ import traci
 from scripts.collect_il_data import (
     lane_inputs_from_net,
     resolve_sumocfg_net_path,
-    vehicle_snapshots_from_api,
 )
 from src.movement.dataset import MovementDatasetSample, build_dataset_sample
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
@@ -33,10 +32,10 @@ from src.movement.evaluation import (
     write_records_csv,
 )
 from src.movement.features import (
-    LaneFeatureApi,
     LaneGroupGeometry,
     MovementControlState,
     build_feature_frame,
+    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph
 from src.movement.graph_schema import MovementGraph
@@ -291,7 +290,6 @@ def _collect_rollout(
             sample = _current_sample(
                 context=context,
                 programs=runtime.programs,
-                lane_api=runtime.lane_api,
             )
             with torch.no_grad():
                 movement_scores, values, phase_logits = _forward_policy(
@@ -453,13 +451,11 @@ def _policy_context_from_sample(sample: MovementDatasetSample) -> PolicyContext:
 def _current_sample(
     context: RolloutContext,
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneFeatureApi,
 ) -> MovementDatasetSample:
     feature_frame = build_feature_frame(
         graph=context.graph,
         lane_ids_by_edge=context.lane_ids_by_edge,
         lane_geometries=context.lane_geometries,
-        lane_api=lane_api,
         control_state=MovementControlState(),
         vehicles=vehicle_snapshots_from_api(traci.vehicle),
     )

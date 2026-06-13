@@ -51,6 +51,17 @@ class MovementScorer(nn.Module):
         edge_index_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """Return one embedding per movement."""
+        if x_lane.ndim != 2 or x_lane.shape[1] != self.lane_feature_dim:
+            raise ValueError(
+                f'Expected lane features with shape [N, {self.lane_feature_dim}], '
+                f'got {tuple(x_lane.shape)}. Regenerate the IL dataset and checkpoint '
+                'for the current feature schema.'
+            )
+        if x_movement.ndim != 2 or x_movement.shape[1] != self.movement_feature_dim:
+            raise ValueError(
+                f'Expected movement features with shape [N, {self.movement_feature_dim}], '
+                f'got {tuple(x_movement.shape)}.'
+            )
         if self.num_hops > 0 and edge_index_dict is None:
             raise ValueError('edge_index_dict is required when num_hops > 0.')
         lane_embeddings = self.lane_encoder(x_lane)

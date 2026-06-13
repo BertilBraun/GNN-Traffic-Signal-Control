@@ -12,7 +12,6 @@ import xml.etree.ElementTree as ET
 import sumolib
 import torch
 import traci
-from traci._vehicle import VehicleDomain
 
 from src.movement.dataset import build_dataset_sample
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
@@ -22,8 +21,8 @@ from src.movement.features import (
     LaneFeatureApi,
     LaneGroupGeometry,
     MovementControlState,
-    VehicleSnapshot,
     build_feature_frame,
+    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph
 from src.movement.graph_schema import MovementGraph
@@ -246,7 +245,7 @@ def _desired_states(
         case EvaluationPolicy.LEARNED:
             if learned_context is None:
                 raise ValueError('learned_policy_config is required for learned evaluation.')
-            return _learned_states(programs, lane_api, learned_context)
+            return _learned_states(programs, learned_context)
 
 
 def _baseline_states(
@@ -290,7 +289,6 @@ def _learned_context(
 
 def _learned_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneFeatureApi,
     learned_context: LearnedPolicyContext,
 ) -> dict[str, str]:
     sample = build_dataset_sample(
@@ -299,9 +297,8 @@ def _learned_states(
             graph=learned_context.graph,
             lane_ids_by_edge=learned_context.lane_ids_by_edge,
             lane_geometries=learned_context.lane_geometries,
-            lane_api=lane_api,
             control_state=MovementControlState(),
-            vehicles=_vehicle_snapshots_from_api(traci.vehicle),
+            vehicles=vehicle_snapshots_from_api(traci.vehicle),
         ),
         programs=programs,
         teacher_controlled_scores={traffic_light_id: {} for traffic_light_id in programs},
@@ -394,22 +391,6 @@ def _update_per_junction_metrics(
                 per_junction_max_queue[traffic_light_id],
                 max(queue_values),
             )
-
-
-def _vehicle_snapshots_from_api(vehicle_api: VehicleDomain) -> tuple[VehicleSnapshot, ...]:
-    snapshots: list[VehicleSnapshot] = []
-    for vehicle_id in vehicle_api.getIDList():
-        route = tuple(str(edge_id) for edge_id in vehicle_api.getRoute(vehicle_id))
-        route_index = int(vehicle_api.getRouteIndex(vehicle_id))
-        next_edge = route[route_index + 1] if route_index + 1 < len(route) else None
-        snapshots.append(
-            VehicleSnapshot(
-                vehicle_id=str(vehicle_id),
-                lane_id=str(vehicle_api.getLaneID(vehicle_id)),
-                next_lane_id=next_edge,
-            )
-        )
-    return tuple(snapshots)
 
 
 def _total_lane_length(lane_geometries: Mapping[str, LaneGroupGeometry]) -> float:

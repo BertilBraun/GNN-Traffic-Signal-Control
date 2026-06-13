@@ -711,6 +711,7 @@ Recommended initial features:
 
 ```text
 vehicle_count_detector
+moving_count_detector
 halting_count_detector
 queue_length_m_detector
 queue_length_vehicles_detector
@@ -723,6 +724,9 @@ departure_rate_15s
 arrival_rate_60s
 departure_rate_60s
 detector_saturation
+vehicle_count_norm_detector
+moving_count_norm_detector
+queue_length_norm_detector
 ```
 
 These features are attached to `LaneGroup` nodes.

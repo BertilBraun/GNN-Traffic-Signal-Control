@@ -17,7 +17,6 @@ sys.path.insert(0, str(ROOT))
 from scripts.collect_il_data import (  # noqa: E402
     lane_inputs_from_net,
     resolve_sumocfg_net_path,
-    vehicle_snapshots_from_api,
 )
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale  # noqa: E402
 from src.movement.dataset import build_dataset_sample  # noqa: E402
@@ -26,6 +25,7 @@ from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
     MovementControlState,
     build_feature_frame,
+    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
@@ -86,7 +86,6 @@ def select_graph_score_control_states(
 
 def select_learned_control_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneFeatureApi,
     graph: MovementGraph,
     lane_ids_by_edge: dict[str, tuple[str, ...]],
     lane_geometries: dict[str, LaneGroupGeometry],
@@ -101,7 +100,6 @@ def select_learned_control_states(
         graph=graph,
         lane_ids_by_edge=lane_ids_by_edge,
         lane_geometries=lane_geometries,
-        lane_api=lane_api,
         control_state=MovementControlState(),
         vehicles=vehicle_snapshots_from_api(vehicle_api),
     )
@@ -236,7 +234,6 @@ def main() -> None:
                     ) = learned_context
                     desired_states = select_learned_control_states(
                         programs=runtime.programs,
-                        lane_api=runtime.lane_api,
                         graph=graph,
                         lane_ids_by_edge=lane_ids_by_edge,
                         lane_geometries=lane_geometries,

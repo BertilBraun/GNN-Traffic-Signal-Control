@@ -6,6 +6,12 @@ The current storage format is JSONL: one serialized `MovementDatasetSample` per
 line. Graphs and phase counts may vary between samples, so arrays are stored as
 ragged lists.
 
+Lane-group dynamic values are detector-local. The detector covers the final
+`min(200 m, lane-group length)` before the downstream junction and includes
+total vehicle count, moving vehicle count, halting count, occupancy, and mean
+speed. For an output LaneGroup, this region is near the next junction rather
+than immediately after the current junction.
+
 ## Fields
 
 ```text
