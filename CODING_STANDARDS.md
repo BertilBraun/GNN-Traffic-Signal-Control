@@ -262,6 +262,12 @@ Run `ruff format` and `ruff check --fix` before any commit. All warnings must be
 
 ---
 
+## Backwards Compatibility
+
+In general, the projects are personal research projects, not libraries, so backwards compatibility is not a concern. Feel free to refactor and break things as needed to keep the code clean and maintainable. Most of the time preserving a function signature if we're changing/adding parameters is unnecessary.
+
+---
+
 ## Python Version
 
 Target Python 3.10+. Use `match/case`, `X | Y` union syntax.

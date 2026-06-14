@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
 from src.movement.training.il import (  # noqa: E402
     MovementILLoss,
@@ -19,6 +20,8 @@ from src.movement.training.il import (  # noqa: E402
     save_movement_checkpoint,
     train_movement_il_from_jsonl,
 )
+from src.movement.dataset import load_jsonl_samples, save_jsonl_samples  # noqa: E402
+from src.movement.initial_traffic import sample_target_occupancy  # noqa: E402
 from src.movement.evaluation import (  # noqa: E402
     EvaluationPolicy,
     EvaluationRecord,
@@ -48,7 +51,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help='SUMO config to collect before training',
     )
-    parser.add_argument('--samples', type=int, default=120, help='Number of decision samples to collect with --cfg')
+    parser.add_argument(
+        '--samples',
+        type=int,
+        default=240,
+        help='Number of decision samples collected per seed with --cfg',
+    )
+    parser.add_argument(
+        '--collection-seeds',
+        nargs='+',
+        type=int,
+        default=[42, 43, 44, 45, 46],
+        help='SUMO seeds collected and combined before IL training',
+    )
     parser.add_argument('--decision-interval', type=int, default=15, help='Seconds between collected samples')
     parser.add_argument(
         '--demand-scale',
@@ -56,15 +71,24 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help='Multiplier applied to route-file flow demand during collection',
     )
-    parser.add_argument('--epochs', type=int, default=200, help='Training epochs')
+    parser.add_argument('--initial-occupancy-min', type=float, default=0.04)
+    parser.add_argument('--initial-occupancy-max', type=float, default=0.08)
+    parser.add_argument('--epochs', type=int, default=400, help='Training epochs')
     parser.add_argument('--lr', type=float, default=1e-3, help='Adam learning rate')
     parser.add_argument('--hidden-dim', type=int, default=64, help='MLP hidden dimension')
+    parser.add_argument('--samples-per-batch', type=int, default=16, help='IL samples per optimizer update')
     parser.add_argument('--num-hops', type=int, default=1, help='LaneGroup/Movement macro-hops')
     parser.add_argument(
         '--loss',
         choices=('huber', 'mse'),
         default='huber',
         help='Movement-score regression loss',
+    )
+    parser.add_argument(
+        '--phase-loss-coeff',
+        type=float,
+        default=1.0,
+        help='Weight for teacher phase-ranking cross-entropy',
     )
     parser.add_argument('--seed', type=int, default=42, help='Torch random seed')
     parser.add_argument('--device', default='cpu', help='Torch device')
@@ -83,13 +107,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--eval-cfg',
         type=Path,
-        default=None,
+        default=DEFAULT_CFG,
         help='SUMO config used for periodic learned-policy evaluation',
     )
     parser.add_argument(
         '--eval-every-epochs',
         type=int,
-        default=0,
+        default=50,
         help='Run evaluation every N epochs when --eval-cfg is set (0 disables)',
     )
     parser.add_argument('--eval-steps', type=int, default=600, help='Simulation seconds per evaluation episode')
@@ -118,7 +142,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-@dataclass(frozen=True)
+@dataclass
 class TrainingEvaluationObserver:
     cfg_path: Path
     policies: tuple[EvaluationPolicy, ...]
@@ -131,6 +155,8 @@ class TrainingEvaluationObserver:
     output_dir: Path
     device: str
     every_epochs: int
+    baseline_records: tuple[EvaluationRecord, ...] = field(default_factory=tuple, init=False)
+    best_learned_wait_density: float = field(default=float('inf'), init=False)
 
     def on_epoch_completed(self, snapshot: MovementILTrainingSnapshot) -> None:
         if not self._should_evaluate(snapshot):
@@ -148,16 +174,38 @@ class TrainingEvaluationObserver:
             loss=snapshot.loss,
         )
         records = self._run_epoch_evaluation(checkpoint_path)
+        self.baseline_records = tuple(record for record in records if record.policy != EvaluationPolicy.LEARNED.value)
         aggregates = aggregate_records(records)
         write_aggregate_json(epoch_dir / 'summary.json', records, aggregates)
         write_records_csv(epoch_dir / 'summary.csv', records, aggregates)
         print_aggregate_metric_table(f'Evaluation summary at epoch {snapshot.epoch}', aggregates)
+        learned_aggregate = next(
+            (aggregate for aggregate in aggregates if aggregate.policy == EvaluationPolicy.LEARNED.value),
+            None,
+        )
+        if (
+            learned_aggregate is not None
+            and learned_aggregate.mean.average_wait_density_s_per_m < self.best_learned_wait_density
+        ):
+            self.best_learned_wait_density = learned_aggregate.mean.average_wait_density_s_per_m
+            save_movement_checkpoint(
+                checkpoint_path=self.output_dir.parent / 'movement_policy_eval_best.pt',
+                model=snapshot.model,
+                config=snapshot.config,
+                lane_feature_dim=snapshot.lane_feature_dim,
+                movement_feature_dim=snapshot.movement_feature_dim,
+                lane_normalizer=snapshot.lane_normalizer,
+                movement_normalizer=snapshot.movement_normalizer,
+                loss=snapshot.loss,
+            )
+            print(f'  new best learned wait density={self.best_learned_wait_density:.4f} s/m at epoch {snapshot.epoch}')
 
     def _should_evaluate(self, snapshot: MovementILTrainingSnapshot) -> bool:
         return snapshot.epoch % self.every_epochs == 0 or snapshot.epoch == snapshot.epochs
 
     def _run_epoch_evaluation(self, checkpoint_path: Path) -> list[EvaluationRecord]:
-        records: list[EvaluationRecord] = []
+        records: list[EvaluationRecord] = list(self.baseline_records)
+        cached_baseline_keys = {(record.policy, record.seed) for record in self.baseline_records}
         learned_policy_config = LearnedPolicyConfig(
             checkpoint_path=checkpoint_path,
             device=self.device,
@@ -167,6 +215,8 @@ class TrainingEvaluationObserver:
         batch_started_s = current_timer_s()
         for policy in self.policies:
             for seed in self.seeds:
+                if policy != EvaluationPolicy.LEARNED and (policy.value, seed) in cached_baseline_keys:
+                    continue
                 run_index += 1
                 run_started_s = current_timer_s()
                 print_evaluation_start(
@@ -225,6 +275,8 @@ def main() -> None:
         device=args.device,
         progress_every=args.progress_every,
         num_hops=args.num_hops,
+        phase_loss_coefficient=args.phase_loss_coeff,
+        samples_per_batch=args.samples_per_batch,
     )
     if args.data is not None:
         result = train_movement_il_from_jsonl(
@@ -235,14 +287,27 @@ def main() -> None:
     else:
         with tempfile.TemporaryDirectory(prefix='movement_il_') as temporary_directory:
             dataset_path = Path(temporary_directory) / 'samples.jsonl'
-            collect_samples(
-                cfg_path=args.sumo_config_path,
-                output_path=dataset_path,
-                steps=args.samples * args.decision_interval,
-                decision_interval=args.decision_interval,
-                seed=args.seed,
-                demand_scale=args.demand_scale,
-            )
+            combined_samples = []
+            for collection_seed in args.collection_seeds:
+                seed_dataset_path = Path(temporary_directory) / f'samples_seed_{collection_seed}.jsonl'
+                collected_count = collect_samples(
+                    cfg_path=args.sumo_config_path,
+                    output_path=seed_dataset_path,
+                    steps=args.samples * args.decision_interval,
+                    decision_interval=args.decision_interval,
+                    seed=collection_seed,
+                    demand_scale=args.demand_scale,
+                    initial_occupancy=sample_target_occupancy(
+                        minimum_occupancy=args.initial_occupancy_min,
+                        maximum_occupancy=args.initial_occupancy_max,
+                        seed=collection_seed,
+                    ),
+                )
+                combined_samples.extend(load_jsonl_samples(seed_dataset_path))
+                print(f'Collected {collected_count} IL samples with seed={collection_seed}')
+            save_jsonl_samples(dataset_path, combined_samples)
+            save_jsonl_samples(checkpoint_dir / 'training_samples.jsonl', combined_samples)
+            print(f'Combined {len(combined_samples)} IL samples from {len(args.collection_seeds)} seeds')
             result = train_movement_il_from_jsonl(
                 dataset_path=dataset_path,
                 config=config,

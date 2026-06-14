@@ -9,7 +9,6 @@ from pathlib import Path
 
 import torch
 import traci
-from traci._vehicle import VehicleDomain
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -22,10 +21,12 @@ from src.movement.demand import route_file_sumo_args, route_files_for_demand_sca
 from src.movement.dataset import build_dataset_sample  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneFeatureApi,
+    LaneGroupFlowTracker,
     LaneGroupGeometry,
     MovementControlState,
+    VehicleSnapshotCollector,
     build_feature_frame,
-    vehicle_snapshots_from_api,
+    movement_control_state_from_targets,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
@@ -89,19 +90,23 @@ def select_learned_control_states(
     graph: MovementGraph,
     lane_ids_by_edge: dict[str, tuple[str, ...]],
     lane_geometries: dict[str, LaneGroupGeometry],
-    vehicle_api: VehicleDomain,
+    vehicle_snapshot_collector: VehicleSnapshotCollector,
+    lane_flow_tracker: LaneGroupFlowTracker,
+    control_state: MovementControlState,
     model: MovementScorer,
     lane_normalizer: RunningNormalizer,
     movement_normalizer: RunningNormalizer,
     device: str,
 ) -> dict[str, str]:
     """Score graph movements with a learned checkpoint."""
+    vehicles = vehicle_snapshot_collector.capture()
     feature_frame = build_feature_frame(
         graph=graph,
         lane_ids_by_edge=lane_ids_by_edge,
         lane_geometries=lane_geometries,
-        control_state=MovementControlState(),
-        vehicles=vehicle_snapshots_from_api(vehicle_api),
+        control_state=control_state,
+        vehicles=vehicles,
+        lane_flow_rates=lane_flow_tracker.observe(vehicles),
     )
     sample = build_dataset_sample(
         graph=graph,
@@ -209,10 +214,13 @@ def main() -> None:
         runtime.start()
         print(f'Loaded {len(runtime.programs)} movement-aware traffic-light programs.')
         learned_context = None
+        vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
+        accepted_states: dict[str, str] = {}
         if learned_policy:
             model, metadata = load_movement_checkpoint(args.checkpoint, device=args.device)
-            graph = build_movement_graph(runtime.programs)
-            lane_ids_by_edge, lane_geometries = lane_inputs_from_net(resolve_sumocfg_net_path(args.sumo_config_path))
+            net_path = resolve_sumocfg_net_path(args.sumo_config_path)
+            graph = build_movement_graph(runtime.programs, net_path=net_path)
+            lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
             learned_context = (
                 model,
                 graph,
@@ -220,6 +228,12 @@ def main() -> None:
                 lane_geometries,
                 normalizer_from_state(metadata.lane_normalizer),
                 normalizer_from_state(metadata.movement_normalizer),
+                LaneGroupFlowTracker(
+                    graph=graph,
+                    lane_ids_by_edge=lane_ids_by_edge,
+                    lane_geometries=lane_geometries,
+                    decision_interval_s=args.decision_interval,
+                ),
             )
         for step in range(args.steps):
             if step % args.decision_interval == 0:
@@ -231,13 +245,21 @@ def main() -> None:
                         lane_geometries,
                         lane_normalizer,
                         movement_normalizer,
+                        lane_flow_tracker,
                     ) = learned_context
+                    control_state = movement_control_state_from_targets(
+                        graph=graph,
+                        programs=runtime.programs,
+                        target_states=accepted_states,
+                    )
                     desired_states = select_learned_control_states(
                         programs=runtime.programs,
                         graph=graph,
                         lane_ids_by_edge=lane_ids_by_edge,
                         lane_geometries=lane_geometries,
-                        vehicle_api=traci.vehicle,
+                        vehicle_snapshot_collector=vehicle_snapshot_collector,
+                        lane_flow_tracker=lane_flow_tracker,
+                        control_state=control_state,
                         model=model,
                         lane_normalizer=lane_normalizer,
                         movement_normalizer=movement_normalizer,

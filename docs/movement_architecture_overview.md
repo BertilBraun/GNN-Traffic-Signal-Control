@@ -55,9 +55,37 @@ The graph naturally alternates:
 LaneGroup <-> Movement <-> LaneGroup <-> Movement <-> LaneGroup
 ```
 
-No explicit road-continuation edges are needed because continuation is already represented through movements.
+Continuation through a signalized junction is represented by its controlled
+Movement nodes. Unambiguous directed road corridors through unsignalized
+junctions are contracted into one LaneGroup. Branches select a unique straight
+continuation when available; otherwise contraction stops rather than creating
+reachability shortcuts.
+
+Contracted LaneGroups retain their ordered SUMO edge IDs. Static features sum
+length and free-flow travel time, derive effective speed from those totals, and
+aggregate lane storage in lane-metres. Dynamic detector features cover the
+downstream 200 metres of the complete corridor, including multiple edges when
+needed.
 
 No explicit conflict edges are needed in the first version because valid phase synthesis already prevents illegal combinations.
+
+## Interactive Graph Inspection
+
+Generate the current movement graph visualization with:
+
+```powershell
+python scripts\visualize_movement_graph.py --open
+```
+
+The SUMO-map layout places junction anchors at their network coordinates,
+directed LaneGroup nodes between their edge endpoints, and Movement nodes
+around the signalized junction that owns them. The relaxed layout applies
+repulsion between junction anchors and springs along SUMO roads.
+
+Junction anchors, unsignalized junctions, and gray road lines are explanatory
+overlays, not GNN nodes. Blue and amber connections show the bidirectional typed
+message edges between input/output LaneGroups and Movements. Signalized labels
+also display selectable phase count; this is distinct from movement-node count.
 
 ## Edge Semantics
 
@@ -102,7 +130,6 @@ Recommended `LaneGroup` features:
 
 - detector vehicle count;
 - moving vehicle count;
-- halting count;
 - queue length;
 - occupancy;
 - mean speed;
@@ -126,9 +153,7 @@ Recommended `Movement` features:
 - turn type;
 - number of underlying SUMO controlled links;
 - saturation-flow estimate if available;
-- currently enabled flag;
-- previously enabled flag;
-- time since enabled.
+- green at the previous controller decision.
 
 For the first implementation, movement demand is allowed to use SUMO oracle information from routes/next links. Realistic turn-demand estimation from detectors, turn lanes, historical ratios, or camera assumptions is deferred.
 
@@ -173,7 +198,12 @@ target = current implemented max-pressure movement score
 loss = Huber or MSE
 ```
 
-The max-pressure teacher should remain as currently implemented for the first version. The goal is not to redefine max pressure, but to verify that the learned movement-scoring path can reproduce the existing deterministic controller.
+The max-pressure teacher remains the initial behavioral target, but its raw
+incoming and outgoing halting counts are not neural input columns. Otherwise IL
+collapses to an exact subtraction and leaves the remaining representation
+untrained. Training combines score regression with phase-ranking
+cross-entropy, and traffic evaluation is required alongside the supervised
+loss.
 
 ### Reinforcement Learning
 

@@ -32,6 +32,8 @@ class MovementILTrainingConfig:
     device: str = 'cpu'
     progress_every: int = 0
     num_hops: int = 0
+    phase_loss_coefficient: float = 1.0
+    samples_per_batch: int = 16
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,9 @@ class MovementILTrainingSnapshot:
     epoch: int
     epochs: int
     loss: float
+    regression_loss: float
+    phase_loss: float
+    phase_match_rate: float
     best_loss: float
     model: MovementScorer
     config: MovementILTrainingConfig
@@ -100,6 +105,8 @@ def train_movement_il(
     """Train a movement scorer on stored movement-score samples."""
     if not samples:
         raise ValueError('At least one sample is required.')
+    if config.samples_per_batch <= 0:
+        raise ValueError('samples_per_batch must be positive.')
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     lane_normalizer = _fit_normalizer(sample.x_lane for sample in samples)
@@ -117,36 +124,69 @@ def train_movement_il(
     best_loss = float('inf')
     best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
     for epoch in range(config.epochs):
-        total_loss = torch.zeros((), device=device)
-        for sample in samples:
-            x_lane, x_movement, target = tensors_from_sample(
-                sample=sample,
-                lane_normalizer=lane_normalizer,
-                movement_normalizer=movement_normalizer,
-                device=device,
-            )
-            prediction = model(
-                x_lane=x_lane,
-                x_movement=x_movement,
-                edge_index_dict=edge_tensors_from_sample(sample, device=device),
-            )
-            total_loss = total_loss + _loss(prediction, target, config.loss)
-        loss = total_loss / len(samples)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        final_loss = float(loss.detach().cpu())
+        total_loss_value = 0.0
+        total_regression_loss_value = 0.0
+        total_phase_loss_value = 0.0
+        total_phase_matches = 0
+        total_phase_decisions = 0
+        sample_indices = torch.randperm(len(samples)).tolist()
+        for batch_start in range(0, len(sample_indices), config.samples_per_batch):
+            batch_losses = []
+            for sample_index in sample_indices[batch_start : batch_start + config.samples_per_batch]:
+                sample = samples[sample_index]
+                x_lane, x_movement, target = tensors_from_sample(
+                    sample=sample,
+                    lane_normalizer=lane_normalizer,
+                    movement_normalizer=movement_normalizer,
+                    device=device,
+                )
+                prediction = model(
+                    x_lane=x_lane,
+                    x_movement=x_movement,
+                    edge_index_dict=edge_tensors_from_sample(sample, device=device),
+                )
+                regression_loss = _loss(prediction, target, config.loss)
+                phase_loss = _phase_classification_loss(
+                    sample=sample,
+                    movement_scores=prediction,
+                )
+                sample_loss = regression_loss + config.phase_loss_coefficient * phase_loss
+                batch_losses.append(sample_loss)
+                total_loss_value += float(sample_loss.detach().cpu())
+                total_regression_loss_value += float(regression_loss.detach().cpu())
+                total_phase_loss_value += float(phase_loss.detach().cpu())
+                matches, decisions = _phase_match_counts(
+                    sample=sample,
+                    movement_scores=prediction,
+                )
+                total_phase_matches += matches
+                total_phase_decisions += decisions
+            loss = torch.stack(tuple(batch_losses)).mean()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        final_loss = total_loss_value / len(samples)
+        regression_loss_value = total_regression_loss_value / len(samples)
+        phase_loss_value = total_phase_loss_value / len(samples)
+        phase_match_rate = total_phase_matches / max(1, total_phase_decisions)
         if final_loss < best_loss:
             best_loss = final_loss
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
         if _should_report_progress(epoch, config.epochs, config.progress_every):
-            print(f'epoch={epoch + 1}/{config.epochs} loss={final_loss:.6f}')
+            print(
+                f'epoch={epoch + 1}/{config.epochs} '
+                f'loss={final_loss:.6f} regression={regression_loss_value:.6f} '
+                f'phase={phase_loss_value:.6f} match={phase_match_rate:.3f}'
+            )
         if observer is not None:
             observer.on_epoch_completed(
                 MovementILTrainingSnapshot(
                     epoch=epoch + 1,
                     epochs=config.epochs,
                     loss=final_loss,
+                    regression_loss=regression_loss_value,
+                    phase_loss=phase_loss_value,
+                    phase_match_rate=phase_match_rate,
                     best_loss=best_loss,
                     model=model,
                     config=config,
@@ -256,7 +296,7 @@ def tensors_from_sample(
     if lane_normalizer is not None:
         x_lane_rows = tuple(lane_normalizer.transform_row(row) for row in x_lane_rows)
     if movement_normalizer is not None:
-        x_movement_rows = tuple(_normalize_movement_row(row, movement_normalizer) for row in x_movement_rows)
+        x_movement_rows = tuple(movement_normalizer.transform_row(row) for row in x_movement_rows)
     torch_device = torch.device(device)
     return (
         torch.tensor(x_lane_rows, dtype=torch.float32, device=torch_device),
@@ -336,17 +376,6 @@ def _normalizer_state(normalizer: RunningNormalizer) -> NormalizerState:
     )
 
 
-def _normalize_movement_row(
-    row: Sequence[float],
-    normalizer: RunningNormalizer,
-) -> tuple[float, ...]:
-    normalized = list(normalizer.transform_row(row))
-    # Columns 3 and 4 are graph lane-group IDs used as tensor indices.
-    normalized[3] = float(row[3])
-    normalized[4] = float(row[4])
-    return tuple(normalized)
-
-
 def _loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
@@ -357,6 +386,58 @@ def _loss(
             return F.smooth_l1_loss(prediction, target)
         case MovementILLoss.MEAN_SQUARED_ERROR:
             return F.mse_loss(prediction, target)
+
+
+def _phase_classification_loss(
+    sample: MovementDatasetSample,
+    movement_scores: torch.Tensor,
+) -> torch.Tensor:
+    losses = []
+    for traffic_light_id, incidence in sample.phase_incidences.items():
+        logits = _phase_logits(
+            incidence=incidence,
+            movement_scores=movement_scores,
+        )
+        target = torch.tensor(
+            (sample.teacher_selected_phase_by_tls[traffic_light_id],),
+            dtype=torch.long,
+            device=movement_scores.device,
+        )
+        losses.append(F.cross_entropy(logits.unsqueeze(0), target))
+    return torch.stack(tuple(losses)).mean()
+
+
+def _phase_match_counts(
+    sample: MovementDatasetSample,
+    movement_scores: torch.Tensor,
+) -> tuple[int, int]:
+    matches = 0
+    for traffic_light_id, incidence in sample.phase_incidences.items():
+        predicted_phase = int(
+            _phase_logits(
+                incidence=incidence,
+                movement_scores=movement_scores,
+            )
+            .argmax()
+            .detach()
+            .cpu()
+        )
+        matches += int(predicted_phase == sample.teacher_selected_phase_by_tls[traffic_light_id])
+    return matches, len(sample.phase_incidences)
+
+
+def _phase_logits(
+    incidence: dict[str, object],
+    movement_scores: torch.Tensor,
+) -> torch.Tensor:
+    movement_ids = tuple(int(value) for value in incidence['movement_ids'])
+    phase_scores = []
+    for row in incidence['rows']:
+        enabled_scores = tuple(
+            movement_scores[movement_id] for enabled, movement_id in zip(row, movement_ids) if int(enabled) == 1
+        )
+        phase_scores.append(torch.stack(enabled_scores).sum())
+    return torch.stack(tuple(phase_scores))
 
 
 def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:

@@ -64,6 +64,9 @@ def print_evaluation_result(
         f'done={_format_duration(run_elapsed_s):>7} '
         f'eta={_format_duration(eta_s):>7} | '
         f'completed={metrics.completed_vehicles:<5d} '
+        f'finish={100.0 * metrics.completion_rate:>5.1f}% '
+        f'active={metrics.vehicles_remaining:<4d} '
+        f'tele={metrics.teleport_count:<3d} '
         f'throughput={metrics.throughput_per_hour:>7.1f}/h '
         f'wait={metrics.average_waiting_time_s:>6.2f}s '
         f'travel={metrics.average_travel_time_s:>6.2f}s '
@@ -96,9 +99,14 @@ def print_aggregate_metric_table(
 def _summary_rows() -> tuple[SummaryRow, ...]:
     return (
         SummaryRow('completed vehicles', lambda metrics: metrics.completed_vehicles, 0, ''),
+        SummaryRow('departed vehicles', lambda metrics: metrics.departed_vehicles, 0, ''),
+        SummaryRow('vehicles remaining at end', lambda metrics: metrics.vehicles_remaining, 0, ''),
+        SummaryRow('completion rate', lambda metrics: 100.0 * metrics.completion_rate, 1, '%'),
+        SummaryRow('teleported vehicles', lambda metrics: metrics.teleport_count, 0, ''),
         SummaryRow('throughput vehicles/hour', lambda metrics: metrics.throughput_per_hour, 1, ''),
         SummaryRow('average waiting time', lambda metrics: metrics.average_waiting_time_s, 2, ' s'),
         SummaryRow('average travel time', lambda metrics: metrics.average_travel_time_s, 2, ' s'),
+        SummaryRow('average time loss', lambda metrics: metrics.average_time_loss_s, 2, ' s'),
         SummaryRow('average queue length', lambda metrics: metrics.average_queue_length_vehicles, 2, ''),
         SummaryRow('max queue length', lambda metrics: metrics.max_queue_length_vehicles, 1, ''),
         SummaryRow('average wait density', lambda metrics: metrics.average_wait_density_s_per_m, 4, ' s/m'),

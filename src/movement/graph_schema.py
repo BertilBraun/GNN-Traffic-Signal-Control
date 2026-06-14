@@ -1,4 +1,5 @@
 """Static graph schema for movement-score learning."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,16 +7,21 @@ from typing import NewType
 
 from .schema import EdgeId, MovementIndex, TrafficLightId
 
-LaneGroupId = NewType("LaneGroupId", int)
-GraphMovementId = NewType("GraphMovementId", int)
+LaneGroupId = NewType('LaneGroupId', int)
+GraphMovementId = NewType('GraphMovementId', int)
 
 
 @dataclass(frozen=True)
 class LaneGroupNode:
-    """One directed road segment collapsed across physical lanes."""
+    """One directed corridor collapsed across physical lanes and road segments."""
 
     lane_group_id: LaneGroupId
-    edge_id: EdgeId
+    edge_ids: tuple[EdgeId, ...]
+
+    @property
+    def edge_id(self) -> EdgeId:
+        """Return the downstream-most edge for compatibility with local features."""
+        return self.edge_ids[-1]
 
 
 @dataclass(frozen=True)

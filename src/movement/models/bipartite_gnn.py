@@ -60,13 +60,20 @@ class MovementScorer(nn.Module):
         if x_movement.ndim != 2 or x_movement.shape[1] != self.movement_feature_dim:
             raise ValueError(
                 f'Expected movement features with shape [N, {self.movement_feature_dim}], '
-                f'got {tuple(x_movement.shape)}.'
+                f'got {tuple(x_movement.shape)}. Regenerate the IL dataset and checkpoint '
+                'for the current feature schema.'
             )
-        if self.num_hops > 0 and edge_index_dict is None:
-            raise ValueError('edge_index_dict is required when num_hops > 0.')
+        if edge_index_dict is None:
+            raise ValueError('edge_index_dict is required to resolve movement endpoints.')
         lane_embeddings = self.lane_encoder(x_lane)
-        input_lane_ids = x_movement[:, 3].long()
-        output_lane_ids = x_movement[:, 4].long()
+        input_lane_ids = _movement_lane_ids(
+            edge_index=edge_index_dict['input_lane_to_movement'],
+            movement_count=x_movement.shape[0],
+        )
+        output_lane_ids = _movement_lane_ids(
+            edge_index=edge_index_dict['output_lane_to_movement'],
+            movement_count=x_movement.shape[0],
+        )
         movement_embeddings = self.movement_encoder(
             torch.cat(
                 (
@@ -77,7 +84,6 @@ class MovementScorer(nn.Module):
                 dim=-1,
             )
         )
-        assert edge_index_dict is not None or self.num_hops == 0
         for hop in self.hops:
             lane_embeddings, movement_embeddings = hop(
                 lane_embeddings,
@@ -223,3 +229,24 @@ def _aggregate(
         torch.ones((target_indices.numel(), 1), device=source_features.device),
     )
     return aggregated_features / counts.clamp_min(1.0)
+
+
+def _movement_lane_ids(
+    edge_index: torch.Tensor,
+    movement_count: int,
+) -> torch.Tensor:
+    """Return one lane-group index for each movement from typed graph edges."""
+    if edge_index.ndim != 2 or edge_index.shape[0] != 2:
+        raise ValueError(f'Expected a 2 x E edge index, got {tuple(edge_index.shape)}.')
+    lane_ids = torch.full(
+        (movement_count,),
+        -1,
+        dtype=torch.long,
+        device=edge_index.device,
+    )
+    source_lane_ids = edge_index[0].long()
+    target_movement_ids = edge_index[1].long()
+    lane_ids[target_movement_ids] = source_lane_ids
+    if bool((lane_ids < 0).any()):
+        raise ValueError('Each movement must have exactly one endpoint lane-group edge.')
+    return lane_ids

@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import traci.constants as tc
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -13,8 +15,8 @@ from src.movement.features import (
     LaneGroupGeometry,
     MovementControlState,
     VehicleSnapshot,
+    VehicleSnapshotCollector,
     build_feature_frame,
-    vehicle_snapshots_from_api,
 )
 from src.movement.graph import build_movement_graph
 
@@ -31,6 +33,9 @@ def test_resolve_sumocfg_net_path_uses_config_directory(tmp_path: Path) -> None:
 
 
 class FakeVehicleApi:
+    def __init__(self) -> None:
+        self.subscribed_vehicle_ids: set[str] = set()
+
     def getIDList(self) -> list[str]:
         return ['v0', 'v1']
 
@@ -55,9 +60,25 @@ class FakeVehicleApi:
     def getLength(self, vehicle_id: str) -> float:
         return 5.0
 
+    def subscribe(self, vehicle_id: str, variables: tuple[int, ...]) -> None:
+        del variables
+        self.subscribed_vehicle_ids.add(vehicle_id)
+
+    def getAllSubscriptionResults(self) -> dict[str, dict[int, object]]:
+        return {
+            vehicle_id: {
+                tc.VAR_LANE_ID: self.getLaneID(vehicle_id),
+                tc.VAR_LANEPOSITION: self.getLanePosition(vehicle_id),
+                tc.VAR_SPEED: self.getSpeed(vehicle_id),
+                tc.VAR_LENGTH: self.getLength(vehicle_id),
+                tc.VAR_ROUTE_INDEX: self.getRouteIndex(vehicle_id),
+            }
+            for vehicle_id in self.subscribed_vehicle_ids
+        }
+
 
 def test_vehicle_snapshots_use_next_route_edge_for_oracle_demand() -> None:
-    snapshots = vehicle_snapshots_from_api(FakeVehicleApi())
+    snapshots = VehicleSnapshotCollector(FakeVehicleApi()).capture()
 
     assert snapshots[0].vehicle_id == 'v0'
     assert snapshots[0].lane_id == 'north_in_0'

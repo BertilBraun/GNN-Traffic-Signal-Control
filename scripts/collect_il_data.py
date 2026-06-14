@@ -17,13 +17,16 @@ from src.movement.dataset import build_dataset_sample, save_jsonl_samples  # noq
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale  # noqa: E402
 from src.movement.features import (  # noqa: E402
     LaneGroupGeometry,
+    LaneGroupFlowTracker,
     MovementFeatureFrame,
     MovementControlState,
+    VehicleSnapshotCollector,
     build_feature_frame,
-    vehicle_snapshots_from_api,
+    movement_control_state_from_targets,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
+from src.movement.initial_traffic import generate_initial_traffic_population  # noqa: E402
 from src.movement.runtime import MovementControlRuntime  # noqa: E402
 
 
@@ -85,6 +88,7 @@ def collect_samples(
     seed: int,
     gui: bool = False,
     demand_scale: float = 1.0,
+    initial_occupancy: float = 0.06,
 ) -> int:
     """Run max-pressure control and write one sample per decision time."""
     net_path = resolve_sumocfg_net_path(cfg_path)
@@ -93,49 +97,80 @@ def collect_samples(
         cfg_path=cfg_path,
         demand_scale=demand_scale,
     )
+    initial_population = generate_initial_traffic_population(
+        cfg_path=cfg_path,
+        net_path=net_path,
+        target_occupancy=initial_occupancy,
+        seed=seed,
+    )
     runtime = MovementControlRuntime(
         cfg_path=cfg_path,
         gui=gui,
         seed=seed,
-        additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),
+        additional_sumo_args=route_file_sumo_args(
+            (
+                *demand_route_files.route_files,
+                initial_population.route_file,
+            )
+        ),
     )
     samples = []
     try:
         runtime.start()
-        graph = build_movement_graph(runtime.programs)
+        graph = build_movement_graph(runtime.programs, net_path=net_path)
+        vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
+        flow_tracker = LaneGroupFlowTracker(
+            graph=graph,
+            lane_ids_by_edge=lane_ids_by_edge,
+            lane_geometries=lane_geometries,
+            decision_interval_s=decision_interval,
+        )
+        control_state = MovementControlState()
         for step in range(steps):
             if step % decision_interval == 0:
+                vehicles = vehicle_snapshot_collector.capture()
                 feature_frame = build_feature_frame(
                     graph=graph,
                     lane_ids_by_edge=lane_ids_by_edge,
                     lane_geometries=lane_geometries,
-                    control_state=MovementControlState(),
-                    vehicles=vehicle_snapshots_from_api(traci.vehicle),
+                    control_state=control_state,
+                    vehicles=vehicles,
+                    lane_flow_rates=flow_tracker.observe(vehicles),
                 )
-                samples.append(
-                    build_dataset_sample(
-                        graph=graph,
-                        feature_frame=feature_frame,
-                        programs=runtime.programs,
-                        teacher_controlled_scores={tls_id: {} for tls_id in runtime.programs},
-                        teacher_graph_scores=graph_max_pressure_scores_from_features(
-                            graph,
-                            feature_frame,
-                        ),
-                        metadata={
-                            'cfg_path': str(cfg_path),
-                            'network_path': str(net_path),
-                            'seed': seed,
-                            'simulation_time_s': step,
-                            'teacher': 'max-pressure',
-                        },
-                    )
+                sample = build_dataset_sample(
+                    graph=graph,
+                    feature_frame=feature_frame,
+                    programs=runtime.programs,
+                    teacher_controlled_scores={tls_id: {} for tls_id in runtime.programs},
+                    teacher_graph_scores=graph_max_pressure_scores_from_features(
+                        graph,
+                        feature_frame,
+                    ),
+                    metadata={
+                        'cfg_path': str(cfg_path),
+                        'network_path': str(net_path),
+                        'seed': seed,
+                        'simulation_time_s': step,
+                        'teacher': 'max-pressure',
+                    },
+                )
+                samples.append(sample)
+                desired_targets = {
+                    traffic_light_id: str(runtime.programs[traffic_light_id].selectable_phases[local_phase_index].state)
+                    for traffic_light_id, local_phase_index in sample.teacher_selected_phase_by_tls.items()
+                }
+                accepted_targets = runtime.request_targets(desired_targets)
+                control_state = movement_control_state_from_targets(
+                    graph=graph,
+                    programs=runtime.programs,
+                    target_states=accepted_targets,
                 )
             runtime.step()
             if not runtime.is_running():
                 break
     finally:
         runtime.close()
+        initial_population.cleanup()
         demand_route_files.cleanup()
 
     save_jsonl_samples(output_path, samples)
@@ -159,6 +194,12 @@ def parse_args() -> argparse.Namespace:
         help='Multiplier applied to route-file flow demand at runtime',
     )
     parser.add_argument('--gui', action='store_true', help='Run sumo-gui')
+    parser.add_argument(
+        '--initial-occupancy',
+        type=float,
+        default=0.06,
+        help='Initial randomized network occupancy',
+    )
     return parser.parse_args()
 
 
@@ -172,6 +213,7 @@ def main() -> None:
         seed=args.seed,
         gui=args.gui,
         demand_scale=args.demand_scale,
+        initial_occupancy=args.initial_occupancy,
     )
     print(f'Wrote {count} samples to {args.out}')
 

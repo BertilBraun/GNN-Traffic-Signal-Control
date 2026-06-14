@@ -9,4 +9,16 @@
     <node id="N2_0" x="0.00" y="0.00"/>
     <node id="N2_1" x="200.00" y="0.00" type="traffic_light"/>
     <node id="N2_2" x="400.00" y="0.00"/>
+    <node id="S_top_0" x="0.00" y="500.00"/>
+    <node id="S_left_0" x="-100.00" y="400.00"/>
+    <node id="S_top_1" x="200.00" y="500.00"/>
+    <node id="S_top_2" x="400.00" y="500.00"/>
+    <node id="S_right_0" x="500.00" y="400.00"/>
+    <node id="S_left_1" x="-100.00" y="200.00"/>
+    <node id="S_right_1" x="500.00" y="200.00"/>
+    <node id="S_bottom_0" x="0.00" y="-100.00"/>
+    <node id="S_left_2" x="-100.00" y="0.00"/>
+    <node id="S_bottom_1" x="200.00" y="-100.00"/>
+    <node id="S_bottom_2" x="400.00" y="-100.00"/>
+    <node id="S_right_2" x="500.00" y="0.00"/>
 </nodes>

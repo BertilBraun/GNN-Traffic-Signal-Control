@@ -1,7 +1,11 @@
 """Build static LaneGroup/Movement graphs from movement-aware programs."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
+
+import sumolib
 
 from .graph_schema import (
     GraphMovementId,
@@ -17,23 +21,24 @@ from .schema import EdgeId, LaneId, MovementIndex, TrafficLightId, TrafficLightP
 
 def build_movement_graph(
     programs: Mapping[str | TrafficLightId, TrafficLightProgram],
+    net_path: str | Path | None = None,
 ) -> MovementGraph:
     """Build a deterministic static graph from extracted traffic-light programs."""
-    lane_group_edges = _collect_lane_group_edges(programs)
+    controlled_edges = _collect_lane_group_edges(programs)
+    corridors = (
+        _collect_corridors(controlled_edges, programs, net_path)
+        if net_path is not None
+        else tuple((edge_id,) for edge_id in controlled_edges)
+    )
     lane_groups = tuple(
-        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_id=edge_id)
-        for index, edge_id in enumerate(lane_group_edges)
+        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_ids=edge_ids) for index, edge_ids in enumerate(corridors)
     )
     lane_group_id_by_edge = {
-        lane_group.edge_id: lane_group.lane_group_id
-        for lane_group in lane_groups
+        edge_id: lane_group.lane_group_id for lane_group in lane_groups for edge_id in lane_group.edge_ids
     }
 
     movement_keys = _collect_movement_keys(programs)
-    movement_id_by_key = {
-        key: GraphMovementId(index)
-        for index, key in enumerate(movement_keys)
-    }
+    movement_id_by_key = {key: GraphMovementId(index) for index, key in enumerate(movement_keys)}
     controlled_indices_by_key = _collect_controlled_indices_by_key(programs)
     movements = tuple(
         MovementNode(
@@ -59,10 +64,151 @@ def build_movement_graph(
     )
 
 
+def _collect_corridors(
+    controlled_edges: tuple[EdgeId, ...],
+    programs: Mapping[str | TrafficLightId, TrafficLightProgram],
+    net_path: str | Path,
+) -> tuple[tuple[EdgeId, ...], ...]:
+    network = sumolib.net.readNet(str(net_path), withConnections=True)
+    edges_by_id = {
+        EdgeId(str(edge.getID())): edge for edge in network.getEdges() if not str(edge.getID()).startswith(':')
+    }
+    signalized_ids = {str(traffic_light_id) for traffic_light_id in programs}
+    corridor_by_edge: dict[EdgeId, tuple[EdgeId, ...]] = {}
+    for edge_id in controlled_edges:
+        if edge_id not in edges_by_id:
+            corridor_by_edge[edge_id] = (edge_id,)
+            continue
+        corridor = _corridor_for_edge(
+            edge=edges_by_id[edge_id],
+            signalized_ids=signalized_ids,
+        )
+        corridor_ids = tuple(EdgeId(str(edge.getID())) for edge in corridor)
+        for corridor_edge_id in corridor_ids:
+            existing = corridor_by_edge.get(corridor_edge_id)
+            if existing is not None and existing != corridor_ids:
+                raise ValueError(
+                    f'Overlapping corridor contractions for edge {corridor_edge_id}: {existing} and {corridor_ids}.'
+                )
+            corridor_by_edge[corridor_edge_id] = corridor_ids
+    return tuple(
+        sorted(
+            {corridor_by_edge[edge_id] for edge_id in controlled_edges},
+            key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids),
+        )
+    )
+
+
+def _corridor_for_edge(edge: object, signalized_ids: set[str]) -> tuple[object, ...]:
+    upstream = _trace_corridor(edge, signalized_ids, downstream=False)
+    downstream = _trace_corridor(edge, signalized_ids, downstream=True)
+    return tuple((*reversed(upstream), edge, *downstream))
+
+
+def _trace_corridor(
+    start_edge: object,
+    signalized_ids: set[str],
+    downstream: bool,
+) -> tuple[object, ...]:
+    path: list[object] = []
+    visited = {str(start_edge.getID())}
+    current = start_edge
+    while True:
+        junction = current.getToNode() if downstream else current.getFromNode()
+        if str(junction.getID()) in signalized_ids:
+            break
+        candidates = _viable_continuations(
+            current=current,
+            signalized_ids=signalized_ids,
+            downstream=downstream,
+            visited=visited,
+        )
+        continuation = _select_continuation(candidates)
+        if continuation is None:
+            break
+        next_edge = continuation[0]
+        next_edge_id = str(next_edge.getID())
+        if next_edge_id in visited:
+            break
+        path.append(next_edge)
+        visited.add(next_edge_id)
+        current = next_edge
+    return tuple(path)
+
+
+def _viable_continuations(
+    current: object,
+    signalized_ids: set[str],
+    downstream: bool,
+    visited: set[str],
+) -> tuple[tuple[object, tuple[str, ...]], ...]:
+    connections = (
+        tuple(connection for values in current.getOutgoing().values() for connection in values)
+        if downstream
+        else tuple(connection for values in current.getIncoming().values() for connection in values)
+    )
+    candidates: dict[str, tuple[object, set[str]]] = {}
+    for connection in connections:
+        candidate = connection.getTo() if downstream else connection.getFrom()
+        candidate_id = str(candidate.getID())
+        if candidate_id.startswith(':') or candidate_id in visited:
+            continue
+        if not _reaches_signal(
+            edge=candidate,
+            signalized_ids=signalized_ids,
+            downstream=downstream,
+            visited=frozenset((*visited, candidate_id)),
+        ):
+            continue
+        directions = candidates.setdefault(candidate_id, (candidate, set()))[1]
+        directions.add(str(connection.getDirection()))
+    return tuple(
+        (candidate, tuple(sorted(directions)))
+        for candidate, directions in sorted(candidates.values(), key=lambda item: str(item[0].getID()))
+    )
+
+
+def _select_continuation(
+    candidates: tuple[tuple[object, tuple[str, ...]], ...],
+) -> tuple[object, tuple[str, ...]] | None:
+    if len(candidates) == 1:
+        return candidates[0]
+    straight = tuple(candidate for candidate in candidates if 's' in candidate[1])
+    return straight[0] if len(straight) == 1 else None
+
+
+def _reaches_signal(
+    edge: object,
+    signalized_ids: set[str],
+    downstream: bool,
+    visited: frozenset[str],
+) -> bool:
+    pending = [edge]
+    seen = set(visited)
+    while pending:
+        current = pending.pop()
+        junction = current.getToNode() if downstream else current.getFromNode()
+        if str(junction.getID()) in signalized_ids:
+            return True
+        connections = (
+            tuple(connection for values in current.getOutgoing().values() for connection in values)
+            if downstream
+            else tuple(connection for values in current.getIncoming().values() for connection in values)
+        )
+        for connection in connections:
+            candidate = connection.getTo() if downstream else connection.getFrom()
+            candidate_id = str(candidate.getID())
+            if candidate_id.startswith(':') or candidate_id in seen:
+                continue
+            seen.add(candidate_id)
+            pending.append(candidate)
+    return False
+
+
 def edge_id_from_lane_id(lane_id: LaneId | str) -> EdgeId:
     """Return the SUMO edge id for a lane id such as `edge_with_underscores_0`."""
     text = str(lane_id)
-    edge_text, separator, lane_index = text.rpartition("_")
+    edge_text, separator, lane_index = text.rpartition('_')
     if separator and lane_index.isdigit() and edge_text:
         return EdgeId(edge_text)
     return EdgeId(text)
@@ -110,10 +256,7 @@ def _collect_controlled_indices_by_key(
                 movement.outgoing_lane_id,
             )
             indices_by_key.setdefault(key, []).append(movement.movement_index)
-    return {
-        key: tuple(indices)
-        for key, indices in indices_by_key.items()
-    }
+    return {key: tuple(indices) for key, indices in indices_by_key.items()}
 
 
 def _movement_key(
@@ -130,22 +273,10 @@ def _movement_key(
 
 def _build_edges(movements: tuple[MovementNode, ...]) -> TypedMovementEdges:
     return TypedMovementEdges(
-        input_lane_to_movement=tuple(
-            (movement.input_lane_group_id, movement.movement_id)
-            for movement in movements
-        ),
-        output_lane_to_movement=tuple(
-            (movement.output_lane_group_id, movement.movement_id)
-            for movement in movements
-        ),
-        movement_to_input_lane=tuple(
-            (movement.movement_id, movement.input_lane_group_id)
-            for movement in movements
-        ),
-        movement_to_output_lane=tuple(
-            (movement.movement_id, movement.output_lane_group_id)
-            for movement in movements
-        ),
+        input_lane_to_movement=tuple((movement.input_lane_group_id, movement.movement_id) for movement in movements),
+        output_lane_to_movement=tuple((movement.output_lane_group_id, movement.movement_id) for movement in movements),
+        movement_to_input_lane=tuple((movement.movement_id, movement.input_lane_group_id) for movement in movements),
+        movement_to_output_lane=tuple((movement.movement_id, movement.output_lane_group_id) for movement in movements),
     )
 
 
@@ -159,22 +290,11 @@ def _build_phase_incidences(
         rows = []
         controlled_to_graph_id = _controlled_to_graph_id(program, movement_id_by_key)
         for phase in program.selectable_phases:
-            enabled = {
-                controlled_to_graph_id[movement_index]
-                for movement_index in phase.enabled_movement_indices
-            }
-            rows.append(
-                tuple(
-                    1 if movement_id in enabled else 0
-                    for movement_id in local_movement_ids
-                )
-            )
+            enabled = {controlled_to_graph_id[movement_index] for movement_index in phase.enabled_movement_indices}
+            rows.append(tuple(1 if movement_id in enabled else 0 for movement_id in local_movement_ids))
         incidences[program.traffic_light_id] = PhaseIncidence(
             traffic_light_id=program.traffic_light_id,
-            sumo_phase_indices=tuple(
-                int(phase.sumo_phase_index)
-                for phase in program.selectable_phases
-            ),
+            sumo_phase_indices=tuple(int(phase.sumo_phase_index) for phase in program.selectable_phases),
             movement_ids=local_movement_ids,
             rows=tuple(rows),
         )

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -7,6 +8,7 @@ sys.path.insert(0, str(ROOT))
 from src.movement.extraction import extract_traffic_light_program
 from src.movement.features import (
     LaneGroupGeometry,
+    LaneGroupFlowTracker,
     MovementControlState,
     VehicleSnapshot,
     build_feature_frame,
@@ -14,6 +16,7 @@ from src.movement.features import (
     detector_length,
 )
 from src.movement.graph import build_movement_graph
+from src.movement.graph_schema import LaneGroupNode
 
 
 def test_detector_helpers_use_lane_group_length_cap() -> None:
@@ -43,9 +46,7 @@ def test_feature_frame_extracts_lane_group_rows_in_graph_order() -> None:
             'south_out': LaneGroupGeometry(length_m=400.0, num_lanes=2, speed_limit_mps=20.0),
         },
         control_state=MovementControlState(
-            current_enabled_movement_ids=(0,),
-            previous_enabled_movement_ids=(),
-            time_since_enabled_s={0: 30.0},
+            green_movement_ids_last_decision=(0,),
         ),
         vehicles=(
             VehicleSnapshot('moving_0', 'north_in_0', 'south_out', 130.0, 12.0, 5.0),
@@ -123,9 +124,7 @@ def test_feature_frame_extracts_oracle_movement_demand_by_graph_id() -> None:
             'south_out': LaneGroupGeometry(length_m=200.0, num_lanes=2, speed_limit_mps=10.0),
         },
         control_state=MovementControlState(
-            current_enabled_movement_ids=(0,),
-            previous_enabled_movement_ids=(0,),
-            time_since_enabled_s={0: 45.0},
+            green_movement_ids_last_decision=(0,),
         ),
         vehicles=(
             VehicleSnapshot('v0', 'north_in_0', 'south_out', 150.0, 10.0, 5.0),
@@ -138,6 +137,104 @@ def test_feature_frame_extracts_oracle_movement_demand_by_graph_id() -> None:
     assert movement_row.static.num_underlying_controlled_links == 2
     assert movement_row.dynamic.oracle_movement_demand == 2.0
     assert movement_row.dynamic.oracle_movement_demand_norm == 0.04
-    assert movement_row.dynamic.is_currently_enabled == 1.0
-    assert movement_row.dynamic.was_enabled_last_decision == 1.0
-    assert movement_row.dynamic.time_since_enabled_s == 45.0
+    assert movement_row.dynamic.was_green_last_decision == 1.0
+
+
+def test_lane_group_flow_tracker_reports_recent_detector_crossings() -> None:
+    program = extract_traffic_light_program(
+        tls_id='J0',
+        phase_states=['G'],
+        controlled_links=[[('north_in_0', 'south_out_0', None)]],
+    )
+    graph = build_movement_graph({'J0': program})
+    tracker = LaneGroupFlowTracker(
+        graph=graph,
+        lane_ids_by_edge={
+            'north_in': ('north_in_0',),
+            'south_out': ('south_out_0',),
+        },
+        lane_geometries={
+            'north_in': LaneGroupGeometry(length_m=200.0, num_lanes=1),
+            'south_out': LaneGroupGeometry(length_m=200.0, num_lanes=1),
+        },
+        decision_interval_s=15.0,
+    )
+    north_id = graph.lane_group_id_by_edge['north_in']
+
+    first_rates = tracker.observe(())
+    second_rates = tracker.observe((VehicleSnapshot('v0', 'north_in_0', 'south_out', 180.0, 10.0, 5.0),))
+    third_rates = tracker.observe(())
+
+    assert first_rates[north_id].arrival_rate_15s == 0.0
+    assert second_rates[north_id].arrival_rate_15s == 1.0 / 15.0
+    assert third_rates[north_id].departure_rate_15s == 1.0 / 15.0
+
+
+def test_feature_frame_aggregates_contracted_corridor_geometry() -> None:
+    program = extract_traffic_light_program(
+        tls_id='J0',
+        phase_states=['G'],
+        controlled_links=[[('north_a_0', 'south_out_0', None)]],
+    )
+    base_graph = build_movement_graph({'J0': program})
+    input_id = base_graph.lane_group_id_by_edge['north_a']
+    output_id = base_graph.lane_group_id_by_edge['south_out']
+    graph = replace(
+        base_graph,
+        lane_groups=tuple(
+            LaneGroupNode(lane_group_id=lane_group.lane_group_id, edge_ids=('north_a', 'north_b'))
+            if lane_group.lane_group_id == input_id
+            else lane_group
+            for lane_group in base_graph.lane_groups
+        ),
+        lane_group_id_by_edge={
+            'north_a': input_id,
+            'north_b': input_id,
+            'south_out': output_id,
+        },
+    )
+
+    frame = build_feature_frame(
+        graph=graph,
+        lane_ids_by_edge={
+            'north_a': ('north_a_0', 'north_a_1'),
+            'north_b': ('north_b_0',),
+            'south_out': ('south_out_0',),
+        },
+        lane_geometries={
+            'north_a': LaneGroupGeometry(length_m=200.0, num_lanes=2, speed_limit_mps=10.0),
+            'north_b': LaneGroupGeometry(length_m=100.0, num_lanes=1, speed_limit_mps=20.0),
+            'south_out': LaneGroupGeometry(length_m=100.0, num_lanes=1, speed_limit_mps=10.0),
+        },
+        control_state=MovementControlState(),
+        vehicles=(
+            VehicleSnapshot(
+                'queued',
+                'north_a_0',
+                'north_b',
+                150.0,
+                0.0,
+                5.0,
+                route_edge_ids_ahead=('north_b', 'south_out'),
+            ),
+            VehicleSnapshot(
+                'moving',
+                'north_b_0',
+                'south_out',
+                50.0,
+                10.0,
+                5.0,
+                route_edge_ids_ahead=('south_out',),
+            ),
+        ),
+    )
+
+    row = frame.lane_group_rows[input_id]
+    assert row.static.length_m == 300.0
+    assert row.static.freeflow_travel_time_s == 25.0
+    assert row.static.speed_limit_mps == 12.0
+    assert round(row.static.num_lanes, 3) == 1.667
+    assert row.static.estimated_storage_capacity == 37.5
+    assert row.dynamic.vehicle_count_detector == 2.0
+    assert row.dynamic.queue_length_m_detector == 150.0
+    assert frame.movement_rows[0].dynamic.oracle_movement_demand == 2.0

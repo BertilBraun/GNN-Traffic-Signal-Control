@@ -15,6 +15,7 @@ class MovementTransition:
     sample: MovementDatasetSample
     actions: tuple[int, ...]
     old_log_probs: tuple[float, ...]
+    action_masks: tuple[tuple[bool, ...], ...]
     rewards: tuple[float, ...]
     values: tuple[float, ...]
     done: bool
@@ -27,6 +28,7 @@ class MovementPpoBatch:
     old_log_probs: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor
+    policy_mask: torch.Tensor
 
 
 class MovementRolloutBuffer:
@@ -116,21 +118,38 @@ class MovementRolloutBuffer:
             )
             advantages = self.advantages[batch_indices].to(torch_device)
             returns = self.returns[batch_indices].to(torch_device)
-            normalized_advantages = _normalize_advantages(advantages)
+            policy_mask = torch.tensor(
+                tuple(
+                    tuple(sum(action_mask) > 1 for action_mask in transition.action_masks) for transition in transitions
+                ),
+                dtype=torch.bool,
+                device=torch_device,
+            )
+            normalized_advantages = _normalize_advantages(
+                advantages=advantages,
+                policy_mask=policy_mask,
+            )
             yield MovementPpoBatch(
                 transitions=transitions,
                 actions=actions,
                 old_log_probs=old_log_probs,
                 advantages=normalized_advantages,
                 returns=returns,
+                policy_mask=policy_mask,
             )
 
     def __len__(self) -> int:
         return len(self.transitions)
 
 
-def _normalize_advantages(advantages: torch.Tensor) -> torch.Tensor:
-    flattened = advantages.reshape(-1)
-    if flattened.numel() <= 1:
-        return advantages
-    return (advantages - flattened.mean()) / (flattened.std() + 1e-8)
+def _normalize_advantages(
+    advantages: torch.Tensor,
+    policy_mask: torch.Tensor,
+) -> torch.Tensor:
+    active_advantages = advantages[policy_mask]
+    normalized = torch.zeros_like(advantages)
+    if active_advantages.numel() <= 1:
+        normalized[policy_mask] = active_advantages
+        return normalized
+    normalized[policy_mask] = (active_advantages - active_advantages.mean()) / (active_advantages.std() + 1e-8)
+    return normalized

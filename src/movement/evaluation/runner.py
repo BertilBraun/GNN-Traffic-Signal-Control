@@ -19,10 +19,12 @@ from src.movement.evaluation.metrics import EvaluationMetrics, parse_tripinfo_me
 from src.movement.evaluation.progression import GreenWaveTracker
 from src.movement.features import (
     LaneFeatureApi,
+    LaneGroupFlowTracker,
     LaneGroupGeometry,
     MovementControlState,
+    VehicleSnapshotCollector,
     build_feature_frame,
-    vehicle_snapshots_from_api,
+    movement_control_state_from_targets,
 )
 from src.movement.graph import build_movement_graph
 from src.movement.graph_schema import MovementGraph
@@ -60,6 +62,8 @@ class LearnedPolicyContext:
     lane_geometries: dict[str, LaneGroupGeometry]
     lane_normalizer: RunningNormalizer
     movement_normalizer: RunningNormalizer
+    vehicle_snapshot_collector: VehicleSnapshotCollector
+    lane_flow_tracker: LaneGroupFlowTracker
     device: str
 
 
@@ -107,6 +111,9 @@ def run_evaluation_episode(
     per_junction_max_queue: dict[str, float] = {}
     per_junction_phase_counts: dict[str, list[int]] = {}
     switch_count = 0
+    departed_vehicle_count = 0
+    teleport_count = 0
+    vehicles_remaining = 0
     simulated_steps = 0
     accepted_targets: dict[str, str] = {}
     progression_tracker = GreenWaveTracker(approach_distance_m=150.0, stop_speed_mps=0.1)
@@ -126,6 +133,8 @@ def run_evaluation_episode(
             programs=runtime.programs,
             lane_ids_by_edge=lane_ids_by_edge,
             lane_geometries=lane_geometries,
+            decision_interval=decision_interval,
+            net_path=net_path,
         )
         for step in range(steps):
             if step % decision_interval == 0:
@@ -134,6 +143,7 @@ def run_evaluation_episode(
                     programs=runtime.programs,
                     lane_api=runtime.lane_api,
                     learned_context=learned_context,
+                    accepted_targets=accepted_targets,
                 )
                 next_accepted_targets = runtime.request_targets(desired_states)
                 _record_phase_counts(
@@ -146,6 +156,8 @@ def run_evaluation_episode(
 
             runtime.step()
             simulated_steps += 1
+            departed_vehicle_count += int(traci.simulation.getDepartedNumber())
+            teleport_count += int(traci.simulation.getStartingTeleportNumber())
             queue_values = tuple(float(traci.lane.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
             if queue_values:
                 queue_sum += sum(queue_values) / len(queue_values)
@@ -159,21 +171,27 @@ def run_evaluation_episode(
             _update_progression_tracker(progression_tracker)
             if not runtime.is_running():
                 break
+        vehicles_remaining = len(traci.vehicle.getIDList())
     finally:
         runtime.close()
         demand_route_files.cleanup()
 
-    completed, throughput, average_wait, average_travel = parse_tripinfo_metrics(
+    completed, throughput, average_wait, average_travel, average_time_loss = parse_tripinfo_metrics(
         tripinfo_path=tripinfo_path,
         episode_length_s=max(simulated_steps, 1),
     )
     tripinfo_path.unlink(missing_ok=True)
     progression = progression_tracker.metric_values()
     return EvaluationMetrics(
+        departed_vehicles=departed_vehicle_count,
         completed_vehicles=completed,
+        vehicles_remaining=vehicles_remaining,
+        completion_rate=completed / departed_vehicle_count if departed_vehicle_count > 0 else 0.0,
+        teleport_count=teleport_count,
         throughput_per_hour=throughput,
         average_waiting_time_s=average_wait,
         average_travel_time_s=average_travel,
+        average_time_loss_s=average_time_loss,
         average_queue_length_vehicles=queue_sum / max(simulated_steps, 1),
         max_queue_length_vehicles=max_queue,
         average_wait_density_s_per_m=wait_density_sum / max(simulated_steps, 1),
@@ -236,6 +254,7 @@ def _desired_states(
     programs: Mapping[str, TrafficLightProgram],
     lane_api: LaneFeatureApi,
     learned_context: LearnedPolicyContext | None,
+    accepted_targets: Mapping[str, str],
 ) -> dict[str, str]:
     match policy:
         case EvaluationPolicy.MAX_PRESSURE:
@@ -245,7 +264,16 @@ def _desired_states(
         case EvaluationPolicy.LEARNED:
             if learned_context is None:
                 raise ValueError('learned_policy_config is required for learned evaluation.')
-            return _learned_states(programs, learned_context)
+            control_state = movement_control_state_from_targets(
+                graph=learned_context.graph,
+                programs=programs,
+                target_states=accepted_targets,
+            )
+            return _learned_states(
+                programs=programs,
+                learned_context=learned_context,
+                control_state=control_state,
+            )
 
 
 def _baseline_states(
@@ -267,6 +295,8 @@ def _learned_context(
     programs: Mapping[str, TrafficLightProgram],
     lane_ids_by_edge: dict[str, tuple[str, ...]],
     lane_geometries: dict[str, LaneGroupGeometry],
+    decision_interval: int,
+    net_path: Path,
 ) -> LearnedPolicyContext | None:
     if policy != EvaluationPolicy.LEARNED:
         return None
@@ -276,13 +306,21 @@ def _learned_context(
         learned_policy_config.checkpoint_path,
         device=learned_policy_config.device,
     )
+    graph = build_movement_graph(programs, net_path=net_path)
     return LearnedPolicyContext(
         model=model,
-        graph=build_movement_graph(programs),
+        graph=graph,
         lane_ids_by_edge=lane_ids_by_edge,
         lane_geometries=lane_geometries,
         lane_normalizer=normalizer_from_state(metadata.lane_normalizer),
         movement_normalizer=normalizer_from_state(metadata.movement_normalizer),
+        vehicle_snapshot_collector=VehicleSnapshotCollector(traci.vehicle),
+        lane_flow_tracker=LaneGroupFlowTracker(
+            graph=graph,
+            lane_ids_by_edge=lane_ids_by_edge,
+            lane_geometries=lane_geometries,
+            decision_interval_s=decision_interval,
+        ),
         device=learned_policy_config.device,
     )
 
@@ -290,15 +328,18 @@ def _learned_context(
 def _learned_states(
     programs: Mapping[str, TrafficLightProgram],
     learned_context: LearnedPolicyContext,
+    control_state: MovementControlState,
 ) -> dict[str, str]:
+    vehicles = learned_context.vehicle_snapshot_collector.capture()
     sample = build_dataset_sample(
         graph=learned_context.graph,
         feature_frame=build_feature_frame(
             graph=learned_context.graph,
             lane_ids_by_edge=learned_context.lane_ids_by_edge,
             lane_geometries=learned_context.lane_geometries,
-            control_state=MovementControlState(),
-            vehicles=vehicle_snapshots_from_api(traci.vehicle),
+            control_state=control_state,
+            vehicles=vehicles,
+            lane_flow_rates=learned_context.lane_flow_tracker.observe(vehicles),
         ),
         programs=programs,
         teacher_controlled_scores={traffic_light_id: {} for traffic_light_id in programs},

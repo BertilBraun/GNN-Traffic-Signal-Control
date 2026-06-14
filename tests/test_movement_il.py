@@ -13,6 +13,7 @@ from src.movement.training.il import (
     normalizer_from_state,
     tensors_from_sample,
     train_movement_il,
+    edge_tensors_from_sample,
 )
 from src.movement.models.bipartite_gnn import MovementScorer
 
@@ -58,6 +59,7 @@ def test_local_model_scores_one_value_per_movement() -> None:
     scores = model(
         x_lane=torch.tensor(_sample().x_lane, dtype=torch.float32),
         x_movement=torch.tensor(_sample().x_movement, dtype=torch.float32),
+        edge_index_dict=edge_tensors_from_sample(_sample()),
     )
 
     assert tuple(scores.shape) == (2,)
@@ -92,6 +94,7 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
         scores = loaded_model(
             x_lane=x_lane,
             x_movement=x_movement,
+            edge_index_dict=edge_tensors_from_sample(_sample()),
         )
 
     assert torch.allclose(scores, torch.tensor([7.0, -3.0]), atol=0.3)

@@ -193,9 +193,7 @@ def _lane_row_vector(row: LaneGroupFeatureRow) -> tuple[float, ...]:
         static.is_short_link,
         dynamic.vehicle_count_detector,
         dynamic.moving_count_detector,
-        dynamic.halting_count_detector,
         dynamic.queue_length_m_detector,
-        dynamic.queue_length_vehicles_detector,
         dynamic.occupancy_detector,
         dynamic.mean_speed_detector,
         dynamic.density_detector,
@@ -215,25 +213,11 @@ def _movement_row_vector(row: MovementFeatureRow) -> tuple[float, ...]:
     static = row.static
     dynamic = row.dynamic
     return (
-        _turn_type_code(static.turn_type),
         static.num_underlying_controlled_links,
-        static.saturation_flow_estimate,
-        float(static.input_lane_group_id),
-        float(static.output_lane_group_id),
         dynamic.oracle_movement_demand,
         dynamic.oracle_movement_demand_norm,
-        dynamic.is_currently_enabled,
-        dynamic.was_enabled_last_decision,
-        dynamic.time_since_enabled_s,
+        dynamic.was_green_last_decision,
     )
-
-
-def _turn_type_code(turn_type: str) -> float:
-    return {
-        'right': 1.0,
-        'straight': 2.0,
-        'left': 3.0,
-    }.get(turn_type, 0.0)
 
 
 def _phase_score(

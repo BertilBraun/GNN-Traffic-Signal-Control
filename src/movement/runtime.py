@@ -53,6 +53,8 @@ class MovementControlRuntime:
             str(self.seed),
             '--no-step-log',
             'true',
+            '--no-warnings',
+            'true',
         ]
         command.extend(self.additional_sumo_args)
         traci.start(command)
@@ -84,6 +86,15 @@ class MovementControlRuntime:
         accepted_targets = self._min_green_controller.filter_targets(desired_targets)
         self._transition_controller.set_targets(accepted_targets)
         return accepted_targets
+
+    def allowed_target_states(self, traffic_light_id: str) -> tuple[str, ...]:
+        """Return target greens that min-green permits at the next decision."""
+        self._require_started()
+        program = self.programs[traffic_light_id]
+        current_target = self._min_green_controller.current_target(traffic_light_id)
+        if current_target is None or self._min_green_controller.can_switch(traffic_light_id):
+            return tuple(str(phase.state) for phase in program.selectable_phases)
+        return (current_target,)
 
     def current_states(self) -> dict[str, str]:
         return self._transition_controller.current_states()

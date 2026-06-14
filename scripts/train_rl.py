@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from src.movement.evaluation import EvaluationPolicy
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
 
-DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
+DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,31 +26,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--iterations', type=int, default=50, help='PPO collect-update iterations')
     parser.add_argument('--steps-per-rollout', type=int, default=120, help='Decision steps collected per iteration')
     parser.add_argument('--decision-interval', type=int, default=15, help='Simulation seconds per decision')
-    parser.add_argument('--lr', type=float, default=3e-4, help='Adam learning rate')
+    parser.add_argument('--lr', type=float, default=1e-4, help='Adam learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--lam', type=float, default=0.95, help='GAE lambda')
-    parser.add_argument('--clip', type=float, default=0.2, help='PPO clipping epsilon')
+    parser.add_argument('--clip', type=float, default=0.1, help='PPO clipping epsilon')
     parser.add_argument('--epochs', type=int, default=4, help='PPO update epochs')
     parser.add_argument('--value-warmup-iterations', type=int, default=10, help='Value-only warmup iterations')
     parser.add_argument('--warmup-epochs', type=int, default=8, help='Update epochs during value warmup')
     parser.add_argument('--value-coeff', type=float, default=0.5, help='Value loss coefficient')
-    parser.add_argument('--entropy-coeff', type=float, default=0.02, help='Entropy bonus coefficient')
+    parser.add_argument('--entropy-coeff', type=float, default=0.01, help='Entropy bonus coefficient')
     parser.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clipping norm')
     parser.add_argument('--transitions-per-batch', type=int, default=8, help='Decision transitions per minibatch')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
-    parser.add_argument('--demand-scale', type=float, default=1.0, help='Rollout demand multiplier')
+    parser.add_argument('--demand-scale', type=float, default=0.65, help='Rollout demand multiplier')
+    parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global wait-delta reward weight')
+    parser.add_argument('--reward-clip', type=float, default=1.0, help='Absolute per-decision reward limit')
+    parser.add_argument('--teleport-penalty', type=float, default=0.0, help='Global reward penalty per teleport')
     parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
     parser.add_argument(
         '--initial-occupancy-min',
         type=float,
-        default=0.08,
+        default=0.05,
         help='Minimum sampled initial network occupancy',
     )
     parser.add_argument(
         '--initial-occupancy-max',
         type=float,
-        default=0.16,
+        default=0.08,
         help='Maximum sampled initial network occupancy',
     )
     parser.add_argument('--eval-every', type=int, default=10, help='Evaluate every N iterations')
@@ -103,6 +106,9 @@ def main() -> None:
             yellow_duration=args.yellow_duration,
             min_green_steps=args.min_green_steps,
             demand_scale=args.demand_scale,
+            global_reward_weight=args.global_reward_weight,
+            reward_clip=args.reward_clip,
+            teleport_penalty=args.teleport_penalty,
             gui=args.gui,
             initial_occupancy_min=args.initial_occupancy_min,
             initial_occupancy_max=args.initial_occupancy_max,

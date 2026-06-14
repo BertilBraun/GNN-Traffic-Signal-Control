@@ -30,3 +30,4 @@ wandb/
 .pytest_cache/
 
 checkpoints/
+reports/

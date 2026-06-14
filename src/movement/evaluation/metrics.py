@@ -13,10 +13,15 @@ import xml.etree.ElementTree as ET
 
 @dataclass(frozen=True)
 class EvaluationMetrics:
+    departed_vehicles: int
     completed_vehicles: int
+    vehicles_remaining: int
+    completion_rate: float
+    teleport_count: int
     throughput_per_hour: float
     average_waiting_time_s: float
     average_travel_time_s: float
+    average_time_loss_s: float
     average_queue_length_vehicles: float
     max_queue_length_vehicles: float
     average_wait_density_s_per_m: float
@@ -48,26 +53,28 @@ class EvaluationAggregate:
 def parse_tripinfo_metrics(
     tripinfo_path: str | Path,
     episode_length_s: int,
-) -> tuple[int, float, float, float]:
+) -> tuple[int, float, float, float, float]:
     """Parse SUMO tripinfo XML into completion, throughput, wait, and travel metrics."""
     path = Path(tripinfo_path)
     if not path.exists():
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0.0
 
     try:
         root = ET.parse(path).getroot()
     except ET.ParseError:
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0.0
 
     waiting_times: list[float] = []
     travel_times: list[float] = []
+    time_losses: list[float] = []
     for trip in root.findall('tripinfo'):
         waiting_times.append(float(trip.attrib.get('waitingTime', '0.0')))
         travel_times.append(float(trip.attrib.get('duration', '0.0')))
+        time_losses.append(float(trip.attrib.get('timeLoss', '0.0')))
 
     completed = len(waiting_times)
     if completed == 0:
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0.0
 
     hours = float(episode_length_s) / 3600.0
     return (
@@ -75,6 +82,7 @@ def parse_tripinfo_metrics(
         completed / hours,
         sum(waiting_times) / completed,
         sum(travel_times) / completed,
+        sum(time_losses) / completed,
     )
 
 
@@ -133,10 +141,15 @@ def _metrics_from_values(
     reducer: Callable[[Iterable[float]], float],
 ) -> EvaluationMetrics:
     return EvaluationMetrics(
+        departed_vehicles=int(round(reducer(tuple(record.metrics.departed_vehicles for record in records)))),
         completed_vehicles=int(round(reducer(tuple(record.metrics.completed_vehicles for record in records)))),
+        vehicles_remaining=int(round(reducer(tuple(record.metrics.vehicles_remaining for record in records)))),
+        completion_rate=reducer(tuple(record.metrics.completion_rate for record in records)),
+        teleport_count=int(round(reducer(tuple(record.metrics.teleport_count for record in records)))),
         throughput_per_hour=reducer(tuple(record.metrics.throughput_per_hour for record in records)),
         average_waiting_time_s=reducer(tuple(record.metrics.average_waiting_time_s for record in records)),
         average_travel_time_s=reducer(tuple(record.metrics.average_travel_time_s for record in records)),
+        average_time_loss_s=reducer(tuple(record.metrics.average_time_loss_s for record in records)),
         average_queue_length_vehicles=reducer(
             tuple(record.metrics.average_queue_length_vehicles for record in records)
         ),
@@ -220,9 +233,14 @@ def _csv_fieldnames() -> list[str]:
         'seed',
         'row_type',
         'completed_vehicles',
+        'departed_vehicles',
+        'vehicles_remaining',
+        'completion_rate',
+        'teleport_count',
         'throughput_per_hour',
         'average_waiting_time_s',
         'average_travel_time_s',
+        'average_time_loss_s',
         'average_queue_length_vehicles',
         'max_queue_length_vehicles',
         'average_wait_density_s_per_m',
@@ -258,10 +276,15 @@ def _aggregate_row(
 
 def _scalar_metrics(metrics: EvaluationMetrics) -> dict[str, int | float]:
     return {
+        'departed_vehicles': metrics.departed_vehicles,
         'completed_vehicles': metrics.completed_vehicles,
+        'vehicles_remaining': metrics.vehicles_remaining,
+        'completion_rate': metrics.completion_rate,
+        'teleport_count': metrics.teleport_count,
         'throughput_per_hour': metrics.throughput_per_hour,
         'average_waiting_time_s': metrics.average_waiting_time_s,
         'average_travel_time_s': metrics.average_travel_time_s,
+        'average_time_loss_s': metrics.average_time_loss_s,
         'average_queue_length_vehicles': metrics.average_queue_length_vehicles,
         'max_queue_length_vehicles': metrics.max_queue_length_vehicles,
         'average_wait_density_s_per_m': metrics.average_wait_density_s_per_m,

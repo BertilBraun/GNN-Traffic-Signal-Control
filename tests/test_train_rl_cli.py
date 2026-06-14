@@ -44,3 +44,30 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
     assert args.initial_occupancy_max == 0.25
+
+
+def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+        ],
+    )
+
+    args = train_rl.parse_args()
+
+    assert args.lr == 1e-4
+    assert args.clip == 0.1
+    assert args.entropy_coeff == 0.01
+    assert args.cfg.name == 'grid.sumocfg'
+    assert args.cfg.parent.name == 'grid_3x3_dedicated'
+    assert args.demand_scale == 0.65
+    assert args.eval_demand_scale == 1.0
+    assert args.initial_occupancy_min == 0.05
+    assert args.initial_occupancy_max == 0.08
+    assert args.global_reward_weight == 0.1
+    assert args.reward_clip == 1.0
+    assert args.teleport_penalty == 0.0

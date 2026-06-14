@@ -2,19 +2,32 @@
 
 Each collected sample represents one controller decision time.
 
-The current storage format is JSONL: one serialized `MovementDatasetSample` per
+The current storage format is JSONL: one serialized ^MovementDatasetSample^ per
 line. Graphs and phase counts may vary between samples, so arrays are stored as
 ragged lists.
 
+LaneGroups may contain an ordered corridor of multiple SUMO edges when
+unsignalized junctions can be contracted without introducing a topology
+shortcut. Their static length and free-flow time cover the complete corridor.
+
 Lane-group dynamic values are detector-local. The detector covers the final
-`min(200 m, lane-group length)` before the downstream junction and includes
-total vehicle count, moving vehicle count, halting count, occupancy, and mean
-speed. For an output LaneGroup, this region is near the next junction rather
-than immediately after the current junction.
+^min(200 m, lane-group corridor length)^ before the downstream junction and includes
+total vehicle count, moving vehicle count, queue extent, occupancy, mean speed,
+and detector arrival/departure rates over 15 and 60 seconds. The detector can
+span multiple underlying edges. Raw halting counts
+are intentionally excluded from neural inputs because they would make the
+max-pressure imitation target an exact subtraction shortcut. For an output
+LaneGroup, this region is near the next junction rather than immediately after
+the current junction.
+
+Movement feature rows contain no graph, lane, edge, or traffic-light IDs. Typed
+graph edges provide endpoint indices to the model without exposing identifiers
+as numeric features. The dynamic movement state includes whether the movement
+was green at the previous controller decision.
 
 ## Fields
 
-```text
+^^^text
 x_lane
     [num_lane_groups, lane_feature_dim]
 
@@ -39,30 +52,50 @@ teacher_selected_phase_by_tls
 
 metadata
     config path, network path, seed, simulation time, and teacher name
-```
+^^^
 
 ## Teacher Target
 
-The first imitation target is graph-level max pressure over the LaneGroup
-features visible to the movement model:
+The first imitation target is graph-level max pressure:
 
-```text
+^^^text
 score(M) = halting_count(input LaneGroup) - halting_count(output LaneGroup)
-```
+^^^
 
-This differs intentionally from the lower-level SUMO controlled-link teacher.
-The model sees collapsed LaneGroup features, not per-controlled-link lane
-queues, so the stored regression target must be defined at the same graph level
-or the exact teacher is partially unobservable.
+The target generator may use detector halting counts, but those exact operands
+are not stored in ^x_lane^. IL therefore has to infer useful pressure-like
+behavior from queue extent, moving traffic, occupancy, storage, flow history,
+movement demand, and graph context. Training combines movement-score regression
+with phase-ranking cross-entropy.
 
 ## Replay Check
 
-`src.movement.dataset.replay_teacher_selected_phases` recomputes selected local
+^src.movement.dataset.replay_teacher_selected_phases^ recomputes selected local
 phase indices from stored graph-level scores and stored phase incidence. This is
 the minimum inspection check for collected samples.
 
 ## Collection Command
 
-```powershell
-python scripts\collect_il_data.py --cfg configs\grid_3x3_dedicated\grid.sumocfg --out data\il\grid_3x3_seed42.jsonl --steps 1800 --decision-interval 15 --seed 42
-```
+^^^powershell
+python scripts\collect_il_data.py --cfg configs\grid_3x3_dedicated\grid.sumocfg --out data\il\grid_3x3_seed42.jsonl --steps 3600 --decision-interval 15 --seed 42 --initial-occupancy 0.06
+^^^
+
+This schema is incompatible with movement datasets and checkpoints created
+before the ID-free and temporal-feature update. Regenerate both.
+
+The standard multi-seed 3x3 regeneration and training run is:
+
+^^^powershell
+python scripts\train_il.py ^
+  --cfg configs\grid_3x3_dedicated\grid.sumocfg ^
+  --collection-seeds 42 43 44 45 46 ^
+  --samples 240 ^
+  --epochs 400 ^
+  --eval-cfg configs\grid_3x3_dedicated\grid.sumocfg ^
+  --eval-every-epochs 50 ^
+  --eval-seeds 42 43 44
+^^^
+
+The combined JSONL dataset is retained as ^training_samples.jsonl^ in the
+checkpoint directory. ^movement_policy_eval_best.pt^ tracks the periodic
+evaluation checkpoint with the lowest learned wait density.
