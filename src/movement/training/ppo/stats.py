@@ -1,0 +1,62 @@
+"""Statistics helpers for movement PPO."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from math import sqrt
+
+import torch
+
+from src.movement.training.ppo.types import RolloutStats, TrainingDiagnostics
+from src.movement.training.rollout import MovementRolloutBuffer
+
+
+def standard_deviation(values: Sequence[float]) -> float:
+    if len(values) <= 1:
+        return 0.0
+    mean = sum(values) / len(values)
+    return sqrt(sum((value - mean) ** 2 for value in values) / (len(values) - 1))
+
+
+def combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
+    if not stats:
+        raise ValueError('Cannot combine an empty rollout stats list.')
+    count = len(stats)
+    return RolloutStats(
+        mean_reward=sum(stat.mean_reward for stat in stats) / count,
+        reward_standard_deviation=sum(stat.reward_standard_deviation for stat in stats) / count,
+        minimum_reward=min(stat.minimum_reward for stat in stats),
+        maximum_reward=max(stat.maximum_reward for stat in stats),
+        raw_reward_standard_deviation=sum(stat.raw_reward_standard_deviation for stat in stats) / count,
+        minimum_raw_reward=min(stat.minimum_raw_reward for stat in stats),
+        maximum_raw_reward=max(stat.maximum_raw_reward for stat in stats),
+        reward_clip_fraction=sum(stat.reward_clip_fraction for stat in stats) / count,
+        mean_local_delay_density=sum(stat.mean_local_delay_density for stat in stats) / count,
+        mean_global_delay_density=sum(stat.mean_global_delay_density for stat in stats) / count,
+        normalized_entropy=sum(stat.normalized_entropy for stat in stats) / count,
+        mean_top_action_probability=sum(stat.mean_top_action_probability for stat in stats) / count,
+        policy_decision_fraction=sum(stat.policy_decision_fraction for stat in stats) / count,
+        teleport_count=sum(stat.teleport_count for stat in stats),
+        simulation_elapsed_s=max(stat.simulation_elapsed_s for stat in stats),
+    )
+
+
+def training_diagnostics(buffer: MovementRolloutBuffer) -> TrainingDiagnostics:
+    if buffer.returns is None or buffer.advantages is None:
+        raise ValueError('Returns must be computed before training diagnostics.')
+    values = torch.tensor(
+        tuple(transition.values for transition in buffer.transitions),
+        dtype=torch.float32,
+    )
+    returns = buffer.returns
+    return_variance = float(returns.var())
+    residual_variance = float((returns - values).var())
+    explained_variance = 1.0 - residual_variance / (return_variance + 1e-8)
+    return TrainingDiagnostics(
+        mean_return=float(returns.mean()),
+        return_standard_deviation=float(returns.std()),
+        mean_value=float(values.mean()),
+        value_standard_deviation=float(values.std()),
+        advantage_standard_deviation=float(buffer.advantages.std()),
+        explained_variance=explained_variance,
+    )

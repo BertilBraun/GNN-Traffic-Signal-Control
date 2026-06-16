@@ -14,12 +14,12 @@ from src.movement.training.il import (
     MovementILTrainingConfig,
     NormalizerState,
 )
-from src.movement.training.ppo import (
-    _load_ppo_checkpoint_payload,
-    _masked_phase_logits,
-    _model_and_metadata_from_ppo_checkpoint,
-    _save_ppo_checkpoint,
+from src.movement.training.ppo.checkpoint import (
+    load_ppo_checkpoint_payload,
+    model_and_metadata_from_ppo_checkpoint,
+    save_ppo_checkpoint,
 )
+from src.movement.training.ppo.policy import masked_phase_logits
 
 
 def test_actor_critic_returns_movement_scores_and_tls_values() -> None:
@@ -73,7 +73,7 @@ def test_actor_critic_rejects_stale_lane_feature_schema() -> None:
 def test_action_mask_prevents_sampling_rejected_phase() -> None:
     logits = (torch.tensor((100.0, 0.0, -100.0)),)
 
-    masked_logits = _masked_phase_logits(logits, ((False, True, False),))
+    masked_logits = masked_phase_logits(logits, ((False, True, False),))
     distribution = Categorical(logits=masked_logits[0])
 
     assert {int(distribution.sample()) for _sample in range(20)} == {1}
@@ -108,7 +108,7 @@ def test_ppo_checkpoint_restores_model_optimizer_and_training_state(tmp_path: Pa
     )
     checkpoint_path = tmp_path / 'movement_ppo.pt'
 
-    _save_ppo_checkpoint(
+    save_ppo_checkpoint(
         path=checkpoint_path,
         model=model,
         optimizer=optimizer,
@@ -116,8 +116,8 @@ def test_ppo_checkpoint_restores_model_optimizer_and_training_state(tmp_path: Pa
         iteration=17,
         best_checkpoint_score=42.5,
     )
-    checkpoint = _load_ppo_checkpoint_payload(checkpoint_path=checkpoint_path, device='cpu')
-    restored_model, restored_metadata = _model_and_metadata_from_ppo_checkpoint(
+    checkpoint = load_ppo_checkpoint_payload(checkpoint_path=checkpoint_path, device='cpu')
+    restored_model, restored_metadata = model_and_metadata_from_ppo_checkpoint(
         checkpoint=checkpoint,
         device='cpu',
     )

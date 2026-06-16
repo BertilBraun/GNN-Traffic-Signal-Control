@@ -9,16 +9,11 @@ sys.path.insert(0, str(ROOT))
 
 from src.movement.dataset import MovementDatasetSample
 from src.movement.evaluation import EvaluationMetrics
-from src.movement.training.ppo import (
-    _checkpoint_selection_score,
-    _clip_reward,
-    _delay_density_reward,
-    _gradient_norm,
-    _rollout_seed,
-    _speed_deficit_density,
-    _standard_deviation,
-    _training_diagnostics,
-)
+from src.movement.training.ppo.evaluation import checkpoint_selection_score
+from src.movement.training.ppo.reward import clip_reward, delay_density_reward, speed_deficit_density
+from src.movement.training.ppo.rollout import rollout_seed
+from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
+from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.rollout import MovementRolloutBuffer, MovementTransition
 
 
@@ -79,14 +74,14 @@ def test_rollout_buffer_computes_discounted_returns_for_value_warmup() -> None:
 
 
 def test_reward_clipping_limits_gridlock_outliers() -> None:
-    assert _clip_reward(4.0, reward_clip=1.0) == 1.0
-    assert _clip_reward(-4.0, reward_clip=1.0) == -1.0
-    assert _clip_reward(0.25, reward_clip=1.0) == 0.25
+    assert clip_reward(4.0, reward_clip=1.0) == 1.0
+    assert clip_reward(-4.0, reward_clip=1.0) == -1.0
+    assert clip_reward(0.25, reward_clip=1.0) == 0.25
 
 
 def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
     assert (
-        _rollout_seed(
+        rollout_seed(
             training_seed=42,
             iteration=3,
             rollout_index=0,
@@ -96,7 +91,7 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
         == 45
     )
     assert (
-        _rollout_seed(
+        rollout_seed(
             training_seed=42,
             iteration=3,
             rollout_index=2,
@@ -106,7 +101,7 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
         == 56
     )
     assert (
-        _rollout_seed(
+        rollout_seed(
             training_seed=42,
             iteration=3,
             rollout_index=2,
@@ -118,7 +113,7 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
 
 
 def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
-    assert _delay_density_reward(
+    assert delay_density_reward(
         local_delay_density=0.2,
         global_delay_density=0.1,
         global_reward_weight=0.1,
@@ -133,15 +128,15 @@ def test_speed_deficit_density_counts_slow_moving_vehicles(
     vehicle_counts = {'stopped': 2, 'slow': 2, 'free': 2}
     mean_speeds = {'stopped': 0.0, 'slow': 5.0, 'free': 10.0}
     monkeypatch.setattr(
-        'src.movement.training.ppo.traci.lane.getLastStepVehicleNumber',
+        'src.movement.training.ppo.reward.traci.lane.getLastStepVehicleNumber',
         lambda lane_id: vehicle_counts[lane_id],
     )
     monkeypatch.setattr(
-        'src.movement.training.ppo.traci.lane.getLastStepMeanSpeed',
+        'src.movement.training.ppo.reward.traci.lane.getLastStepMeanSpeed',
         lambda lane_id: mean_speeds[lane_id],
     )
 
-    density = _speed_deficit_density(
+    density = speed_deficit_density(
         lane_ids=('stopped', 'slow', 'free'),
         speed_limit_by_lane={'stopped': 10.0, 'slow': 10.0, 'free': 10.0},
         total_lane_length_m=300.0,
@@ -174,7 +169,7 @@ def test_checkpoint_selection_score_penalizes_incomplete_and_teleported_vehicles
         per_junction_phase_counts={},
     )
 
-    score = _checkpoint_selection_score(metrics=metrics, evaluation_steps=600)
+    score = checkpoint_selection_score(metrics=metrics, evaluation_steps=600)
 
     assert score == pytest.approx(56.0)
 
@@ -198,14 +193,14 @@ def test_diagnostics_report_reward_and_return_scale() -> None:
         bootstrap_values=(0.0,),
     )
 
-    diagnostics = _training_diagnostics(buffer)
+    diagnostics = training_diagnostics(buffer)
 
     assert diagnostics.mean_return == 2.0
     assert diagnostics.return_standard_deviation == 0.0
     assert diagnostics.mean_value == 0.375
     assert diagnostics.value_standard_deviation > 0.0
     assert diagnostics.advantage_standard_deviation > 0.0
-    assert _standard_deviation((1.0, 2.0, 3.0)) == 1.0
+    assert standard_deviation((1.0, 2.0, 3.0)) == 1.0
 
 
 def test_gradient_norm_uses_all_available_parameter_gradients() -> None:
@@ -214,7 +209,7 @@ def test_gradient_norm_uses_all_available_parameter_gradients() -> None:
     first.grad = torch.tensor((3.0,))
     second.grad = torch.tensor((4.0,))
 
-    assert _gradient_norm((first, second)) == 5.0
+    assert gradient_norm((first, second)) == 5.0
 
 
 def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
