@@ -85,8 +85,36 @@ def test_reward_clipping_limits_gridlock_outliers() -> None:
 
 
 def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
-    assert _rollout_seed(training_seed=42, iteration=3, fixed_rollout_seed=None) == 45
-    assert _rollout_seed(training_seed=42, iteration=3, fixed_rollout_seed=100) == 100
+    assert (
+        _rollout_seed(
+            training_seed=42,
+            iteration=3,
+            rollout_index=0,
+            rollouts_per_update=1,
+            fixed_rollout_seed=None,
+        )
+        == 45
+    )
+    assert (
+        _rollout_seed(
+            training_seed=42,
+            iteration=3,
+            rollout_index=2,
+            rollouts_per_update=4,
+            fixed_rollout_seed=None,
+        )
+        == 56
+    )
+    assert (
+        _rollout_seed(
+            training_seed=42,
+            iteration=3,
+            rollout_index=2,
+            rollouts_per_update=4,
+            fixed_rollout_seed=100,
+        )
+        == 102
+    )
 
 
 def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
@@ -262,3 +290,46 @@ def test_rollout_ignores_bootstrap_after_true_terminal_state() -> None:
     assert buffer.advantages is not None
     assert float(buffer.returns[0, 0]) == 2.0
     assert float(buffer.advantages[0, 0]) == 1.5
+
+
+def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bootstrap() -> None:
+    first = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
+    first.add(
+        MovementTransition(
+            sample=_sample(),
+            actions=(0,),
+            old_log_probs=(0.0,),
+            action_masks=((True,),),
+            rewards=(1.0,),
+            values=(0.0,),
+            done=False,
+        )
+    )
+    first.compute_returns_and_advantages(
+        use_discounted_return_targets=True,
+        bootstrap_values=(4.0,),
+    )
+    second = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
+    second.add(
+        MovementTransition(
+            sample=_sample(),
+            actions=(0,),
+            old_log_probs=(0.0,),
+            action_masks=((True,),),
+            rewards=(2.0,),
+            values=(0.0,),
+            done=False,
+        )
+    )
+    second.compute_returns_and_advantages(
+        use_discounted_return_targets=True,
+        bootstrap_values=(10.0,),
+    )
+
+    combined = MovementRolloutBuffer.concatenate_computed((first, second))
+
+    assert len(combined) == 2
+    assert combined.returns is not None
+    assert combined.advantages is not None
+    assert tuple(float(value) for value in combined.returns[:, 0]) == (3.0, 7.0)
+    assert tuple(float(value) for value in combined.advantages[:, 0]) == (3.0, 7.0)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import torch
@@ -51,6 +51,35 @@ class MovementRolloutBuffer:
         if len(transition.actions) != self.traffic_light_count:
             raise ValueError('action count does not match traffic light count.')
         self.transitions.append(transition)
+
+    @classmethod
+    def concatenate_computed(
+        cls,
+        buffers: Sequence[MovementRolloutBuffer],
+    ) -> MovementRolloutBuffer:
+        if not buffers:
+            raise ValueError('Cannot concatenate an empty buffer list.')
+        first = buffers[0]
+        combined = cls(
+            traffic_light_count=first.traffic_light_count,
+            gamma=first.gamma,
+            lam=first.lam,
+        )
+        advantages = []
+        returns = []
+        for buffer in buffers:
+            if buffer.traffic_light_count != first.traffic_light_count:
+                raise ValueError('Cannot concatenate rollout buffers with different traffic light counts.')
+            if buffer.gamma != first.gamma or buffer.lam != first.lam:
+                raise ValueError('Cannot concatenate rollout buffers with different discount settings.')
+            if buffer.advantages is None or buffer.returns is None:
+                raise ValueError('All rollout buffers must have computed returns before concatenation.')
+            combined.transitions.extend(buffer.transitions)
+            advantages.append(buffer.advantages)
+            returns.append(buffer.returns)
+        combined.advantages = torch.cat(tuple(advantages), dim=0)
+        combined.returns = torch.cat(tuple(returns), dim=0)
+        return combined
 
     def compute_returns_and_advantages(
         self,

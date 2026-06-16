@@ -19,6 +19,10 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '2',
             '--steps-per-rollout',
             '3',
+            '--rollouts-per-update',
+            '4',
+            '--num-workers',
+            '2',
             '--value-warmup-iterations',
             '1',
             '--demand-scale',
@@ -42,6 +46,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.il_checkpoint == Path('checkpoints/il/unit/movement_policy_best.pt')
     assert args.iterations == 2
     assert args.steps_per_rollout == 3
+    assert args.rollouts_per_update == 4
+    assert args.num_workers == 2
     assert args.value_warmup_iterations == 1
     assert args.demand_scale == 0.5
     assert args.eval_demand_scale == 0.75
@@ -100,5 +106,7 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.teleport_penalty == 0.0
     assert args.max_teleports_per_rollout == 10
     assert args.target_kl == 0.02
+    assert args.rollouts_per_update == 1
+    assert args.num_workers == 1
     assert args.fixed_rollout_seed is None
     assert args.time_to_teleport is None

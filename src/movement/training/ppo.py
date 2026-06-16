@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from math import log, sqrt
 from pathlib import Path
@@ -72,6 +73,8 @@ class MovementPpoConfig:
     il_checkpoint_path: Path | None
     iterations: int
     steps_per_rollout: int
+    rollouts_per_update: int
+    num_workers: int
     decision_interval: int
     learning_rate: float
     gamma: float
@@ -174,6 +177,13 @@ class RolloutStats:
 
 
 @dataclass(frozen=True)
+class CollectedRollout:
+    buffer: MovementRolloutBuffer
+    stats: RolloutStats
+    seed: int
+
+
+@dataclass(frozen=True)
 class TrainingDiagnostics:
     mean_return: float
     return_standard_deviation: float
@@ -204,6 +214,12 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
         raise ValueError('max_teleports_per_rollout must not be negative.')
     if config.target_kl <= 0.0:
         raise ValueError('target_kl must be positive.')
+    if config.rollouts_per_update <= 0:
+        raise ValueError('rollouts_per_update must be positive.')
+    if config.num_workers <= 0:
+        raise ValueError('num_workers must be positive.')
+    if config.gui and config.num_workers > 1:
+        raise ValueError('SUMO-GUI rollout collection is only supported with one worker.')
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     if config.resume_checkpoint_path is None:
@@ -246,29 +262,30 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
         )
     if config.resume_checkpoint_path is not None:
         print(f'Resuming PPO from iteration {completed_iteration}; target iteration={config.iterations}')
+    worker_count = min(config.num_workers, config.rollouts_per_update)
+    pool = ProcessPoolExecutor(max_workers=worker_count) if worker_count > 1 else None
     try:
         for iteration in range(first_iteration, config.iterations + 1):
             iteration_started = perf_counter()
             warming_up = iteration <= config.value_warmup_iterations
             _set_actor_grad(model, requires_grad=not warming_up)
             _set_value_grad(model, requires_grad=True)
-            buffer, rollout_stats, bootstrap_values = _collect_rollout(
+            collected_rollouts = _collect_computed_rollouts(
                 config=config,
                 model=model,
+                metadata=metadata,
                 lane_normalizer=lane_normalizer,
                 movement_normalizer=movement_normalizer,
                 device=device,
-                rollout_seed=_rollout_seed(
-                    training_seed=config.seed,
-                    iteration=iteration,
-                    fixed_rollout_seed=config.fixed_rollout_seed,
-                ),
+                iteration=iteration,
+                warming_up=warming_up,
+                pool=pool,
             )
             rollout_finished = perf_counter()
-            buffer.compute_returns_and_advantages(
-                use_discounted_return_targets=warming_up,
-                bootstrap_values=bootstrap_values,
+            buffer = MovementRolloutBuffer.concatenate_computed(
+                tuple(collected.buffer for collected in collected_rollouts)
             )
+            rollout_stats = _combine_rollout_stats(tuple(collected.stats for collected in collected_rollouts))
             diagnostics = _training_diagnostics(buffer)
             update_skipped = rollout_stats.teleport_count > config.max_teleports_per_rollout
             update_stats = (
@@ -379,6 +396,8 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
             loss=0.0,
         )
         writer.close()
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
     return MovementPpoTrainingResult(
         checkpoint_path=last_checkpoint_path,
         iterations=completed_iteration,
@@ -401,11 +420,115 @@ class PpoUpdateStats:
 def _rollout_seed(
     training_seed: int,
     iteration: int,
+    rollout_index: int,
+    rollouts_per_update: int,
     fixed_rollout_seed: int | None,
 ) -> int:
     if fixed_rollout_seed is not None:
-        return fixed_rollout_seed
-    return training_seed + iteration
+        return fixed_rollout_seed + rollout_index
+    return training_seed + iteration * rollouts_per_update + rollout_index
+
+
+def _collect_computed_rollouts(
+    config: MovementPpoConfig,
+    model: MovementActorCritic,
+    metadata: MovementCheckpointMetadata,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    device: torch.device,
+    iteration: int,
+    warming_up: bool,
+    pool: ProcessPoolExecutor | None,
+) -> tuple[CollectedRollout, ...]:
+    seeds = tuple(
+        _rollout_seed(
+            training_seed=config.seed,
+            iteration=iteration,
+            rollout_index=rollout_index,
+            rollouts_per_update=config.rollouts_per_update,
+            fixed_rollout_seed=config.fixed_rollout_seed,
+        )
+        for rollout_index in range(config.rollouts_per_update)
+    )
+    if pool is None:
+        return tuple(
+            _collect_computed_rollout(
+                config=config,
+                model=model,
+                lane_normalizer=lane_normalizer,
+                movement_normalizer=movement_normalizer,
+                device=device,
+                rollout_seed=seed,
+                warming_up=warming_up,
+            )
+            for seed in seeds
+        )
+    model_state = {key: value.detach().cpu() for key, value in model.state_dict().items()}
+    worker_args = tuple(
+        {
+            'config': config,
+            'model_state': model_state,
+            'lane_feature_dim': metadata.lane_feature_dim,
+            'movement_feature_dim': metadata.movement_feature_dim,
+            'hidden_dim': metadata.hidden_dim,
+            'num_hops': metadata.num_hops,
+            'lane_normalizer': metadata.lane_normalizer,
+            'movement_normalizer': metadata.movement_normalizer,
+            'rollout_seed': seed,
+            'warming_up': warming_up,
+        }
+        for seed in seeds
+    )
+    futures = tuple(pool.submit(_collect_computed_rollout_worker, args) for args in worker_args)
+    return tuple(future.result() for future in as_completed(futures))
+
+
+def _collect_computed_rollout_worker(args: dict[str, object]) -> CollectedRollout:
+    config = cast(MovementPpoConfig, args['config'])
+    model = MovementActorCritic(
+        lane_feature_dim=int(args['lane_feature_dim']),
+        movement_feature_dim=int(args['movement_feature_dim']),
+        hidden_dim=int(args['hidden_dim']),
+        num_hops=int(args['num_hops']),
+    )
+    model.load_state_dict(cast(dict[str, torch.Tensor], args['model_state']))
+    return _collect_computed_rollout(
+        config=config,
+        model=model,
+        lane_normalizer=normalizer_from_state(cast(NormalizerState, args['lane_normalizer'])),
+        movement_normalizer=normalizer_from_state(cast(NormalizerState, args['movement_normalizer'])),
+        device=torch.device('cpu'),
+        rollout_seed=int(args['rollout_seed']),
+        warming_up=bool(args['warming_up']),
+    )
+
+
+def _collect_computed_rollout(
+    config: MovementPpoConfig,
+    model: MovementActorCritic,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    device: torch.device,
+    rollout_seed: int,
+    warming_up: bool,
+) -> CollectedRollout:
+    buffer, stats, bootstrap_values = _collect_rollout(
+        config=config,
+        model=model,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        device=device,
+        rollout_seed=rollout_seed,
+    )
+    buffer.compute_returns_and_advantages(
+        use_discounted_return_targets=warming_up,
+        bootstrap_values=bootstrap_values,
+    )
+    return CollectedRollout(
+        buffer=buffer,
+        stats=stats,
+        seed=rollout_seed,
+    )
 
 
 def _collect_rollout(
@@ -1072,6 +1195,32 @@ def _standard_deviation(values: Sequence[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     return sqrt(sum((value - mean) ** 2 for value in values) / (len(values) - 1))
+
+
+def _combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
+    if not stats:
+        raise ValueError('Cannot combine an empty rollout stats list.')
+
+    def mean_of(attribute: str) -> float:
+        return sum(float(getattr(stat, attribute)) for stat in stats) / len(stats)
+
+    return RolloutStats(
+        mean_reward=mean_of('mean_reward'),
+        reward_standard_deviation=mean_of('reward_standard_deviation'),
+        minimum_reward=min(stat.minimum_reward for stat in stats),
+        maximum_reward=max(stat.maximum_reward for stat in stats),
+        raw_reward_standard_deviation=mean_of('raw_reward_standard_deviation'),
+        minimum_raw_reward=min(stat.minimum_raw_reward for stat in stats),
+        maximum_raw_reward=max(stat.maximum_raw_reward for stat in stats),
+        reward_clip_fraction=mean_of('reward_clip_fraction'),
+        mean_local_delay_density=mean_of('mean_local_delay_density'),
+        mean_global_delay_density=mean_of('mean_global_delay_density'),
+        normalized_entropy=mean_of('normalized_entropy'),
+        mean_top_action_probability=mean_of('mean_top_action_probability'),
+        policy_decision_fraction=mean_of('policy_decision_fraction'),
+        teleport_count=sum(stat.teleport_count for stat in stats),
+        simulation_elapsed_s=max(stat.simulation_elapsed_s for stat in stats),
+    )
 
 
 def _gradient_norm(parameters: Sequence[torch.nn.Parameter]) -> float:

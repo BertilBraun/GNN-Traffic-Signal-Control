@@ -31,6 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
     parser.add_argument('--iterations', type=int, default=50, help='Final target PPO iteration')
     parser.add_argument('--steps-per-rollout', type=int, default=120, help='Decision steps collected per iteration')
+    parser.add_argument('--rollouts-per-update', type=int, default=1, help='Independent rollouts collected per PPO update')
+    parser.add_argument('--num-workers', type=int, default=1, help='Parallel SUMO rollout worker processes')
     parser.add_argument('--decision-interval', type=int, default=15, help='Simulation seconds per decision')
     parser.add_argument('--lr', type=float, default=1e-4, help='Adam learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
@@ -117,6 +119,8 @@ def main() -> None:
             il_checkpoint_path=args.il_checkpoint,
             iterations=args.iterations,
             steps_per_rollout=args.steps_per_rollout,
+            rollouts_per_update=args.rollouts_per_update,
+            num_workers=args.num_workers,
             decision_interval=args.decision_interval,
             learning_rate=args.lr,
             gamma=args.gamma,

@@ -19,6 +19,23 @@ rollout ends while SUMO is still running, the critic evaluates the resulting
 next state and that value bootstraps both GAE and the warmup return targets.
 Only a genuinely terminated simulation uses a zero final value.
 
+Multiple independent rollout segments can be collected per PPO update. Each
+worker computes returns and advantages for its own segment before the parent
+process concatenates the ready-to-train buffers. A persistent process pool is
+used when more than one worker is requested, so SUMO worker startup cost is not
+paid again on every iteration.
+
+```powershell
+python scripts\train_rl.py `
+  --il-checkpoint checkpoints\il\<run>\movement_policy_best.pt `
+  --rollouts-per-update 4 `
+  --num-workers 4
+```
+
+`--steps-per-rollout` remains the number of decision steps per independent
+environment, so total PPO data per update is approximately
+`rollouts-per-update * steps-per-rollout` timestep graphs.
+
 ## Randomized Initial Traffic
 
 Each rollout samples a target initial occupancy and generates valid vehicle routes starting from random network edges. Vehicles are inserted at simulation time zero with safe random positions. PPO collection begins immediately so the policy observes vehicles moving toward intersections rather than an artificially stabilized queued state.
