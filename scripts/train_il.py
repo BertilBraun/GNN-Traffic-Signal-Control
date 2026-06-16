@@ -17,8 +17,8 @@ sys.path.insert(0, str(ROOT))
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
 from src.movement.training.il import train_movement_il_from_jsonl  # noqa: E402
-from src.movement.training.il_checkpoint import save_movement_checkpoint  # noqa: E402
-from src.movement.training.il_types import (  # noqa: E402
+from src.movement.training.il.checkpoint import save_movement_checkpoint  # noqa: E402
+from src.movement.training.il.types import (  # noqa: E402
     MovementILLoss,
     MovementILTrainingConfig,
     MovementILTrainingSnapshot,

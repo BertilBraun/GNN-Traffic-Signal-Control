@@ -12,9 +12,9 @@ from torch.utils.tensorboard import SummaryWriter
 from src.movement.dataset import MovementDatasetSample, StoredPhaseIncidence, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
-from src.movement.training.il_checkpoint import movement_checkpoint_payload
-from src.movement.training.il_tensors import edge_tensors_from_sample, tensors_from_sample
-from src.movement.training.il_types import (
+from src.movement.training.il.checkpoint import movement_checkpoint_payload
+from src.movement.training.il.tensors import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.il.types import (
     MovementILLoss,
     MovementILTrainingConfig,
     MovementILTrainingObserver,

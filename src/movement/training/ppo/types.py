@@ -11,8 +11,8 @@ from torch.optim.optimizer import StateDict
 from src.movement.evaluation import EvaluationPolicy
 from src.movement.features import LaneGroupGeometry
 from src.movement.graph_schema import MovementGraph
-from src.movement.training.il_checkpoint import NormalizerState
-from src.movement.training.il_types import MovementILTrainingConfig
+from src.movement.training.il.checkpoint import NormalizerState
+from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.rollout import MovementRolloutBuffer
 
 

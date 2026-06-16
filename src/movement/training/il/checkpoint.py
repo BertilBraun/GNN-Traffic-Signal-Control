@@ -10,7 +10,7 @@ import torch
 
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
-from src.movement.training.il_types import MovementILTrainingConfig
+from src.movement.training.il.types import MovementILTrainingConfig
 
 
 @dataclass(frozen=True)

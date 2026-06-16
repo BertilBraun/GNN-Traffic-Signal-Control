@@ -9,7 +9,7 @@ import torch
 
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.normalization import RunningNormalizer
-from src.movement.training.il_checkpoint import MovementCheckpointMetadata, normalizer_from_state
+from src.movement.training.il.checkpoint import MovementCheckpointMetadata, normalizer_from_state
 from src.movement.training.ppo.checkpoint import (
     load_actor_critic,
     load_ppo_checkpoint_payload,
