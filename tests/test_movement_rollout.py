@@ -14,7 +14,8 @@ from src.movement.training.ppo.reward import clip_reward, delay_density_reward, 
 from src.movement.training.ppo.rollout import rollout_seed
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
-from src.movement.training.rollout import MovementRolloutBuffer, MovementTransition
+from src.movement.training.rollout import MovementRolloutBuffer
+from src.movement.training.rollout_types import MovementTransition
 
 
 def _sample() -> MovementDatasetSample:

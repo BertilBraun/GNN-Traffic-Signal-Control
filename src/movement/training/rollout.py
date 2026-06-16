@@ -3,32 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
 
 import torch
 
-from src.movement.dataset import MovementDatasetSample
-
-
-@dataclass(frozen=True)
-class MovementTransition:
-    sample: MovementDatasetSample
-    actions: tuple[int, ...]
-    old_log_probs: tuple[float, ...]
-    action_masks: tuple[tuple[bool, ...], ...]
-    rewards: tuple[float, ...]
-    values: tuple[float, ...]
-    done: bool
-
-
-@dataclass(frozen=True)
-class MovementPpoBatch:
-    transitions: tuple[MovementTransition, ...]
-    actions: torch.Tensor
-    old_log_probs: torch.Tensor
-    advantages: torch.Tensor
-    returns: torch.Tensor
-    policy_mask: torch.Tensor
+from src.movement.training.rollout_math import compute_rollout_targets, normalize_advantages
+from src.movement.training.rollout_types import MovementPpoBatch, MovementTransition
 
 
 class MovementRolloutBuffer:
@@ -86,48 +65,16 @@ class MovementRolloutBuffer:
         use_discounted_return_targets: bool,
         bootstrap_values: tuple[float, ...],
     ) -> None:
-        if not self.transitions:
-            raise ValueError('Cannot compute returns for an empty rollout buffer.')
-        if len(bootstrap_values) != self.traffic_light_count:
-            raise ValueError('bootstrap value count does not match traffic light count.')
-        rewards = torch.tensor(
-            tuple(transition.rewards for transition in self.transitions),
-            dtype=torch.float32,
+        targets = compute_rollout_targets(
+            transitions=self.transitions,
+            traffic_light_count=self.traffic_light_count,
+            gamma=self.gamma,
+            lam=self.lam,
+            use_discounted_return_targets=use_discounted_return_targets,
+            bootstrap_values=bootstrap_values,
         )
-        values = torch.tensor(
-            tuple(transition.values for transition in self.transitions),
-            dtype=torch.float32,
-        )
-        dones = torch.tensor(
-            tuple(float(transition.done) for transition in self.transitions),
-            dtype=torch.float32,
-        )
-        step_count = len(self.transitions)
-        advantages = torch.zeros((step_count, self.traffic_light_count), dtype=torch.float32)
-        last_gae = torch.zeros((self.traffic_light_count,), dtype=torch.float32)
-        bootstrap = torch.tensor(bootstrap_values, dtype=torch.float32)
-        for step in reversed(range(step_count)):
-            if step == step_count - 1:
-                next_value = bootstrap
-                next_done = float(dones[step])
-            else:
-                next_value = values[step + 1]
-                next_done = float(dones[step])
-            delta = rewards[step] + self.gamma * next_value * (1.0 - next_done) - values[step]
-            last_gae = delta + self.gamma * self.lam * (1.0 - next_done) * last_gae
-            advantages[step] = last_gae
-
-        if use_discounted_return_targets:
-            returns = torch.zeros((step_count, self.traffic_light_count), dtype=torch.float32)
-            running = bootstrap
-            for step in reversed(range(step_count)):
-                next_done = float(dones[step])
-                running = rewards[step] + self.gamma * running * (1.0 - next_done)
-                returns[step] = running
-        else:
-            returns = advantages + values
-        self.advantages = advantages
-        self.returns = returns
+        self.advantages = targets.advantages
+        self.returns = targets.returns
 
     def iterate_minibatches(
         self,
@@ -161,7 +108,7 @@ class MovementRolloutBuffer:
                 dtype=torch.bool,
                 device=torch_device,
             )
-            normalized_advantages = _normalize_advantages(
+            normalized_advantages = normalize_advantages(
                 advantages=advantages,
                 policy_mask=policy_mask,
             )
@@ -176,16 +123,3 @@ class MovementRolloutBuffer:
 
     def __len__(self) -> int:
         return len(self.transitions)
-
-
-def _normalize_advantages(
-    advantages: torch.Tensor,
-    policy_mask: torch.Tensor,
-) -> torch.Tensor:
-    active_advantages = advantages[policy_mask]
-    normalized = torch.zeros_like(advantages)
-    if active_advantages.numel() <= 1:
-        normalized[policy_mask] = active_advantages
-        return normalized
-    normalized[policy_mask] = (active_advantages - active_advantages.mean()) / (active_advantages.std() + 1e-8)
-    return normalized
