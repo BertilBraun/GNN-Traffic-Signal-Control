@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
 
 from .features import (
     LaneGroupFeatureRow,
@@ -16,6 +16,26 @@ from .features import (
 from .graph_schema import MovementGraph, PhaseIncidence
 from .schema import MovementIndex, TrafficLightId, TrafficLightProgram
 
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonArray: TypeAlias = list['JsonValue'] | tuple['JsonValue', ...]
+JsonValue: TypeAlias = JsonScalar | JsonArray | dict[str, 'JsonValue']
+JsonObject: TypeAlias = dict[str, JsonValue]
+
+
+@dataclass(frozen=True)
+class MovementEdgeIndices:
+    input_lane_to_movement: tuple[tuple[int, int], ...]
+    output_lane_to_movement: tuple[tuple[int, int], ...]
+    movement_to_input_lane: tuple[tuple[int, int], ...]
+    movement_to_output_lane: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class StoredPhaseIncidence:
+    sumo_phase_indices: tuple[int, ...]
+    movement_ids: tuple[int, ...]
+    rows: tuple[tuple[int, ...], ...]
+
 
 @dataclass(frozen=True)
 class MovementDatasetSample:
@@ -23,11 +43,11 @@ class MovementDatasetSample:
 
     x_lane: tuple[tuple[float, ...], ...]
     x_movement: tuple[tuple[float, ...], ...]
-    edge_index_dict: dict[str, tuple[tuple[int, int], ...]]
-    phase_incidences: dict[str, dict[str, Any]]
+    edge_indices: MovementEdgeIndices
+    phase_incidences: dict[str, StoredPhaseIncidence]
     teacher_movement_scores: tuple[float, ...]
     teacher_selected_phase_by_tls: dict[str, int]
-    metadata: dict[str, Any]
+    metadata: JsonObject
 
 
 def build_dataset_sample(
@@ -39,7 +59,7 @@ def build_dataset_sample(
         Mapping[MovementIndex, float],
     ],
     teacher_graph_scores: Sequence[float] | None = None,
-    metadata: Mapping[str, Any] | None = None,
+    metadata: Mapping[str, JsonValue] | None = None,
 ) -> MovementDatasetSample:
     """Build a serializable imitation sample aligned with graph movement IDs."""
     teacher_scores = (
@@ -60,9 +80,9 @@ def build_dataset_sample(
     return MovementDatasetSample(
         x_lane=tuple(_lane_row_vector(row) for row in feature_frame.lane_group_rows),
         x_movement=tuple(_movement_row_vector(row) for row in feature_frame.movement_rows),
-        edge_index_dict=_edge_index_dict(graph),
+        edge_indices=_edge_indices(graph),
         phase_incidences={
-            str(tls_id): _phase_incidence_dict(incidence) for tls_id, incidence in graph.phase_incidences.items()
+            str(tls_id): _stored_phase_incidence(incidence) for tls_id, incidence in graph.phase_incidences.items()
         },
         teacher_movement_scores=teacher_scores,
         teacher_selected_phase_by_tls=teacher_selected,
@@ -73,17 +93,15 @@ def build_dataset_sample(
 def replay_teacher_selected_phases(sample: MovementDatasetSample) -> dict[str, int]:
     """Recompute selected local phase indices from stored teacher scores."""
     selected: dict[str, int] = {}
-    for tls_id, incidence in sample.phase_incidences.items():
-        movement_ids = tuple(int(value) for value in incidence['movement_ids'])
-        rows = tuple(tuple(int(value) for value in row) for row in incidence['rows'])
+    for traffic_light_id, incidence in sample.phase_incidences.items():
         best_local_idx = 0
-        best_score = _phase_score(rows[0], movement_ids, sample.teacher_movement_scores)
-        for local_idx, row in enumerate(rows[1:], start=1):
-            score = _phase_score(row, movement_ids, sample.teacher_movement_scores)
+        best_score = _phase_score(incidence.rows[0], incidence.movement_ids, sample.teacher_movement_scores)
+        for local_idx, row in enumerate(incidence.rows[1:], start=1):
+            score = _phase_score(row, incidence.movement_ids, sample.teacher_movement_scores)
             if score > best_score:
                 best_local_idx = local_idx
                 best_score = score
-        selected[tls_id] = best_local_idx
+        selected[traffic_light_id] = best_local_idx
     return selected
 
 
@@ -159,25 +177,25 @@ def _select_from_incidence(
     return best_local_idx
 
 
-def _edge_index_dict(graph: MovementGraph) -> dict[str, tuple[tuple[int, int], ...]]:
-    return {
-        'input_lane_to_movement': _int_edges(graph.edges.input_lane_to_movement),
-        'output_lane_to_movement': _int_edges(graph.edges.output_lane_to_movement),
-        'movement_to_input_lane': _int_edges(graph.edges.movement_to_input_lane),
-        'movement_to_output_lane': _int_edges(graph.edges.movement_to_output_lane),
-    }
+def _edge_indices(graph: MovementGraph) -> MovementEdgeIndices:
+    return MovementEdgeIndices(
+        input_lane_to_movement=_int_edges(graph.edges.input_lane_to_movement),
+        output_lane_to_movement=_int_edges(graph.edges.output_lane_to_movement),
+        movement_to_input_lane=_int_edges(graph.edges.movement_to_input_lane),
+        movement_to_output_lane=_int_edges(graph.edges.movement_to_output_lane),
+    )
 
 
 def _int_edges(edges: Iterable[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
     return tuple((int(src), int(dst)) for src, dst in edges)
 
 
-def _phase_incidence_dict(incidence: PhaseIncidence) -> dict[str, Any]:
-    return {
-        'sumo_phase_indices': tuple(int(value) for value in incidence.sumo_phase_indices),
-        'movement_ids': tuple(int(value) for value in incidence.movement_ids),
-        'rows': tuple(tuple(int(value) for value in row) for row in incidence.rows),
-    }
+def _stored_phase_incidence(incidence: PhaseIncidence) -> StoredPhaseIncidence:
+    return StoredPhaseIncidence(
+        sumo_phase_indices=tuple(int(value) for value in incidence.sumo_phase_indices),
+        movement_ids=tuple(int(value) for value in incidence.movement_ids),
+        rows=tuple(tuple(int(value) for value in row) for row in incidence.rows),
+    )
 
 
 def _lane_row_vector(row: LaneGroupFeatureRow) -> tuple[float, ...]:
@@ -235,30 +253,94 @@ def _phase_score(
     return sum(float(teacher_scores[movement_id]) for enabled, movement_id in zip(row, movement_ids) if enabled)
 
 
-def _sample_from_dict(data: Mapping[str, Any]) -> MovementDatasetSample:
+def _sample_from_dict(data: Mapping[str, JsonValue]) -> MovementDatasetSample:
+    phase_incidences = _require_json_object(data['phase_incidences'])
+    teacher_selected_phase_by_tls = _require_json_object(data['teacher_selected_phase_by_tls'])
     return MovementDatasetSample(
         x_lane=_tuple2_float(data['x_lane']),
         x_movement=_tuple2_float(data['x_movement']),
-        edge_index_dict={key: _tuple2_int(value) for key, value in data['edge_index_dict'].items()},
+        edge_indices=_edge_indices_from_json(data['edge_indices']),
         phase_incidences={
-            str(tls_id): {
-                'sumo_phase_indices': tuple(int(value) for value in incidence['sumo_phase_indices']),
-                'movement_ids': tuple(int(value) for value in incidence['movement_ids']),
-                'rows': _tuple2_int(incidence['rows']),
-            }
-            for tls_id, incidence in data['phase_incidences'].items()
+            traffic_light_id: _phase_incidence_from_json(incidence)
+            for traffic_light_id, incidence in phase_incidences.items()
         },
-        teacher_movement_scores=tuple(float(value) for value in data['teacher_movement_scores']),
+        teacher_movement_scores=tuple(
+            _json_float(value) for value in _require_sequence(data['teacher_movement_scores'])
+        ),
         teacher_selected_phase_by_tls={
-            str(tls_id): int(local_idx) for tls_id, local_idx in data['teacher_selected_phase_by_tls'].items()
+            str(traffic_light_id): _json_int(local_phase_index)
+            for traffic_light_id, local_phase_index in teacher_selected_phase_by_tls.items()
         },
-        metadata=dict(data['metadata']),
+        metadata=_require_json_object(data['metadata']),
     )
 
 
-def _tuple2_float(rows: Iterable[Iterable[Any]]) -> tuple[tuple[float, ...], ...]:
-    return tuple(tuple(float(value) for value in row) for row in rows)
+def _edge_indices_from_json(value: JsonValue) -> MovementEdgeIndices:
+    edge_indices = _require_json_object(value)
+    return MovementEdgeIndices(
+        input_lane_to_movement=_tuple2_int_pairs(edge_indices['input_lane_to_movement']),
+        output_lane_to_movement=_tuple2_int_pairs(edge_indices['output_lane_to_movement']),
+        movement_to_input_lane=_tuple2_int_pairs(edge_indices['movement_to_input_lane']),
+        movement_to_output_lane=_tuple2_int_pairs(edge_indices['movement_to_output_lane']),
+    )
 
 
-def _tuple2_int(rows: Iterable[Iterable[Any]]) -> tuple[tuple[int, ...], ...]:
-    return tuple(tuple(int(value) for value in row) for row in rows)
+def _phase_incidence_from_json(value: JsonValue) -> StoredPhaseIncidence:
+    incidence = _require_json_object(value)
+    return StoredPhaseIncidence(
+        sumo_phase_indices=tuple(_json_int(item) for item in _require_sequence(incidence['sumo_phase_indices'])),
+        movement_ids=tuple(_json_int(item) for item in _require_sequence(incidence['movement_ids'])),
+        rows=_tuple2_int(incidence['rows']),
+    )
+
+
+def _tuple2_float(rows: JsonValue) -> tuple[tuple[float, ...], ...]:
+    return tuple(tuple(_json_float(value) for value in _require_sequence(row)) for row in _require_sequence(rows))
+
+
+def _tuple2_int(rows: JsonValue) -> tuple[tuple[int, ...], ...]:
+    return tuple(tuple(_json_int(value) for value in _require_sequence(row)) for row in _require_sequence(rows))
+
+
+def _tuple2_int_pairs(rows: JsonValue) -> tuple[tuple[int, int], ...]:
+    pairs = []
+    for row in _require_sequence(rows):
+        values = tuple(_json_int(value) for value in _require_sequence(row))
+        if len(values) != 2:
+            raise ValueError('Expected edge indices with two columns.')
+        pairs.append((values[0], values[1]))
+    return tuple(pairs)
+
+
+def _json_float(value: JsonValue) -> float:
+    match value:
+        case str() | int() | float() | bool():
+            return float(value)
+        case _:
+            raise ValueError('Expected a JSON scalar convertible to float.')
+
+
+def _json_int(value: JsonValue) -> int:
+    match value:
+        case str() | int() | float() | bool():
+            return int(value)
+        case _:
+            raise ValueError('Expected a JSON scalar convertible to int.')
+
+
+def _require_sequence(value: JsonValue) -> tuple[JsonValue, ...]:
+    match value:
+        case tuple():
+            return value
+        case list():
+            return tuple(value)
+        case _:
+            raise ValueError('Expected a JSON array.')
+
+
+def _require_json_object(value: JsonValue) -> JsonObject:
+    match value:
+        case dict():
+            return value
+        case _:
+            raise ValueError('Expected a JSON object.')

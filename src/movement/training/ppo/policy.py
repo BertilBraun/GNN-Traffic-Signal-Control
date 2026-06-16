@@ -78,8 +78,7 @@ def rollout_context(
 def policy_context_from_sample(sample: MovementDatasetSample) -> PolicyContext:
     traffic_light_ids = tuple(sorted(sample.phase_incidences.keys(), key=str))
     movement_ids_by_traffic_light = tuple(
-        tuple(int(value) for value in sample.phase_incidences[traffic_light_id]['movement_ids'])
-        for traffic_light_id in traffic_light_ids
+        sample.phase_incidences[traffic_light_id].movement_ids for traffic_light_id in traffic_light_ids
     )
     return PolicyContext(
         traffic_light_ids=traffic_light_ids,
@@ -151,11 +150,12 @@ def phase_logits(
     logits = []
     for traffic_light_id in traffic_light_ids:
         incidence = sample.phase_incidences[traffic_light_id]
-        movement_ids = tuple(int(value) for value in incidence['movement_ids'])
         phase_scores = []
-        for row in incidence['rows']:
+        for row in incidence.rows:
             enabled_scores = [
-                movement_scores[movement_id] for enabled, movement_id in zip(row, movement_ids) if int(enabled) == 1
+                movement_scores[movement_id]
+                for enabled, movement_id in zip(row, incidence.movement_ids)
+                if enabled == 1
             ]
             phase_scores.append(torch.stack(tuple(enabled_scores)).sum())
         logits.append(torch.stack(tuple(phase_scores)))

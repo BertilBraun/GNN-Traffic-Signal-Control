@@ -77,7 +77,7 @@ def test_build_dataset_sample_stores_graph_arrays_and_teacher_replay() -> None:
     assert sample.teacher_movement_scores == (16.0, 3.0)
     assert sample.teacher_selected_phase_by_tls == {'J0': 0}
     assert replay_teacher_selected_phases(sample) == {'J0': 0}
-    assert sample.edge_index_dict['input_lane_to_movement'] == ((1, 0), (0, 1))
+    assert sample.edge_indices.input_lane_to_movement == ((1, 0), (0, 1))
 
 
 def test_build_dataset_sample_can_use_graph_level_teacher_scores() -> None:

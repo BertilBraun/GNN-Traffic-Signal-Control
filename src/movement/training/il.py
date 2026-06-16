@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from src.movement.dataset import MovementDatasetSample, load_jsonl_samples
+from src.movement.dataset import MovementDatasetSample, StoredPhaseIncidence, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 
@@ -322,8 +322,10 @@ def edge_tensors_from_sample(
     """Convert stored typed edge lists to 2 x E long tensors."""
     torch_device = torch.device(device)
     return {
-        relation: torch.tensor(edges, dtype=torch.long, device=torch_device).t().contiguous()
-        for relation, edges in sample.edge_index_dict.items()
+        'input_lane_to_movement': _edge_tensor(sample.edge_indices.input_lane_to_movement, torch_device),
+        'output_lane_to_movement': _edge_tensor(sample.edge_indices.output_lane_to_movement, torch_device),
+        'movement_to_input_lane': _edge_tensor(sample.edge_indices.movement_to_input_lane, torch_device),
+        'movement_to_output_lane': _edge_tensor(sample.edge_indices.movement_to_output_lane, torch_device),
     }
 
 
@@ -367,7 +369,7 @@ def normalizer_from_state(state: NormalizerState) -> RunningNormalizer:
 
 
 def _fit_normalizer(
-    batches: Sequence[Sequence[Sequence[float]]],
+    batches: Iterable[Sequence[Sequence[float]]],
 ) -> RunningNormalizer:
     normalizer = RunningNormalizer()
     for rows in batches:
@@ -437,17 +439,20 @@ def _phase_match_counts(
 
 
 def _phase_logits(
-    incidence: dict[str, object],
+    incidence: StoredPhaseIncidence,
     movement_scores: torch.Tensor,
 ) -> torch.Tensor:
-    movement_ids = tuple(int(value) for value in incidence['movement_ids'])
     phase_scores = []
-    for row in incidence['rows']:
+    for row in incidence.rows:
         enabled_scores = tuple(
-            movement_scores[movement_id] for enabled, movement_id in zip(row, movement_ids) if int(enabled) == 1
+            movement_scores[movement_id] for enabled, movement_id in zip(row, incidence.movement_ids) if enabled == 1
         )
         phase_scores.append(torch.stack(enabled_scores).sum())
     return torch.stack(tuple(phase_scores))
+
+
+def _edge_tensor(edges: tuple[tuple[int, int], ...], device: torch.device) -> torch.Tensor:
+    return torch.tensor(edges, dtype=torch.long, device=device).t().contiguous()
 
 
 def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:

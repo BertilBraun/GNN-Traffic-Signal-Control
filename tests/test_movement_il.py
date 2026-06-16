@@ -8,6 +8,7 @@ import torch
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from src.movement.dataset import MovementDatasetSample
+from src.movement.dataset import MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.training.il import (
     MovementILTrainingConfig,
     load_movement_checkpoint,
@@ -30,18 +31,18 @@ def _sample() -> MovementDatasetSample:
             (1.0, 2.0, 3.0, 0.0, 1.0),
             (4.0, 5.0, 6.0, 1.0, 2.0),
         ),
-        edge_index_dict={
-            'input_lane_to_movement': ((0, 0), (1, 1)),
-            'output_lane_to_movement': ((1, 0), (2, 1)),
-            'movement_to_input_lane': ((0, 0), (1, 1)),
-            'movement_to_output_lane': ((0, 1), (1, 2)),
-        },
+        edge_indices=MovementEdgeIndices(
+            input_lane_to_movement=((0, 0), (1, 1)),
+            output_lane_to_movement=((1, 0), (2, 1)),
+            movement_to_input_lane=((0, 0), (1, 1)),
+            movement_to_output_lane=((0, 1), (1, 2)),
+        ),
         phase_incidences={
-            'J0': {
-                'sumo_phase_indices': (0, 1),
-                'movement_ids': (0, 1),
-                'rows': ((1, 0), (0, 1)),
-            }
+            'J0': StoredPhaseIncidence(
+                sumo_phase_indices=(0, 1),
+                movement_ids=(0, 1),
+                rows=((1, 0), (0, 1)),
+            )
         },
         teacher_movement_scores=(7.0, -3.0),
         teacher_selected_phase_by_tls={'J0': 0},

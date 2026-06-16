@@ -7,7 +7,7 @@ import torch
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.movement.dataset import MovementDatasetSample
+from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.evaluation import EvaluationMetrics
 from src.movement.training.ppo.evaluation import checkpoint_selection_score
 from src.movement.training.ppo.reward import clip_reward, delay_density_reward, speed_deficit_density
@@ -21,13 +21,18 @@ def _sample() -> MovementDatasetSample:
     return MovementDatasetSample(
         x_lane=((1.0,),),
         x_movement=((0.0, 1.0, 1.0, 0.0, 0.0),),
-        edge_index_dict={},
+        edge_indices=MovementEdgeIndices(
+            input_lane_to_movement=(),
+            output_lane_to_movement=(),
+            movement_to_input_lane=(),
+            movement_to_output_lane=(),
+        ),
         phase_incidences={
-            'J0': {
-                'sumo_phase_indices': (0,),
-                'movement_ids': (0,),
-                'rows': ((1,),),
-            }
+            'J0': StoredPhaseIncidence(
+                sumo_phase_indices=(0,),
+                movement_ids=(0,),
+                rows=((1,),),
+            )
         },
         teacher_movement_scores=(0.0,),
         teacher_selected_phase_by_tls={},
