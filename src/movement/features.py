@@ -61,6 +61,13 @@ class DynamicLaneGroupFeatures:
     vehicle_count_norm_detector: float
     moving_count_norm_detector: float
     queue_length_norm_detector: float
+    approaching_queue_tail_count: float
+    fast_approaching_queue_tail_count: float
+    min_eta_to_queue_tail_s: float
+    mean_eta_to_queue_tail_s: float
+    predicted_arrivals_to_queue_tail_5s: float
+    predicted_arrivals_to_queue_tail_10s: float
+    predicted_arrivals_to_queue_tail_15s: float
 
 
 @dataclass(frozen=True)
@@ -389,6 +396,21 @@ def _lane_group_row(
     vehicle_count_norm = _safe_div(vehicle_count, capacity)
     moving_count_norm = _safe_div(moving_count, capacity)
     queue_length_norm = _safe_div(queue_length_m, detector_length_m)
+    queue_tail_position_m = _queue_tail_position_m(
+        total_length_m=length_m,
+        detector_start_m=max(0.0, length_m - detector_length_m),
+        halting_positions=halting_positions,
+    )
+    queue_tail_etas = _queue_tail_etas(
+        positioned_detector_vehicles=positioned_detector_vehicles,
+        queue_tail_position_m=queue_tail_position_m,
+    )
+    fast_queue_tail_etas = tuple(
+        eta
+        for vehicle, eta in queue_tail_etas
+        if vehicle.speed_mps >= 0.5 * speed_limit_mps
+    )
+    eta_values = tuple(eta for _vehicle, eta in queue_tail_etas)
     saturation = 1.0 if vehicle_count_norm >= 0.95 or queue_length_norm >= 0.95 else 0.0
     static = StaticLaneGroupFeatures(
         length_m=float(length_m),
@@ -416,6 +438,13 @@ def _lane_group_row(
         vehicle_count_norm_detector=vehicle_count_norm,
         moving_count_norm_detector=moving_count_norm,
         queue_length_norm_detector=queue_length_norm,
+        approaching_queue_tail_count=float(len(queue_tail_etas)),
+        fast_approaching_queue_tail_count=float(len(fast_queue_tail_etas)),
+        min_eta_to_queue_tail_s=min(eta_values, default=0.0),
+        mean_eta_to_queue_tail_s=_mean_float(eta_values),
+        predicted_arrivals_to_queue_tail_5s=float(sum(1 for eta in eta_values if eta <= 5.0)),
+        predicted_arrivals_to_queue_tail_10s=float(sum(1 for eta in eta_values if eta <= 10.0)),
+        predicted_arrivals_to_queue_tail_15s=float(sum(1 for eta in eta_values if eta <= 15.0)),
     )
     return LaneGroupFeatureRow(
         lane_group_id=lane_group_id,
@@ -544,6 +573,31 @@ def _detector_lane_length_m(
     return lane_length_m
 
 
+def _queue_tail_position_m(
+    total_length_m: float,
+    detector_start_m: float,
+    halting_positions: Sequence[float],
+) -> float:
+    if not halting_positions:
+        return total_length_m
+    return max(detector_start_m, min(halting_positions) - EFFECTIVE_VEHICLE_SPACING_M)
+
+
+def _queue_tail_etas(
+    positioned_detector_vehicles: Sequence[tuple[VehicleSnapshot, float]],
+    queue_tail_position_m: float,
+) -> tuple[tuple[VehicleSnapshot, float], ...]:
+    etas: list[tuple[VehicleSnapshot, float]] = []
+    for vehicle, position_m in positioned_detector_vehicles:
+        if vehicle.speed_mps <= HALTING_SPEED_THRESHOLD_MPS:
+            continue
+        distance_to_queue_tail_m = queue_tail_position_m - position_m
+        if distance_to_queue_tail_m <= 0.0:
+            continue
+        etas.append((vehicle, distance_to_queue_tail_m / vehicle.speed_mps))
+    return tuple(etas)
+
+
 def _detector_occupancy_percent(
     vehicles: Sequence[VehicleSnapshot],
     observed_lane_length_m: float,
@@ -556,6 +610,12 @@ def _mean_vehicle_speed(vehicles: Sequence[VehicleSnapshot]) -> float:
     if not vehicles:
         return 0.0
     return sum(vehicle.speed_mps for vehicle in vehicles) / len(vehicles)
+
+
+def _mean_float(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
 
 
 def _safe_div(numerator: float, denominator: float) -> float:

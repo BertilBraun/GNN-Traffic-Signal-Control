@@ -206,6 +206,13 @@ def _lane_row_vector(row: LaneGroupFeatureRow) -> tuple[float, ...]:
         dynamic.vehicle_count_norm_detector,
         dynamic.moving_count_norm_detector,
         dynamic.queue_length_norm_detector,
+        dynamic.approaching_queue_tail_count,
+        dynamic.fast_approaching_queue_tail_count,
+        dynamic.min_eta_to_queue_tail_s,
+        dynamic.mean_eta_to_queue_tail_s,
+        dynamic.predicted_arrivals_to_queue_tail_5s,
+        dynamic.predicted_arrivals_to_queue_tail_10s,
+        dynamic.predicted_arrivals_to_queue_tail_15s,
     )
 
 

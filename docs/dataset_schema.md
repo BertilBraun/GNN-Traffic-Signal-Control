@@ -13,8 +13,11 @@ shortcut. Their static length and free-flow time cover the complete corridor.
 Lane-group dynamic values are detector-local. The detector covers the final
 ^min(200 m, lane-group corridor length)^ before the downstream junction and includes
 total vehicle count, moving vehicle count, queue extent, occupancy, mean speed,
-and detector arrival/departure rates over 15 and 60 seconds. The detector can
-span multiple underlying edges. Raw halting counts
+detector arrival/departure rates over 15 and 60 seconds, and ETA-to-queue-tail
+features for moving vehicles that are approaching the back of the current queue.
+The queue tail is estimated as one effective vehicle spacing behind the most
+upstream stopped detector vehicle; if there is no stopped vehicle, it is the
+junction stop line. The detector can span multiple underlying edges. Raw halting counts
 are intentionally excluded from neural inputs because they would make the
 max-pressure imitation target an exact subtraction shortcut. For an output
 LaneGroup, this region is near the next junction rather than immediately after
@@ -80,8 +83,12 @@ the minimum inspection check for collected samples.
 python scripts\collect_il_data.py --cfg configs\grid_3x3_dedicated\grid.sumocfg --out data\il\grid_3x3_seed42.jsonl --steps 3600 --decision-interval 15 --seed 42 --initial-occupancy 0.06
 ^^^
 
+Add ^--time-to-teleport -1^ when collection should disable SUMO gridlock
+teleporting completely.
+
 This schema is incompatible with movement datasets and checkpoints created
-before the ID-free and temporal-feature update. Regenerate both.
+before the ETA-to-queue-tail feature update. Regenerate both. The current lane
+feature vector has 29 values.
 
 The standard multi-seed 3x3 regeneration and training run is:
 
@@ -93,7 +100,8 @@ python scripts\train_il.py ^
   --epochs 100 ^
   --eval-cfg configs\grid_3x3_dedicated\grid.sumocfg ^
   --eval-every-epochs 10 ^
-  --eval-seeds 100 101
+  --eval-seeds 100 101 ^
+  --time-to-teleport -1
 ^^^
 
 The combined JSONL dataset is retained as ^training_samples.jsonl^ in the

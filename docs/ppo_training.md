@@ -7,6 +7,11 @@ trained with the same current feature schema. Old checkpoints contain numeric
 lane-group IDs and zero-valued control/flow columns and are intentionally
 incompatible.
 
+The current schema includes ETA-to-queue-tail lane features. The policy can see
+how many moving vehicles in the detector are likely to catch the stopped queue
+within 5, 10, or 15 seconds, plus minimum/mean ETA. Any IL checkpoint created
+before those features must be regenerated before PPO can load it.
+
 The critic pools movement embeddings by traffic light and predicts one state value per traffic light. Training begins with value-only warmup: the actor and shared backbone are frozen, the final value layer is zero-initialized, and bootstrapped discounted returns are used as critic targets. Normal clipped PPO updates begin after the configured warmup iterations.
 
 Rollouts are fixed-size data segments rather than terminal episodes. When a
@@ -151,7 +156,8 @@ across iterations. Policy actions are still sampled stochastically.
 python scripts\train_rl.py `
   --il-checkpoint checkpoints\il\<run>\movement_policy_best.pt `
   --fixed-rollout-seed 100 `
-  --eval-seeds 100
+  --eval-seeds 100 `
+  --time-to-teleport -1
 ```
 
 Improvement on this test demonstrates that the policy parameterization and PPO

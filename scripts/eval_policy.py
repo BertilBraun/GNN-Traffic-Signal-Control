@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--initial-occupancy-min', type=float, default=0.05)
     parser.add_argument('--initial-occupancy-max', type=float, default=0.08)
+    parser.add_argument(
+        '--time-to-teleport',
+        type=int,
+        default=None,
+        help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
+    )
     return parser.parse_args()
 
 
@@ -95,6 +101,7 @@ def main() -> None:
                 demand_scale=args.demand_scale,
                 initial_occupancy_min=args.initial_occupancy_min,
                 initial_occupancy_max=args.initial_occupancy_max,
+                time_to_teleport=args.time_to_teleport,
             )
             records.append(
                 EvaluationRecord(

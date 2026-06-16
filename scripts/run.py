@@ -187,6 +187,12 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help='Multiplier applied to route-file flow demand at runtime',
     )
+    parser.add_argument(
+        '--time-to-teleport',
+        type=int,
+        default=None,
+        help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
+    )
     parser.add_argument('--verbose', action='store_true', help='Print selected phases each decision')
     return parser.parse_args()
 
@@ -207,6 +213,7 @@ def main() -> None:
         seed=args.seed,
         yellow_duration=args.yellow_duration,
         min_green_steps=args.min_green_steps,
+        time_to_teleport=args.time_to_teleport,
         additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),
     )
 

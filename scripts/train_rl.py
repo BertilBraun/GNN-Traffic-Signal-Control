@@ -55,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help='Skip an optimizer update when its rollout exceeds this teleport count',
     )
+    parser.add_argument(
+        '--time-to-teleport',
+        type=int,
+        default=None,
+        help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
+    )
     parser.add_argument('--target-kl', type=float, default=0.02, help='Stop PPO epochs above this approximate KL')
     parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
     parser.add_argument(
@@ -130,6 +136,7 @@ def main() -> None:
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
             max_teleports_per_rollout=args.max_teleports_per_rollout,
+            time_to_teleport=args.time_to_teleport,
             target_kl=args.target_kl,
             gui=args.gui,
             initial_occupancy_min=args.initial_occupancy_min,

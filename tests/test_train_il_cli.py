@@ -60,6 +60,8 @@ def test_train_il_cli_accepts_collection_args(monkeypatch) -> None:
             'configs/grid_3x3_dedicated/grid.sumocfg',
             '--eval-demand-scale',
             '0.75',
+            '--time-to-teleport',
+            '-1',
         ],
     )
 
@@ -75,6 +77,7 @@ def test_train_il_cli_accepts_collection_args(monkeypatch) -> None:
     assert args.seed == 7
     assert args.eval_cfg == Path('configs/grid_3x3_dedicated/grid.sumocfg')
     assert args.eval_demand_scale == 0.75
+    assert args.time_to_teleport == -1
 
 
 def test_train_il_cli_uses_dataset_and_evaluation_defaults(monkeypatch) -> None:
@@ -97,6 +100,7 @@ def test_train_il_cli_uses_dataset_and_evaluation_defaults(monkeypatch) -> None:
     assert args.eval_every_epochs == 10
     assert args.eval_seeds == [100, 101]
     assert args.determinism_check_samples == 20
+    assert args.time_to_teleport is None
 
 
 def test_training_evaluation_caches_deterministic_baseline(tmp_path: Path, monkeypatch) -> None:
@@ -118,6 +122,7 @@ def test_training_evaluation_caches_deterministic_baseline(tmp_path: Path, monke
         demand_scale=1.0,
         initial_occupancy_min=0.05,
         initial_occupancy_max=0.08,
+        time_to_teleport=-1,
         output_dir=tmp_path / 'eval',
         log_dir=tmp_path / 'runs',
         device='cpu',

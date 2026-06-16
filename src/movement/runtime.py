@@ -28,6 +28,7 @@ class MovementControlRuntime:
     seed: int = 42
     yellow_duration: int = 3
     min_green_steps: int = 2
+    time_to_teleport: int | None = None
     additional_sumo_args: Sequence[str] = ()
     programs: dict[str, TrafficLightProgram] = field(default_factory=dict, init=False)
     _transition_controller: SignalTransitionController = field(init=False)
@@ -56,6 +57,8 @@ class MovementControlRuntime:
             '--no-warnings',
             'true',
         ]
+        if self.time_to_teleport is not None:
+            command.extend(('--time-to-teleport', str(self.time_to_teleport)))
         command.extend(self.additional_sumo_args)
         traci.start(command)
         self.programs = extract_programs_from_trafficlight_api(traci.trafficlight)

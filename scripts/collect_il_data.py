@@ -105,6 +105,7 @@ def collect_samples(
     gui: bool = False,
     demand_scale: float = 1.0,
     initial_occupancy: float = 0.06,
+    time_to_teleport: int | None = None,
 ) -> int:
     """Run max-pressure control and write one sample per decision time."""
     net_path = resolve_sumocfg_net_path(cfg_path)
@@ -123,6 +124,7 @@ def collect_samples(
         cfg_path=cfg_path,
         gui=gui,
         seed=seed,
+        time_to_teleport=time_to_teleport,
         additional_sumo_args=route_file_sumo_args(
             (
                 *demand_route_files.route_files,
@@ -211,6 +213,7 @@ def verify_max_pressure_determinism(
     seed: int,
     demand_scale: float,
     initial_occupancy: float,
+    time_to_teleport: int | None = None,
 ) -> None:
     """Verify exact same-seed max-pressure vehicle trajectories."""
     first = _max_pressure_trajectory(
@@ -220,6 +223,7 @@ def verify_max_pressure_determinism(
         seed=seed,
         demand_scale=demand_scale,
         initial_occupancy=initial_occupancy,
+        time_to_teleport=time_to_teleport,
     )
     second = _max_pressure_trajectory(
         cfg_path=cfg_path,
@@ -228,6 +232,7 @@ def verify_max_pressure_determinism(
         seed=seed,
         demand_scale=demand_scale,
         initial_occupancy=initial_occupancy,
+        time_to_teleport=time_to_teleport,
     )
     if first != second:
         mismatch_index = min(len(first), len(second))
@@ -249,6 +254,7 @@ def _max_pressure_trajectory(
     seed: int,
     demand_scale: float,
     initial_occupancy: float,
+    time_to_teleport: int | None = None,
 ) -> tuple[DecisionTrajectoryState, ...]:
     net_path = resolve_sumocfg_net_path(cfg_path)
     lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
@@ -263,6 +269,7 @@ def _max_pressure_trajectory(
         cfg_path=cfg_path,
         gui=False,
         seed=seed,
+        time_to_teleport=time_to_teleport,
         additional_sumo_args=route_file_sumo_args(
             (
                 *demand_route_files.route_files,
@@ -369,6 +376,12 @@ def parse_args() -> argparse.Namespace:
         default=0.06,
         help='Initial randomized network occupancy',
     )
+    parser.add_argument(
+        '--time-to-teleport',
+        type=int,
+        default=None,
+        help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
+    )
     return parser.parse_args()
 
 
@@ -383,6 +396,7 @@ def main() -> None:
         gui=args.gui,
         demand_scale=args.demand_scale,
         initial_occupancy=args.initial_occupancy,
+        time_to_teleport=args.time_to_teleport,
     )
     print(f'Wrote {count} samples to {args.out}')
 

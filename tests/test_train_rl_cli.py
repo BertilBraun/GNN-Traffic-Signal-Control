@@ -32,6 +32,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '0.25',
             '--fixed-rollout-seed',
             '123',
+            '--time-to-teleport',
+            '-1',
         ],
     )
 
@@ -48,6 +50,7 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.initial_occupancy_max == 0.25
     assert args.fixed_rollout_seed == 123
     assert args.resume_checkpoint is None
+    assert args.time_to_teleport == -1
 
 
 def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
@@ -98,3 +101,4 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.max_teleports_per_rollout == 10
     assert args.target_kl == 0.02
     assert args.fixed_rollout_seed is None
+    assert args.time_to_teleport is None

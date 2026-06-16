@@ -72,7 +72,7 @@ def test_build_dataset_sample_stores_graph_arrays_and_teacher_replay() -> None:
 
     assert len(sample.x_lane) == 4
     assert len(sample.x_movement) == 2
-    assert len(sample.x_lane[0]) == 22
+    assert len(sample.x_lane[0]) == 29
     assert sample.x_movement == ((2.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0))
     assert sample.teacher_movement_scores == (16.0, 3.0)
     assert sample.teacher_selected_phase_by_tls == {'J0': 0}

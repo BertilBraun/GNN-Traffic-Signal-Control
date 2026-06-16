@@ -139,6 +139,10 @@ Recommended `LaneGroup` features:
 - arrival rate over 60 s;
 - departure rate over 60 s;
 - detector saturation flag;
+- moving vehicles approaching the queue tail;
+- fast moving vehicles approaching the queue tail;
+- minimum and mean ETA to the queue tail;
+- predicted arrivals to the queue tail over 5, 10, and 15 s;
 - length;
 - detector length;
 - number of lanes;
@@ -162,6 +166,12 @@ to a lane-group detector only when it is within the final
 `min(200 m, lane-group length)` before the downstream junction. Moving count uses
 SUMO's 0.1 m/s halting threshold, so an accelerating platoon remains explicitly
 visible after its queue has cleared.
+
+ETA-to-queue-tail features estimate whether moving vehicles will soon catch the
+back of the stopped queue. The tail is one effective vehicle spacing behind the
+most upstream stopped vehicle in the detector, or the stop line if there is no
+stopped vehicle. Vehicles already downstream of that tail are not counted as
+approaching it.
 
 For a movement at junction A, the output LaneGroup is the road leaving A. Its
 detector is at that road's downstream end, near junction B. The output feature

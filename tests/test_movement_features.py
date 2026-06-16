@@ -69,6 +69,13 @@ def test_feature_frame_extracts_lane_group_rows_in_graph_order() -> None:
     assert round(north_row.dynamic.queue_length_norm_detector, 3) == 0.033
     assert round(north_row.dynamic.mean_speed_detector, 3) == 6.667
     assert north_row.dynamic.detector_saturation == 0.0
+    assert north_row.dynamic.approaching_queue_tail_count == 1.0
+    assert north_row.dynamic.fast_approaching_queue_tail_count == 1.0
+    assert round(north_row.dynamic.min_eta_to_queue_tail_s, 3) == 0.583
+    assert round(north_row.dynamic.mean_eta_to_queue_tail_s, 3) == 0.583
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_5s == 1.0
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_10s == 1.0
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_15s == 1.0
 
 
 def test_feature_frame_excludes_vehicles_upstream_of_detector_range() -> None:
@@ -101,6 +108,11 @@ def test_feature_frame_excludes_vehicles_upstream_of_detector_range() -> None:
     assert north_row.dynamic.vehicle_count_detector == 2.0
     assert north_row.dynamic.moving_count_detector == 1.0
     assert north_row.dynamic.halting_count_detector == 1.0
+    assert north_row.dynamic.approaching_queue_tail_count == 1.0
+    assert round(north_row.dynamic.min_eta_to_queue_tail_s, 3) == 10.154
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_5s == 0.0
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_10s == 0.0
+    assert north_row.dynamic.predicted_arrivals_to_queue_tail_15s == 1.0
 
 
 def test_feature_frame_extracts_oracle_movement_demand_by_graph_id() -> None:
@@ -237,4 +249,5 @@ def test_feature_frame_aggregates_contracted_corridor_geometry() -> None:
     assert row.static.estimated_storage_capacity == 37.5
     assert row.dynamic.vehicle_count_detector == 2.0
     assert row.dynamic.queue_length_m_detector == 150.0
+    assert row.dynamic.approaching_queue_tail_count == 0.0
     assert frame.movement_rows[0].dynamic.oracle_movement_demand == 2.0

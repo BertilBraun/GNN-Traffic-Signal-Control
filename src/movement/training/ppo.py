@@ -91,6 +91,7 @@ class MovementPpoConfig:
     reward_clip: float
     teleport_penalty: float
     max_teleports_per_rollout: int
+    time_to_teleport: int | None
     target_kl: float
     gui: bool
     initial_occupancy_min: float
@@ -437,6 +438,7 @@ def _collect_rollout(
         seed=rollout_seed,
         yellow_duration=config.yellow_duration,
         min_green_steps=config.min_green_steps,
+        time_to_teleport=config.time_to_teleport,
         additional_sumo_args=route_file_sumo_args(
             (
                 *demand_route_files.route_files,
@@ -1221,6 +1223,7 @@ def _run_training_evaluation(
                             demand_scale=config.eval_demand_scale,
                             initial_occupancy_min=config.initial_occupancy_min,
                             initial_occupancy_max=config.initial_occupancy_max,
+                            time_to_teleport=config.time_to_teleport,
                         ),
                     )
                 )

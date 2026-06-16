@@ -145,6 +145,12 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help='Multiplier applied to route-file flow demand during periodic evaluation',
     )
+    parser.add_argument(
+        '--time-to-teleport',
+        type=int,
+        default=None,
+        help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
+    )
     return parser.parse_args()
 
 
@@ -160,6 +166,7 @@ class TrainingEvaluationObserver:
     demand_scale: float
     initial_occupancy_min: float
     initial_occupancy_max: float
+    time_to_teleport: int | None
     output_dir: Path
     log_dir: Path
     device: str
@@ -250,6 +257,7 @@ class TrainingEvaluationObserver:
                 demand_scale=self.demand_scale,
                 initial_occupancy_min=self.initial_occupancy_min,
                 initial_occupancy_max=self.initial_occupancy_max,
+                time_to_teleport=self.time_to_teleport,
             )
             records.append(
                 EvaluationRecord(
@@ -345,6 +353,7 @@ def main() -> None:
                         maximum_occupancy=args.initial_occupancy_max,
                         seed=args.collection_seed,
                     ),
+                    time_to_teleport=args.time_to_teleport,
                 )
             combined_samples = []
             simulation_index = 0
@@ -365,6 +374,7 @@ def main() -> None:
                         maximum_occupancy=args.initial_occupancy_max,
                         seed=collection_seed,
                     ),
+                    time_to_teleport=args.time_to_teleport,
                 )
                 if collected_count == 0:
                     raise RuntimeError(f'Collection produced no samples for seed {collection_seed}.')
@@ -403,6 +413,7 @@ def _training_evaluation_observer(
         demand_scale=args.eval_demand_scale,
         initial_occupancy_min=args.initial_occupancy_min,
         initial_occupancy_max=args.initial_occupancy_max,
+        time_to_teleport=args.time_to_teleport,
         output_dir=args.eval_output_dir or checkpoint_dir / 'eval',
         log_dir=log_dir,
         device=args.device,

@@ -80,6 +80,7 @@ def run_evaluation_episode(
     demand_scale: float,
     initial_occupancy_min: float,
     initial_occupancy_max: float,
+    time_to_teleport: int | None = None,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
     net_path = resolve_sumocfg_net_path(cfg_path)
@@ -120,6 +121,7 @@ def run_evaluation_episode(
         seed=seed,
         yellow_duration=yellow_duration,
         min_green_steps=min_green_steps,
+        time_to_teleport=time_to_teleport,
         additional_sumo_args=additional_sumo_args,
     )
     queue_sum = 0.0
