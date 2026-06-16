@@ -148,6 +148,22 @@ ctx, cfg, req, res
 
 ---
 
+## Short Files and Single-Responsibility Functions
+
+Keep files and functions focused on one clear responsibility. A function should do one job at one level of abstraction; if it mixes orchestration, validation, data transformation, model calls, logging, persistence, plotting, and metric aggregation, split those concerns into named helpers or small collaborating modules.
+
+Prefer extracting code when any of these are true:
+
+- The function is difficult to summarize in one sentence.
+- The function contains multiple phases separated only by comments or blank lines.
+- Local variables are reused across unrelated steps.
+- The same function owns setup, execution, evaluation, and reporting.
+- A reader must scroll substantially to understand the control flow.
+
+Files should follow the same rule: one module should group related behavior, not become a dumping ground for every helper used by a workflow. When a workflow is naturally long, keep the public entry point as a readable orchestration layer and move the details into private helpers, typed data structures, or dedicated modules.
+
+---
+
 ## No silent defaults
 
 Never use default parameter values that could hide bugs. All parameters must be explicitly passed by the caller - do not rely on defaults to fill in missing values.
