@@ -35,10 +35,12 @@ from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
-from src.movement.training.il import (
-    edge_tensors_from_sample,
+from src.movement.training.il_checkpoint import (
     load_movement_checkpoint,
     normalizer_from_state,
+)
+from src.movement.training.il_tensors import (
+    edge_tensors_from_sample,
     tensors_from_sample,
 )
 

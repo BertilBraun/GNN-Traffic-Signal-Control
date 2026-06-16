@@ -8,7 +8,7 @@ from typing import cast
 import torch
 
 from src.movement.models.bipartite_gnn import MovementActorCritic, MovementScorer
-from src.movement.training.il import (
+from src.movement.training.il_checkpoint import (
     MovementCheckpointMetadata,
     load_movement_checkpoint,
     normalizer_from_state,

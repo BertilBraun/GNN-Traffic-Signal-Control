@@ -22,7 +22,7 @@ from src.movement.evaluation import (
     write_records_csv,
 )
 from src.movement.models.bipartite_gnn import MovementActorCritic
-from src.movement.training.il import MovementCheckpointMetadata
+from src.movement.training.il_checkpoint import MovementCheckpointMetadata
 from src.movement.training.ppo.checkpoint import save_actor_checkpoint
 from src.movement.training.ppo.types import (
     MovementPpoConfig,

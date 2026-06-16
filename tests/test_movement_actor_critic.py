@@ -9,10 +9,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.models.bipartite_gnn import MovementActorCritic
-from src.movement.training.il import (
+from src.movement.training.il_checkpoint import (
     MovementCheckpointMetadata,
-    MovementILTrainingConfig,
     NormalizerState,
+)
+from src.movement.training.il_types import (
+    MovementILTrainingConfig,
 )
 from src.movement.training.ppo.checkpoint import (
     load_ppo_checkpoint_payload,

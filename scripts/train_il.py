@@ -16,12 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
-from src.movement.training.il import (  # noqa: E402
+from src.movement.training.il import train_movement_il_from_jsonl  # noqa: E402
+from src.movement.training.il_checkpoint import save_movement_checkpoint  # noqa: E402
+from src.movement.training.il_types import (  # noqa: E402
     MovementILLoss,
     MovementILTrainingConfig,
     MovementILTrainingSnapshot,
-    save_movement_checkpoint,
-    train_movement_il_from_jsonl,
 )
 from src.movement.dataset import load_jsonl_samples, save_jsonl_samples  # noqa: E402
 from src.movement.initial_traffic import sample_target_occupancy  # noqa: E402

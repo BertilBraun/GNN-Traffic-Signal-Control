@@ -20,7 +20,7 @@ from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.normalization import RunningNormalizer
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
-from src.movement.training.il import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.il_tensors import edge_tensors_from_sample, tensors_from_sample
 from src.movement.training.ppo.types import PolicyContext, RolloutContext
 
 

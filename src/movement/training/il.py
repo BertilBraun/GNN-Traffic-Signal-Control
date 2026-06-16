@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import Protocol, cast
 
 import torch
 import torch.nn.functional as F
@@ -15,88 +12,15 @@ from torch.utils.tensorboard import SummaryWriter
 from src.movement.dataset import MovementDatasetSample, StoredPhaseIncidence, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
-
-
-class MovementILLoss(str, Enum):
-    HUBER = 'huber'
-    MEAN_SQUARED_ERROR = 'mse'
-
-
-@dataclass(frozen=True)
-class MovementILTrainingConfig:
-    epochs: int = 200
-    lr: float = 1e-3
-    hidden_dim: int = 64
-    checkpoint_dir: Path | str = Path('checkpoints/il')
-    seed: int = 42
-    loss: MovementILLoss = MovementILLoss.HUBER
-    device: str = 'cpu'
-    progress_every: int = 0
-    num_hops: int = 0
-    phase_loss_coefficient: float = 1.0
-    samples_per_batch: int = 16
-    log_dir: Path | str | None = None
-
-
-@dataclass(frozen=True)
-class MovementILTrainingResult:
-    checkpoint_path: Path
-    final_loss: float
-    epochs: int
-
-
-@dataclass(frozen=True)
-class NormalizerState:
-    count: int
-    mean: tuple[float, ...]
-    squared_differences: tuple[float, ...]
-    frozen: bool
-    epsilon: float
-
-
-@dataclass(frozen=True)
-class MovementCheckpointPayload:
-    model_state: dict[str, torch.Tensor]
-    config: MovementILTrainingConfig
-    lane_feature_dim: int
-    movement_feature_dim: int
-    hidden_dim: int
-    num_hops: int
-    lane_normalizer: NormalizerState
-    movement_normalizer: NormalizerState
-    loss: float
-
-
-@dataclass(frozen=True)
-class MovementCheckpointMetadata:
-    lane_feature_dim: int
-    movement_feature_dim: int
-    hidden_dim: int
-    num_hops: int
-    lane_normalizer: NormalizerState
-    movement_normalizer: NormalizerState
-    config: MovementILTrainingConfig
-
-
-@dataclass(frozen=True)
-class MovementILTrainingSnapshot:
-    epoch: int
-    epochs: int
-    loss: float
-    regression_loss: float
-    phase_loss: float
-    phase_match_rate: float
-    best_loss: float
-    model: MovementScorer
-    config: MovementILTrainingConfig
-    lane_feature_dim: int
-    movement_feature_dim: int
-    lane_normalizer: RunningNormalizer
-    movement_normalizer: RunningNormalizer
-
-
-class MovementILTrainingObserver(Protocol):
-    def on_epoch_completed(self, snapshot: MovementILTrainingSnapshot) -> None: ...
+from src.movement.training.il_checkpoint import movement_checkpoint_payload
+from src.movement.training.il_tensors import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.il_types import (
+    MovementILLoss,
+    MovementILTrainingConfig,
+    MovementILTrainingObserver,
+    MovementILTrainingResult,
+    MovementILTrainingSnapshot,
+)
 
 
 def train_movement_il(
@@ -207,7 +131,7 @@ def train_movement_il(
 
     checkpoint_dir = Path(config.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    last_checkpoint = _checkpoint_payload(
+    last_checkpoint = movement_checkpoint_payload(
         model_state=model.state_dict(),
         config=config,
         lane_feature_dim=lane_feature_dim,
@@ -216,7 +140,7 @@ def train_movement_il(
         movement_normalizer=movement_normalizer,
         loss=final_loss,
     )
-    best_checkpoint = _checkpoint_payload(
+    best_checkpoint = movement_checkpoint_payload(
         model_state=best_state,
         config=config,
         lane_feature_dim=lane_feature_dim,
@@ -238,28 +162,6 @@ def train_movement_il(
     )
 
 
-def _checkpoint_payload(
-    model_state: dict[str, torch.Tensor],
-    config: MovementILTrainingConfig,
-    lane_feature_dim: int,
-    movement_feature_dim: int,
-    lane_normalizer: RunningNormalizer,
-    movement_normalizer: RunningNormalizer,
-    loss: float,
-) -> MovementCheckpointPayload:
-    return MovementCheckpointPayload(
-        model_state=model_state,
-        config=config,
-        lane_feature_dim=lane_feature_dim,
-        movement_feature_dim=movement_feature_dim,
-        hidden_dim=config.hidden_dim,
-        num_hops=config.num_hops,
-        lane_normalizer=_normalizer_state(lane_normalizer),
-        movement_normalizer=_normalizer_state(movement_normalizer),
-        loss=loss,
-    )
-
-
 def train_movement_il_from_jsonl(
     dataset_path: Path | str,
     config: MovementILTrainingConfig,
@@ -267,105 +169,6 @@ def train_movement_il_from_jsonl(
 ) -> MovementILTrainingResult:
     """Load JSONL samples and train the movement scorer."""
     return train_movement_il(load_jsonl_samples(dataset_path), config, observer)
-
-
-def save_movement_checkpoint(
-    checkpoint_path: Path | str,
-    model: MovementScorer,
-    config: MovementILTrainingConfig,
-    lane_feature_dim: int,
-    movement_feature_dim: int,
-    lane_normalizer: RunningNormalizer,
-    movement_normalizer: RunningNormalizer,
-    loss: float,
-) -> None:
-    """Save one movement policy checkpoint."""
-    path = Path(checkpoint_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint = _checkpoint_payload(
-        model_state=model.state_dict(),
-        config=config,
-        lane_feature_dim=lane_feature_dim,
-        movement_feature_dim=movement_feature_dim,
-        lane_normalizer=lane_normalizer,
-        movement_normalizer=movement_normalizer,
-        loss=loss,
-    )
-    torch.save(checkpoint, path)
-
-
-def tensors_from_sample(
-    sample: MovementDatasetSample,
-    lane_normalizer: RunningNormalizer | None = None,
-    movement_normalizer: RunningNormalizer | None = None,
-    device: torch.device | str = 'cpu',
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Convert one dataset sample to tensors."""
-    x_lane_rows = sample.x_lane
-    x_movement_rows = sample.x_movement
-    if lane_normalizer is not None:
-        x_lane_rows = tuple(lane_normalizer.transform_row(row) for row in x_lane_rows)
-    if movement_normalizer is not None:
-        x_movement_rows = tuple(movement_normalizer.transform_row(row) for row in x_movement_rows)
-    torch_device = torch.device(device)
-    return (
-        torch.tensor(x_lane_rows, dtype=torch.float32, device=torch_device),
-        torch.tensor(x_movement_rows, dtype=torch.float32, device=torch_device),
-        torch.tensor(sample.teacher_movement_scores, dtype=torch.float32, device=torch_device),
-    )
-
-
-def edge_tensors_from_sample(
-    sample: MovementDatasetSample,
-    device: torch.device | str = 'cpu',
-) -> dict[str, torch.Tensor]:
-    """Convert stored typed edge lists to 2 x E long tensors."""
-    torch_device = torch.device(device)
-    return {
-        'input_lane_to_movement': _edge_tensor(sample.edge_indices.input_lane_to_movement, torch_device),
-        'output_lane_to_movement': _edge_tensor(sample.edge_indices.output_lane_to_movement, torch_device),
-        'movement_to_input_lane': _edge_tensor(sample.edge_indices.movement_to_input_lane, torch_device),
-        'movement_to_output_lane': _edge_tensor(sample.edge_indices.movement_to_output_lane, torch_device),
-    }
-
-
-def load_movement_checkpoint(
-    checkpoint_path: Path | str,
-    device: str = 'cpu',
-) -> tuple[MovementScorer, MovementCheckpointMetadata]:
-    """Load a movement IL checkpoint."""
-    checkpoint = cast(
-        MovementCheckpointPayload,
-        torch.load(checkpoint_path, map_location=device, weights_only=False),
-    )
-    model = MovementScorer(
-        lane_feature_dim=checkpoint.lane_feature_dim,
-        movement_feature_dim=checkpoint.movement_feature_dim,
-        hidden_dim=checkpoint.hidden_dim,
-        num_hops=checkpoint.num_hops,
-    )
-    model.load_state_dict(checkpoint.model_state)
-    model.to(torch.device(device))
-    return model, MovementCheckpointMetadata(
-        lane_feature_dim=checkpoint.lane_feature_dim,
-        movement_feature_dim=checkpoint.movement_feature_dim,
-        hidden_dim=checkpoint.hidden_dim,
-        num_hops=checkpoint.num_hops,
-        lane_normalizer=checkpoint.lane_normalizer,
-        movement_normalizer=checkpoint.movement_normalizer,
-        config=checkpoint.config,
-    )
-
-
-def normalizer_from_state(state: NormalizerState) -> RunningNormalizer:
-    """Reconstruct a running normalizer from checkpoint metadata."""
-    normalizer = RunningNormalizer(epsilon=state.epsilon)
-    normalizer.count = state.count
-    normalizer.mean = state.mean
-    normalizer.m2 = state.squared_differences
-    normalizer.frozen = state.frozen
-    normalizer._dimension = len(normalizer.mean)
-    return normalizer
 
 
 def _fit_normalizer(
@@ -376,16 +179,6 @@ def _fit_normalizer(
         normalizer.update_rows(rows)
     normalizer.freeze()
     return normalizer
-
-
-def _normalizer_state(normalizer: RunningNormalizer) -> NormalizerState:
-    return NormalizerState(
-        count=normalizer.count,
-        mean=normalizer.mean,
-        squared_differences=normalizer.m2,
-        frozen=normalizer.frozen,
-        epsilon=normalizer.epsilon,
-    )
 
 
 def _loss(
@@ -449,10 +242,6 @@ def _phase_logits(
         )
         phase_scores.append(torch.stack(enabled_scores).sum())
     return torch.stack(tuple(phase_scores))
-
-
-def _edge_tensor(edges: tuple[tuple[int, int], ...], device: torch.device) -> torch.Tensor:
-    return torch.tensor(edges, dtype=torch.long, device=device).t().contiguous()
 
 
 def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:

@@ -9,14 +9,16 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 
 from src.movement.dataset import MovementDatasetSample
 from src.movement.dataset import MovementEdgeIndices, StoredPhaseIncidence
-from src.movement.training.il import (
-    MovementILTrainingConfig,
+from src.movement.training.il import train_movement_il
+from src.movement.training.il_checkpoint import (
     load_movement_checkpoint,
     normalizer_from_state,
-    tensors_from_sample,
-    train_movement_il,
-    edge_tensors_from_sample,
 )
+from src.movement.training.il_tensors import (
+    edge_tensors_from_sample,
+    tensors_from_sample,
+)
+from src.movement.training.il_types import MovementILTrainingConfig
 from src.movement.models.bipartite_gnn import MovementScorer
 
 
@@ -61,7 +63,7 @@ def test_local_model_scores_one_value_per_movement() -> None:
     scores = model(
         x_lane=torch.tensor(_sample().x_lane, dtype=torch.float32),
         x_movement=torch.tensor(_sample().x_movement, dtype=torch.float32),
-        edge_index_dict=edge_tensors_from_sample(_sample()),
+        edge_index_dict=edge_tensors_from_sample(_sample(), device='cpu'),
     )
 
     assert tuple(scores.shape) == (2,)
@@ -85,18 +87,19 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
     assert result.final_loss < 0.05
     assert (checkpoint_dir / 'movement_policy_last.pt').exists()
     assert (checkpoint_dir / 'movement_policy_best.pt').exists()
-    loaded_model, metadata = load_movement_checkpoint(checkpoint_dir / 'movement_policy_last.pt')
+    loaded_model, metadata = load_movement_checkpoint(checkpoint_dir / 'movement_policy_last.pt', device='cpu')
     loaded_model.eval()
     with torch.no_grad():
         x_lane, x_movement, _target = tensors_from_sample(
             sample=_sample(),
             lane_normalizer=normalizer_from_state(metadata.lane_normalizer),
             movement_normalizer=normalizer_from_state(metadata.movement_normalizer),
+            device='cpu',
         )
         scores = loaded_model(
             x_lane=x_lane,
             x_movement=x_movement,
-            edge_index_dict=edge_tensors_from_sample(_sample()),
+            edge_index_dict=edge_tensors_from_sample(_sample(), device='cpu'),
         )
 
     assert torch.allclose(scores, torch.tensor([7.0, -3.0]), atol=0.3)
@@ -119,7 +122,7 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
         observer=None,
     )
 
-    _model, metadata = load_movement_checkpoint(result.checkpoint_path)
+    _model, metadata = load_movement_checkpoint(result.checkpoint_path, device='cpu')
 
     assert metadata.num_hops == 1
 

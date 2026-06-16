@@ -27,7 +27,7 @@ from src.movement.initial_traffic import (
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.normalization import RunningNormalizer
 from src.movement.runtime import MovementControlRuntime
-from src.movement.training.il import MovementCheckpointMetadata, NormalizerState, normalizer_from_state
+from src.movement.training.il_checkpoint import MovementCheckpointMetadata, NormalizerState, normalizer_from_state
 from src.movement.training.ppo.policy import (
     actions_from_states,
     allowed_action_masks,
