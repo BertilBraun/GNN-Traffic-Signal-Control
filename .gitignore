@@ -18,6 +18,7 @@ tripinfo_*.xml
 
 # TensorBoard / W&B logs
 runs/
+runs_old/
 wandb/
 
 # IDE

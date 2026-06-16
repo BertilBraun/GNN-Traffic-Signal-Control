@@ -9,7 +9,17 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.models.bipartite_gnn import MovementActorCritic
-from src.movement.training.ppo import _masked_phase_logits
+from src.movement.training.il import (
+    MovementCheckpointMetadata,
+    MovementILTrainingConfig,
+    NormalizerState,
+)
+from src.movement.training.ppo import (
+    _load_ppo_checkpoint_payload,
+    _masked_phase_logits,
+    _model_and_metadata_from_ppo_checkpoint,
+    _save_ppo_checkpoint,
+)
 
 
 def test_actor_critic_returns_movement_scores_and_tls_values() -> None:
@@ -67,3 +77,54 @@ def test_action_mask_prevents_sampling_rejected_phase() -> None:
     distribution = Categorical(logits=masked_logits[0])
 
     assert {int(distribution.sample()) for _sample in range(20)} == {1}
+
+
+def test_ppo_checkpoint_restores_model_optimizer_and_training_state(tmp_path: Path) -> None:
+    model = MovementActorCritic(
+        lane_feature_dim=2,
+        movement_feature_dim=4,
+        hidden_dim=8,
+        num_hops=0,
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+    loss = sum(parameter.square().sum() for parameter in model.parameters())
+    loss.backward()
+    optimizer.step()
+    normalizer = NormalizerState(
+        count=1,
+        mean=(0.0,),
+        squared_differences=(0.0,),
+        frozen=True,
+        epsilon=1e-8,
+    )
+    metadata = MovementCheckpointMetadata(
+        lane_feature_dim=2,
+        movement_feature_dim=4,
+        hidden_dim=8,
+        num_hops=0,
+        lane_normalizer=normalizer,
+        movement_normalizer=normalizer,
+        config=MovementILTrainingConfig(),
+    )
+    checkpoint_path = tmp_path / 'movement_ppo.pt'
+
+    _save_ppo_checkpoint(
+        path=checkpoint_path,
+        model=model,
+        optimizer=optimizer,
+        metadata=metadata,
+        iteration=17,
+        best_checkpoint_score=42.5,
+    )
+    checkpoint = _load_ppo_checkpoint_payload(checkpoint_path=checkpoint_path, device='cpu')
+    restored_model, restored_metadata = _model_and_metadata_from_ppo_checkpoint(
+        checkpoint=checkpoint,
+        device='cpu',
+    )
+
+    assert checkpoint.iteration == 17
+    assert checkpoint.best_checkpoint_score == 42.5
+    assert checkpoint.optimizer_state['state']
+    assert restored_metadata.hidden_dim == 8
+    for name, parameter in model.state_dict().items():
+        assert torch.equal(parameter, restored_model.state_dict()[name])

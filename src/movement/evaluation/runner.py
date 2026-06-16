@@ -28,6 +28,7 @@ from src.movement.features import (
 )
 from src.movement.graph import build_movement_graph
 from src.movement.graph_schema import MovementGraph
+from src.movement.initial_traffic import generate_initial_traffic_population, sample_target_occupancy
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 from src.movement.phase_selection import select_highest_scoring_phase
@@ -77,6 +78,8 @@ def run_evaluation_episode(
     min_green_steps: int,
     learned_policy_config: LearnedPolicyConfig | None,
     demand_scale: float,
+    initial_occupancy_min: float,
+    initial_occupancy_max: float,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
     net_path = resolve_sumocfg_net_path(cfg_path)
@@ -91,10 +94,25 @@ def run_evaluation_episode(
         cfg_path=cfg_path,
         demand_scale=demand_scale,
     )
+    initial_population = generate_initial_traffic_population(
+        cfg_path=cfg_path,
+        net_path=net_path,
+        target_occupancy=sample_target_occupancy(
+            minimum_occupancy=initial_occupancy_min,
+            maximum_occupancy=initial_occupancy_max,
+            seed=seed,
+        ),
+        seed=seed,
+    )
     additional_sumo_args = (
         '--tripinfo-output',
         str(tripinfo_path),
-        *route_file_sumo_args(demand_route_files.route_files),
+        *route_file_sumo_args(
+            (
+                *demand_route_files.route_files,
+                initial_population.route_file,
+            )
+        ),
     )
     runtime = MovementControlRuntime(
         cfg_path=cfg_path,
@@ -127,6 +145,21 @@ def run_evaluation_episode(
             for traffic_light_id, program in runtime.programs.items()
         }
         incoming_lanes_by_junction = _incoming_lanes_by_junction(runtime.programs)
+        runtime.step()
+        simulated_steps = 1
+        departed_vehicle_count += int(traci.simulation.getDepartedNumber())
+        teleport_count += int(traci.simulation.getStartingTeleportNumber())
+        queue_values = tuple(float(traci.lane.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
+        if queue_values:
+            queue_sum += sum(queue_values) / len(queue_values)
+            max_queue = max(max_queue, max(queue_values))
+        wait_density_sum += _wait_density(lane_ids, total_lane_length_m)
+        _update_per_junction_metrics(
+            incoming_lanes_by_junction=incoming_lanes_by_junction,
+            per_junction_wait_density_sum=per_junction_wait_density_sum,
+            per_junction_max_queue=per_junction_max_queue,
+        )
+        _update_progression_tracker(progression_tracker)
         learned_context = _learned_context(
             policy=policy,
             learned_policy_config=learned_policy_config,
@@ -136,8 +169,8 @@ def run_evaluation_episode(
             decision_interval=decision_interval,
             net_path=net_path,
         )
-        for step in range(steps):
-            if step % decision_interval == 0:
+        for step in range(1, steps):
+            if (step - 1) % decision_interval == 0:
                 desired_states = _desired_states(
                     policy=policy,
                     programs=runtime.programs,
@@ -174,6 +207,7 @@ def run_evaluation_episode(
         vehicles_remaining = len(traci.vehicle.getIDList())
     finally:
         runtime.close()
+        initial_population.cleanup()
         demand_route_files.cleanup()
 
     completed, throughput, average_wait, average_travel, average_time_loss = parse_tripinfo_metrics(

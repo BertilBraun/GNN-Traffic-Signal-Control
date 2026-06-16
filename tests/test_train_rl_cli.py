@@ -30,6 +30,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '0.15',
             '--initial-occupancy-max',
             '0.25',
+            '--fixed-rollout-seed',
+            '123',
         ],
     )
 
@@ -44,6 +46,28 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
     assert args.initial_occupancy_max == 0.25
+    assert args.fixed_rollout_seed == 123
+    assert args.resume_checkpoint is None
+
+
+def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--resume-checkpoint',
+            'checkpoints/rl/unit/movement_ppo_latest.pt',
+            '--iterations',
+            '300',
+        ],
+    )
+
+    args = train_rl.parse_args()
+
+    assert args.il_checkpoint is None
+    assert args.resume_checkpoint == Path('checkpoints/rl/unit/movement_ppo_latest.pt')
+    assert args.iterations == 300
 
 
 def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
@@ -64,10 +88,13 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.entropy_coeff == 0.01
     assert args.cfg.name == 'grid.sumocfg'
     assert args.cfg.parent.name == 'grid_3x3_dedicated'
-    assert args.demand_scale == 0.65
+    assert args.demand_scale == 1.0
     assert args.eval_demand_scale == 1.0
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1
     assert args.reward_clip == 1.0
     assert args.teleport_penalty == 0.0
+    assert args.max_teleports_per_rollout == 10
+    assert args.target_kl == 0.02
+    assert args.fixed_rollout_seed is None

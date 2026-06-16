@@ -5,6 +5,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 import torch
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from src.movement.dataset import MovementDatasetSample
 from src.movement.training.il import (
@@ -141,3 +142,27 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
     assert 'epoch=2/3' in output
     assert 'epoch=3/3' in output
     assert 'loss=' in output
+
+
+def test_movement_il_logs_each_epoch_to_tensorboard(tmp_path: Path) -> None:
+    log_dir = tmp_path / 'runs'
+    train_movement_il(
+        samples=[_sample()],
+        config=MovementILTrainingConfig(
+            epochs=3,
+            lr=0.01,
+            hidden_dim=8,
+            checkpoint_dir=tmp_path / 'ckpt',
+            seed=1,
+            num_hops=0,
+            log_dir=log_dir,
+        ),
+        observer=None,
+    )
+
+    events = EventAccumulator(str(log_dir))
+    events.Reload()
+
+    assert len(events.Scalars('loss/regression')) == 3
+    assert len(events.Scalars('loss/phase')) == 3
+    assert len(events.Scalars('accuracy/phase_match')) == 3

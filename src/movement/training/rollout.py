@@ -52,9 +52,15 @@ class MovementRolloutBuffer:
             raise ValueError('action count does not match traffic light count.')
         self.transitions.append(transition)
 
-    def compute_returns_and_advantages(self, use_mc_targets: bool) -> None:
+    def compute_returns_and_advantages(
+        self,
+        use_discounted_return_targets: bool,
+        bootstrap_values: tuple[float, ...],
+    ) -> None:
         if not self.transitions:
             raise ValueError('Cannot compute returns for an empty rollout buffer.')
+        if len(bootstrap_values) != self.traffic_light_count:
+            raise ValueError('bootstrap value count does not match traffic light count.')
         rewards = torch.tensor(
             tuple(transition.rewards for transition in self.transitions),
             dtype=torch.float32,
@@ -70,10 +76,11 @@ class MovementRolloutBuffer:
         step_count = len(self.transitions)
         advantages = torch.zeros((step_count, self.traffic_light_count), dtype=torch.float32)
         last_gae = torch.zeros((self.traffic_light_count,), dtype=torch.float32)
+        bootstrap = torch.tensor(bootstrap_values, dtype=torch.float32)
         for step in reversed(range(step_count)):
             if step == step_count - 1:
-                next_value = torch.zeros((self.traffic_light_count,), dtype=torch.float32)
-                next_done = 1.0
+                next_value = bootstrap
+                next_done = float(dones[step])
             else:
                 next_value = values[step + 1]
                 next_done = float(dones[step])
@@ -81,11 +88,11 @@ class MovementRolloutBuffer:
             last_gae = delta + self.gamma * self.lam * (1.0 - next_done) * last_gae
             advantages[step] = last_gae
 
-        if use_mc_targets:
+        if use_discounted_return_targets:
             returns = torch.zeros((step_count, self.traffic_light_count), dtype=torch.float32)
-            running = torch.zeros((self.traffic_light_count,), dtype=torch.float32)
+            running = bootstrap
             for step in reversed(range(step_count)):
-                next_done = float(dones[step]) if step < step_count - 1 else 1.0
+                next_done = float(dones[step])
                 running = rewards[step] + self.gamma * running * (1.0 - next_done)
                 returns[step] = running
         else:

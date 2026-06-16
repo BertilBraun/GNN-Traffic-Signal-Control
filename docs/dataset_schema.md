@@ -88,14 +88,22 @@ The standard multi-seed 3x3 regeneration and training run is:
 ^^^powershell
 python scripts\train_il.py ^
   --cfg configs\grid_3x3_dedicated\grid.sumocfg ^
-  --collection-seeds 42 43 44 45 46 ^
-  --samples 240 ^
-  --epochs 400 ^
+  --samples 4800 ^
+  --samples-per-simulation 240 ^
+  --epochs 100 ^
   --eval-cfg configs\grid_3x3_dedicated\grid.sumocfg ^
-  --eval-every-epochs 50 ^
-  --eval-seeds 42 43 44
+  --eval-every-epochs 10 ^
+  --eval-seeds 100 101
 ^^^
 
 The combined JSONL dataset is retained as ^training_samples.jsonl^ in the
 checkpoint directory. ^movement_policy_eval_best.pt^ tracks the periodic
 evaluation checkpoint with the lowest learned wait density.
+
+Collection automatically uses consecutive seeds beginning at 42. Each
+simulation starts with randomized traffic occupancy, and collection prints the
+minimum, mean, and maximum active vehicle count. Before collection, two
+same-seed max-pressure simulations are compared exactly for deterministic
+vehicle trajectories and actions. SUMO advances one insertion step before the
+first policy decision so the randomized initial population is present in the
+first stored sample; this is not a stabilization or burn-in period.

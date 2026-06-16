@@ -10,6 +10,7 @@ from typing import Protocol, cast
 
 import torch
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 from src.movement.dataset import MovementDatasetSample, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
@@ -34,6 +35,7 @@ class MovementILTrainingConfig:
     num_hops: int = 0
     phase_loss_coefficient: float = 1.0
     samples_per_batch: int = 16
+    log_dir: Path | str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,7 @@ def train_movement_il(
         num_hops=config.num_hops,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    writer = SummaryWriter(log_dir=str(config.log_dir)) if config.log_dir is not None else None
     final_loss = 0.0
     best_loss = float('inf')
     best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
@@ -178,6 +181,11 @@ def train_movement_il(
                 f'loss={final_loss:.6f} regression={regression_loss_value:.6f} '
                 f'phase={phase_loss_value:.6f} match={phase_match_rate:.3f}'
             )
+        if writer is not None:
+            writer.add_scalar('loss/total', final_loss, epoch + 1)
+            writer.add_scalar('loss/regression', regression_loss_value, epoch + 1)
+            writer.add_scalar('loss/phase', phase_loss_value, epoch + 1)
+            writer.add_scalar('accuracy/phase_match', phase_match_rate, epoch + 1)
         if observer is not None:
             observer.on_epoch_completed(
                 MovementILTrainingSnapshot(
@@ -221,6 +229,8 @@ def train_movement_il(
     best_path = checkpoint_dir / 'movement_policy_best.pt'
     torch.save(last_checkpoint, last_path)
     torch.save(best_checkpoint, best_path)
+    if writer is not None:
+        writer.close()
     return MovementILTrainingResult(
         checkpoint_path=last_path,
         final_loss=final_loss,

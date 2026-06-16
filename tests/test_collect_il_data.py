@@ -7,9 +7,11 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts.collect_il_data import (
+    collect_samples,
     graph_max_pressure_scores_from_features,
     resolve_sumocfg_net_path,
 )
+from src.movement.dataset import load_jsonl_samples
 from src.movement.extraction import extract_traffic_light_program
 from src.movement.features import (
     LaneGroupGeometry,
@@ -123,6 +125,24 @@ def test_graph_max_pressure_scores_use_visible_lane_group_features() -> None:
     )
 
     assert graph_max_pressure_scores_from_features(graph, frame) == (6.0, 4.0)
+
+
+def test_collection_inserts_initial_population_before_first_sample(tmp_path: Path) -> None:
+    output_path = tmp_path / 'samples.jsonl'
+
+    collect_samples(
+        cfg_path=ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg',
+        output_path=output_path,
+        steps=15,
+        decision_interval=15,
+        seed=42,
+        demand_scale=1.0,
+        initial_occupancy=0.06,
+    )
+
+    samples = load_jsonl_samples(output_path)
+    assert len(samples) == 1
+    assert int(samples[0].metadata['vehicle_count']) > 0
 
 
 def _halted_vehicles(prefix: str, edge_id: str, count: int) -> tuple[VehicleSnapshot, ...]:

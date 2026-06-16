@@ -59,6 +59,8 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help='Multiplier applied to route-file flow demand at runtime',
     )
+    parser.add_argument('--initial-occupancy-min', type=float, default=0.05)
+    parser.add_argument('--initial-occupancy-max', type=float, default=0.08)
     return parser.parse_args()
 
 
@@ -91,6 +93,8 @@ def main() -> None:
                 min_green_steps=args.min_green_steps,
                 learned_policy_config=learned_policy_config,
                 demand_scale=args.demand_scale,
+                initial_occupancy_min=args.initial_occupancy_min,
+                initial_occupancy_max=args.initial_occupancy_max,
             )
             records.append(
                 EvaluationRecord(

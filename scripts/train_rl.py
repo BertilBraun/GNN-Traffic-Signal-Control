@@ -21,9 +21,15 @@ def parse_args() -> argparse.Namespace:
         description='PPO fine-tuning for movement-score traffic signal policies.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument('--il-checkpoint', type=Path, required=True, help='IL movement checkpoint path')
+    initialization = parser.add_mutually_exclusive_group(required=True)
+    initialization.add_argument('--il-checkpoint', type=Path, help='IL movement checkpoint for a new PPO run')
+    initialization.add_argument(
+        '--resume-checkpoint',
+        type=Path,
+        help='PPO checkpoint whose model, optimizer, RNG, and iteration state will be resumed',
+    )
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
-    parser.add_argument('--iterations', type=int, default=50, help='PPO collect-update iterations')
+    parser.add_argument('--iterations', type=int, default=50, help='Final target PPO iteration')
     parser.add_argument('--steps-per-rollout', type=int, default=120, help='Decision steps collected per iteration')
     parser.add_argument('--decision-interval', type=int, default=15, help='Simulation seconds per decision')
     parser.add_argument('--lr', type=float, default=1e-4, help='Adam learning rate')
@@ -39,10 +45,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--transitions-per-batch', type=int, default=8, help='Decision transitions per minibatch')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
-    parser.add_argument('--demand-scale', type=float, default=0.65, help='Rollout demand multiplier')
-    parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global wait-delta reward weight')
+    parser.add_argument('--demand-scale', type=float, default=1.0, help='Rollout demand multiplier')
+    parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global delay-density reward weight')
     parser.add_argument('--reward-clip', type=float, default=1.0, help='Absolute per-decision reward limit')
     parser.add_argument('--teleport-penalty', type=float, default=0.0, help='Global reward penalty per teleport')
+    parser.add_argument(
+        '--max-teleports-per-rollout',
+        type=int,
+        default=10,
+        help='Skip an optimizer update when its rollout exceeds this teleport count',
+    )
+    parser.add_argument('--target-kl', type=float, default=0.02, help='Stop PPO epochs above this approximate KL')
     parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
     parser.add_argument(
         '--initial-occupancy-min',
@@ -77,14 +90,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--log-dir', type=Path, default=None, help='TensorBoard log directory')
     parser.add_argument('--device', default='cpu', help='Torch device')
     parser.add_argument('--seed', type=int, default=42, help='Torch and SUMO seed')
+    parser.add_argument(
+        '--fixed-rollout-seed',
+        type=int,
+        default=None,
+        help='Use the same SUMO demand and initial population for every rollout',
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / stamp
-    log_dir = args.log_dir or ROOT / 'runs' / 'rl' / stamp
+    run_name = args.resume_checkpoint.parent.name if args.resume_checkpoint is not None else stamp
+    checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / run_name
+    log_dir = args.log_dir or ROOT / 'runs' / 'rl' / run_name
     result = train_movement_ppo(
         MovementPpoConfig(
             cfg_path=args.cfg,
@@ -109,6 +129,8 @@ def main() -> None:
             global_reward_weight=args.global_reward_weight,
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
+            max_teleports_per_rollout=args.max_teleports_per_rollout,
+            target_kl=args.target_kl,
             gui=args.gui,
             initial_occupancy_min=args.initial_occupancy_min,
             initial_occupancy_max=args.initial_occupancy_max,
@@ -123,6 +145,8 @@ def main() -> None:
             log_dir=log_dir,
             device=args.device,
             seed=args.seed,
+            fixed_rollout_seed=args.fixed_rollout_seed,
+            resume_checkpoint_path=args.resume_checkpoint,
         )
     )
     print(f'PPO training complete: iterations={result.iterations} checkpoint={result.checkpoint_path}')
