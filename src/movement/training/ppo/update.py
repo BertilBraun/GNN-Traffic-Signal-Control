@@ -15,7 +15,7 @@ from src.movement.normalization import RunningNormalizer
 from src.movement.training.ppo.policy import forward_policy, masked_phase_logits, policy_context_from_sample
 from src.movement.training.ppo.types import MovementPpoConfig
 from src.movement.training.rollout import MovementRolloutBuffer
-from src.movement.training.rollout_types import MovementPpoBatch
+from src.movement.training.rollout.types import MovementPpoBatch
 
 
 @dataclass(frozen=True)

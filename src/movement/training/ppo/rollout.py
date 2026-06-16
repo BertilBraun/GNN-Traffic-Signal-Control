@@ -46,7 +46,7 @@ from src.movement.training.ppo.types import (
     RolloutStats,
 )
 from src.movement.training.rollout import MovementRolloutBuffer
-from src.movement.training.rollout_types import MovementTransition
+from src.movement.training.rollout.types import MovementTransition
 
 
 @dataclass(frozen=True)

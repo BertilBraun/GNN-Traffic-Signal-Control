@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import torch
 
-from src.movement.training.rollout_types import MovementTransition
+from src.movement.training.rollout.types import MovementTransition
 
 
 @dataclass(frozen=True)

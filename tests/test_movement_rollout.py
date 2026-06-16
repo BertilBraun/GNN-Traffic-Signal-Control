@@ -15,7 +15,7 @@ from src.movement.training.ppo.rollout import rollout_seed
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.rollout import MovementRolloutBuffer
-from src.movement.training.rollout_types import MovementTransition
+from src.movement.training.rollout.types import MovementTransition
 
 
 def _sample() -> MovementDatasetSample:

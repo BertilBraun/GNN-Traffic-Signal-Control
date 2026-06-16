@@ -6,8 +6,8 @@ from collections.abc import Iterator, Sequence
 
 import torch
 
-from src.movement.training.rollout_math import compute_rollout_targets, normalize_advantages
-from src.movement.training.rollout_types import MovementPpoBatch, MovementTransition
+from src.movement.training.rollout.math import compute_rollout_targets, normalize_advantages
+from src.movement.training.rollout.types import MovementPpoBatch, MovementTransition
 
 
 class MovementRolloutBuffer:
