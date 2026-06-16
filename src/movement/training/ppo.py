@@ -425,7 +425,7 @@ def _rollout_seed(
     fixed_rollout_seed: int | None,
 ) -> int:
     if fixed_rollout_seed is not None:
-        return fixed_rollout_seed + rollout_index
+        return fixed_rollout_seed
     return training_seed + iteration * rollouts_per_update + rollout_index
 
 

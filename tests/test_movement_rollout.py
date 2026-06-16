@@ -113,7 +113,7 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
             rollouts_per_update=4,
             fixed_rollout_seed=100,
         )
-        == 102
+        == 100
     )
 
 
