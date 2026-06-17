@@ -11,9 +11,12 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import src.movement.training.il as il_package  # noqa: E402
 import src.movement.training.il.checkpoint as il_checkpoint  # noqa: E402
 import src.movement.training.il.tensors as il_tensors  # noqa: E402
 import src.movement.training.il.types as il_types  # noqa: E402
+import src.movement.training.ppo as ppo_package  # noqa: E402
+import src.movement.training.ppo.types as ppo_types  # noqa: E402
 import src.movement.training.rollout as rollout  # noqa: E402
 import src.movement.training.rollout.math as rollout_math  # noqa: E402
 import src.movement.training.rollout.types as rollout_types  # noqa: E402
@@ -47,6 +50,8 @@ def main() -> None:
 
 
 def install_legacy_module_aliases() -> None:
+    install_il_package_attributes()
+    install_ppo_package_attributes()
     module_aliases = {
         'src.movement.training.il_checkpoint': il_checkpoint,
         'src.movement.training.il_tensors': il_tensors,
@@ -57,6 +62,29 @@ def install_legacy_module_aliases() -> None:
     }
     for legacy_name, current_module in module_aliases.items():
         sys.modules[legacy_name] = current_module
+
+
+def install_il_package_attributes() -> None:
+    il_package.MovementCheckpointMetadata = il_checkpoint.MovementCheckpointMetadata
+    il_package.MovementCheckpointPayload = il_checkpoint.MovementCheckpointPayload
+    il_package.NormalizerState = il_checkpoint.NormalizerState
+    il_package.MovementILLoss = il_types.MovementILLoss
+    il_package.MovementILTrainingConfig = il_types.MovementILTrainingConfig
+    il_package.MovementILTrainingResult = il_types.MovementILTrainingResult
+    il_package.MovementILTrainingSnapshot = il_types.MovementILTrainingSnapshot
+
+
+def install_ppo_package_attributes() -> None:
+    ppo_package.CollectedRollout = ppo_types.CollectedRollout
+    ppo_package.IntervalRewardResult = ppo_types.IntervalRewardResult
+    ppo_package.MovementPpoCheckpoint = ppo_types.MovementPpoCheckpoint
+    ppo_package.MovementPpoConfig = ppo_types.MovementPpoConfig
+    ppo_package.MovementPpoTrainingResult = ppo_types.MovementPpoTrainingResult
+    ppo_package.PolicyContext = ppo_types.PolicyContext
+    ppo_package.RolloutContext = ppo_types.RolloutContext
+    ppo_package.RolloutStats = ppo_types.RolloutStats
+    ppo_package.TrainingDiagnostics = ppo_types.TrainingDiagnostics
+    ppo_package.TrainingEvaluationResult = ppo_types.TrainingEvaluationResult
 
 
 if __name__ == '__main__':
