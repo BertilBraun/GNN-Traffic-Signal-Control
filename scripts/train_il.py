@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
         help='Decision samples collected from each simulation',
     )
     parser.add_argument('--collection-seed', type=int, default=42, help='First automatic collection seed')
-    parser.add_argument('--decision-interval', type=int, default=15, help='Seconds between collected samples')
+    parser.add_argument('--decision-interval', type=int, default=10, help='Seconds between collected samples')
     parser.add_argument(
         '--demand-scale',
         type=float,
@@ -148,7 +148,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=None,
+        default=-1,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     return parser.parse_args()

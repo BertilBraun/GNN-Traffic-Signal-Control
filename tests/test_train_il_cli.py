@@ -96,11 +96,12 @@ def test_train_il_cli_uses_dataset_and_evaluation_defaults(monkeypatch) -> None:
     assert args.samples == 4800
     assert args.samples_per_simulation == 240
     assert args.collection_seed == 42
+    assert args.decision_interval == 10
     assert args.samples_per_batch == 32
     assert args.eval_every_epochs == 10
     assert args.eval_seeds == [100, 101]
     assert args.determinism_check_samples == 20
-    assert args.time_to_teleport is None
+    assert args.time_to_teleport == -1
 
 
 def test_training_evaluation_caches_deterministic_baseline(tmp_path: Path, monkeypatch) -> None:

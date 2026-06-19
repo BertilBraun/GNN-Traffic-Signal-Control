@@ -1981,6 +1981,12 @@ Acceptance:
 
 ## Milestone 10: OSM Build Integration
 
+Current status:
+
+PPO now shows useful generated-grid transfer. The reference checkpoint trained
+on the 3x3 dedicated grid improves completed-trip metrics on the 4x4 dedicated
+grid at demand scale `0.65`; see `docs/current_training_results.md`.
+
 Deliverables:
 
 ```text
@@ -2004,6 +2010,16 @@ Acceptance:
 * generated phases are valid;
 * movement programs are extracted cleanly;
 * diagnostics identify unsupported/problematic junctions.
+
+Immediate next checks before city training:
+
+* evaluate the current best checkpoint on 4x4 with more seeds and longer
+  episodes;
+* sweep demand scales, currently targeting `0.5`, `0.65`, `0.85`, and `1.0`;
+* choose a demand range that produces visually meaningful queues without
+  routine gridlock;
+* keep 10 s decisions and disabled SUMO gridlock teleporting as the default
+  training/evaluation setup.
 
 ---
 
@@ -2044,6 +2060,7 @@ Responsibilities:
 
 * train on multiple generated grids;
 * train on generated + city networks later;
+* sample a subset of city networks per PPO update once city configs are stable;
 * evaluate on held-out networks;
 * compare normalizer strategies.
 
@@ -2052,3 +2069,12 @@ Acceptance:
 * results table covers train-network set vs evaluation-network set;
 * transfer performance is reported relative to max pressure and queue;
 * normalization sensitivity is documented.
+
+Planned city-network first pass:
+
+* build roughly 10 visually inspected city networks with calibrated demand;
+* train on nine and hold one out for transfer evaluation;
+* rotate the held-out city once the first split is stable;
+* start by continuing from the generated-grid checkpoint instead of training
+  city PPO from scratch;
+* evaluate against max-pressure and queue on the held-out network.

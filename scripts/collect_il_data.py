@@ -361,7 +361,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--cfg', required=True, type=Path, help='SUMO .sumocfg path')
     parser.add_argument('--out', required=True, type=Path, help='Output JSONL path')
     parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds')
-    parser.add_argument('--decision-interval', type=int, default=15, help='Sample interval')
+    parser.add_argument('--decision-interval', type=int, default=10, help='Sample interval')
     parser.add_argument('--seed', type=int, default=42, help='SUMO random seed')
     parser.add_argument(
         '--demand-scale',
@@ -379,7 +379,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=None,
+        default=-1,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     return parser.parse_args()

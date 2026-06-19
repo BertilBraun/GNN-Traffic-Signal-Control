@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--device', default='cpu', help='Torch device for learned policy inference')
     parser.add_argument('--seeds', nargs='+', type=int, default=[42], help='SUMO random seeds')
     parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds per episode')
-    parser.add_argument('--decision-interval', type=int, default=15, help='Seconds between policy decisions')
+    parser.add_argument('--decision-interval', type=int, default=10, help='Seconds between policy decisions')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration in seconds')
     parser.add_argument(
         '--min-green-steps',
@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=None,
+        default=-1,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     return parser.parse_args()

@@ -27,3 +27,5 @@ def test_run_cli_accepts_learned_checkpoint(monkeypatch) -> None:
     assert args.method == 'learned'
     assert args.checkpoint == Path('checkpoints/il/example/movement_policy_best.pt')
     assert args.demand_scale == 0.25
+    assert args.decision_interval == 10
+    assert args.time_to_teleport == -1

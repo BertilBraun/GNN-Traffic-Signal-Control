@@ -92,9 +92,14 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
 
     args = train_rl.parse_args()
 
-    assert args.lr == 1e-4
+    assert args.iterations == 300
+    assert args.steps_per_rollout == 360
+    assert args.decision_interval == 10
+    assert args.lr == 2e-4
     assert args.clip == 0.1
     assert args.entropy_coeff == 0.01
+    assert args.value_warmup_iterations == 20
+    assert args.transitions_per_batch == 32
     assert args.cfg.name == 'grid.sumocfg'
     assert args.cfg.parent.name == 'grid_3x3_dedicated'
     assert args.demand_scale == 1.0
@@ -104,9 +109,9 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.global_reward_weight == 0.1
     assert args.reward_clip == 1.0
     assert args.teleport_penalty == 0.0
-    assert args.max_teleports_per_rollout == 10
-    assert args.target_kl == 0.02
-    assert args.rollouts_per_update == 1
-    assert args.num_workers == 1
+    assert args.max_teleports_per_rollout == 999
+    assert args.target_kl == 0.03
+    assert args.rollouts_per_update == 3
+    assert args.num_workers == 3
     assert args.fixed_rollout_seed is None
-    assert args.time_to_teleport is None
+    assert args.time_to_teleport == -1

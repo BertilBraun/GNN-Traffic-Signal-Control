@@ -161,7 +161,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--gui', action='store_true', help='Run sumo-gui instead of headless sumo')
     parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds to run')
-    parser.add_argument('--decision-interval', type=int, default=15, help='Seconds between phase decisions')
+    parser.add_argument('--decision-interval', type=int, default=10, help='Seconds between phase decisions')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow seconds inserted before a new green')
     parser.add_argument(
         '--min-green-steps',
@@ -192,7 +192,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=None,
+        default=-1,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     parser.add_argument('--verbose', action='store_true', help='Print selected phases each decision')

@@ -48,6 +48,8 @@ Defaults:
 initial occupancy: 5% to 8%
 training demand scale: 100%
 evaluation demand scale: 100%
+decision interval: 10 s
+SUMO gridlock teleporting: disabled
 ```
 
 Both can be configured:
@@ -80,11 +82,12 @@ global delay-density components separately.
 Teleport events are logged but are not penalized by default. They can include
 route/lane-feasibility failures that are not attributable to one signal action;
 penalizing every junction for them can overwhelm the wait-density reward.
-SUMO gridlock teleporting can be disabled with `--time-to-teleport -1`, but the
-training scripts leave it enabled so deadlocks remain bounded and visible in
-the teleport metric.
-Rollouts with more than 10 teleports are excluded from optimization by default.
-PPO update epochs also stop when approximate KL exceeds `0.02`.
+SUMO gridlock teleporting is disabled by default with `--time-to-teleport -1`.
+This makes gridlock visible through degraded queue, wait, and completion
+metrics rather than having SUMO silently remove stuck vehicles. Rollouts with
+more than 999 teleports are excluded from optimization by default; this is
+mostly a guard against route/lane feasibility failures when teleporting has
+not been disabled. PPO update epochs stop when approximate KL exceeds `0.03`.
 
 Training logs include mean reward and return, critic explained variance,
 rollout and update duration, teleport count, and all PPO losses. Diagnostic
@@ -122,6 +125,31 @@ teleportation from acting like successful discharge. The score is logged as
 The best learned checkpoint is saved as `movement_policy_best.pt` and
 `movement_ppo_best.pt`; the final iteration remains available through the
 `latest` checkpoints.
+
+## Current Reference Result
+
+The current reference checkpoint is
+`checkpoints\rl\2026-06-16_15-35-33\movement_policy_best.pt`. It was trained
+from the ETA-to-queue-tail IL schema on the generated 3x3 dedicated-lane grid
+and reached its best fixed-seed validation near PPO iteration 270.
+
+A preliminary 4x4 transfer evaluation at demand scale `0.65`, seeds
+`100 101 102`, 600 simulation seconds, and 10 s decisions showed:
+
+```text
+metric                 max-pressure      queue      learned
+completion rate              73.6%      74.3%        77.7%
+throughput                  2776/h     2804/h       2930/h
+average waiting time        81.41s     76.18s       55.72s
+average travel time        193.47s    188.89s      162.11s
+average time loss          116.33s    111.57s       84.09s
+TLS stops / vehicle           3.34       3.34         2.31
+nonstop TLS pass rate        18.4%      19.2%        45.1%
+```
+
+The result is encouraging but still preliminary. The next validation should use
+more seeds, longer episodes, and a demand sweep to measure where the learned
+policy degrades.
 
 ## Resuming PPO
 

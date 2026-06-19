@@ -29,22 +29,22 @@ def parse_args() -> argparse.Namespace:
         help='PPO checkpoint whose model, optimizer, RNG, and iteration state will be resumed',
     )
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
-    parser.add_argument('--iterations', type=int, default=50, help='Final target PPO iteration')
-    parser.add_argument('--steps-per-rollout', type=int, default=120, help='Decision steps collected per iteration')
-    parser.add_argument('--rollouts-per-update', type=int, default=1, help='Independent rollouts collected per PPO update')
-    parser.add_argument('--num-workers', type=int, default=1, help='Parallel SUMO rollout worker processes')
-    parser.add_argument('--decision-interval', type=int, default=15, help='Simulation seconds per decision')
-    parser.add_argument('--lr', type=float, default=1e-4, help='Adam learning rate')
+    parser.add_argument('--iterations', type=int, default=300, help='Final target PPO iteration')
+    parser.add_argument('--steps-per-rollout', type=int, default=360, help='Decision steps collected per iteration')
+    parser.add_argument('--rollouts-per-update', type=int, default=3, help='Independent rollouts collected per PPO update')
+    parser.add_argument('--num-workers', type=int, default=3, help='Parallel SUMO rollout worker processes')
+    parser.add_argument('--decision-interval', type=int, default=10, help='Simulation seconds per decision')
+    parser.add_argument('--lr', type=float, default=2e-4, help='Adam learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--lam', type=float, default=0.95, help='GAE lambda')
     parser.add_argument('--clip', type=float, default=0.1, help='PPO clipping epsilon')
     parser.add_argument('--epochs', type=int, default=4, help='PPO update epochs')
-    parser.add_argument('--value-warmup-iterations', type=int, default=10, help='Value-only warmup iterations')
+    parser.add_argument('--value-warmup-iterations', type=int, default=20, help='Value-only warmup iterations')
     parser.add_argument('--warmup-epochs', type=int, default=8, help='Update epochs during value warmup')
     parser.add_argument('--value-coeff', type=float, default=0.5, help='Value loss coefficient')
     parser.add_argument('--entropy-coeff', type=float, default=0.01, help='Entropy bonus coefficient')
     parser.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clipping norm')
-    parser.add_argument('--transitions-per-batch', type=int, default=8, help='Decision transitions per minibatch')
+    parser.add_argument('--transitions-per-batch', type=int, default=32, help='Decision transitions per minibatch')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
     parser.add_argument('--demand-scale', type=float, default=1.0, help='Rollout demand multiplier')
@@ -54,16 +54,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--max-teleports-per-rollout',
         type=int,
-        default=10,
+        default=999,
         help='Skip an optimizer update when its rollout exceeds this teleport count',
     )
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=None,
+        default=-1,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
-    parser.add_argument('--target-kl', type=float, default=0.02, help='Stop PPO epochs above this approximate KL')
+    parser.add_argument('--target-kl', type=float, default=0.03, help='Stop PPO epochs above this approximate KL')
     parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
     parser.add_argument(
         '--initial-occupancy-min',
