@@ -15,20 +15,20 @@ def test_conflict_phases_do_not_partially_open_shared_incoming_lane() -> None:
     links = [
         TrafficLightLinkSpec(
             traffic_light_link_index=0,
-            incoming_lane_id=LaneId("lane_a"),
-            outgoing_edge_id="edge_x",
+            incoming_lane_id=LaneId('lane_a'),
+            outgoing_edge_id='edge_x',
             request_index=0,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=1,
-            incoming_lane_id=LaneId("lane_a"),
-            outgoing_edge_id="edge_y",
+            incoming_lane_id=LaneId('lane_a'),
+            outgoing_edge_id='edge_y',
             request_index=1,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=2,
-            incoming_lane_id=LaneId("lane_b"),
-            outgoing_edge_id="edge_z",
+            incoming_lane_id=LaneId('lane_b'),
+            outgoing_edge_id='edge_z',
             request_index=2,
         ),
     ]
@@ -42,21 +42,21 @@ def test_conflict_phases_do_not_partially_open_shared_incoming_lane() -> None:
         are_foes=are_foes,
     )
 
-    assert [str(state) for state in states] == ["GGr", "rrG"]
+    assert [str(state) for state in states] == ['GGr', 'rrG']
 
 
 def test_conflict_phases_allow_same_incoming_lane_to_same_outgoing_edge() -> None:
     links = [
         TrafficLightLinkSpec(
             traffic_light_link_index=0,
-            incoming_lane_id=LaneId("lane_a"),
-            outgoing_edge_id="edge_x",
+            incoming_lane_id=LaneId('lane_a'),
+            outgoing_edge_id='edge_x',
             request_index=0,
         ),
         TrafficLightLinkSpec(
             traffic_light_link_index=1,
-            incoming_lane_id=LaneId("lane_a"),
-            outgoing_edge_id="edge_x",
+            incoming_lane_id=LaneId('lane_a'),
+            outgoing_edge_id='edge_x',
             request_index=1,
         ),
     ]
@@ -70,4 +70,27 @@ def test_conflict_phases_allow_same_incoming_lane_to_same_outgoing_edge() -> Non
         are_foes=are_foes,
     )
 
-    assert [str(state) for state in states] == ["GG"]
+    assert [str(state) for state in states] == ['GG']
+
+
+def test_conflict_phase_synthesis_groups_shared_lanes_before_search() -> None:
+    links = [
+        TrafficLightLinkSpec(
+            traffic_light_link_index=link_index,
+            incoming_lane_id=LaneId(f'lane_{link_index // 3}'),
+            outgoing_edge_id=f'edge_{link_index}',
+            request_index=link_index,
+        )
+        for link_index in range(24)
+    ]
+
+    def are_foes(first: int, second: int) -> bool:
+        return False
+
+    states = build_conflict_phase_states(
+        links=links,
+        number_of_links=24,
+        are_foes=are_foes,
+    )
+
+    assert [str(state) for state in states] == ['G' * 24]

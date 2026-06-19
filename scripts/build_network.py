@@ -43,6 +43,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.dom import minidom
 
+import tqdm
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -111,7 +113,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         '--verify',
         action='store_true',
-        help='Launch SUMO-GUI with greedy expert after build',
+        help='Launch SUMO-GUI with movement max-pressure after build',
     )
     p.add_argument(
         '--route-count',
@@ -797,7 +799,7 @@ def _audit(net) -> tuple[list[str], list[str], list[tuple[str, int]]]:
 
     print(f'  3-way TL junctions : {len(three_way)}')
     print(f'  4-way TL junctions : {len(four_way)}')
-    print(f'  Other (skipped)    : {len(other)}')
+    print(f'  Other TL arm counts: {len(other)}')
     for jid, n in other:
         print(f'    {jid}  ({n} arms)')
     return three_way, four_way, other
@@ -833,7 +835,7 @@ def _build_tll(net, net_path: Path, tll_path: Path) -> int:
     written = 0
     skipped: list[tuple[str, str]] = []
 
-    for node in sorted(net.getNodes(), key=lambda n: n.getID()):
+    for node in tqdm.tqdm(sorted(net.getNodes(), key=lambda n: n.getID()), total=len(net.getNodes())):
         if node.getType() not in TL_TYPES:
             continue
         jid = node.getID()
