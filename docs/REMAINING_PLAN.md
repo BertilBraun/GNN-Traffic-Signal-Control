@@ -1987,6 +1987,14 @@ PPO now shows useful generated-grid transfer. The reference checkpoint trained
 on the 3x3 dedicated grid improves completed-trip metrics on the 4x4 dedicated
 grid at demand scale `0.65`; see `docs/current_training_results.md`.
 
+First movement-based OSM support is now implemented in `scripts/build_network.py`.
+The city build path writes movement-safe conflict-synthesized `.tll.xml`
+programs, simple deterministic city O-D flows, detectors, and a SUMO config
+for the active movement runtime. `scripts/inspect_movement_city.py` validates a
+city config by starting `MovementControlRuntime`, extracting selectable
+programs, building the movement graph, and reporting skipped traffic lights and
+suspicious graph structure. Usage commands are in `docs/city_osm_usage.md`.
+
 Deliverables:
 
 ```text
@@ -1995,21 +2003,22 @@ city config generation docs
 visual verification command
 ```
 
-Responsibilities:
+Remaining responsibilities:
 
-* replace fixed canonical traffic-light generation with movement synthesis;
-* ensure `.tll.xml` programs load;
-* ensure movement programs are extracted for all intended traffic lights;
-* generate detectors/routes/configs;
-* run baseline policies visually.
+* visually inspect a small set of generated city configs in SUMO-GUI;
+* confirm every intended traffic light extracts selectable phases;
+* tune simple demand levels for baseline checks, initially around `0.4..0.85`;
+* document or demote any traffic lights that remain unsupported after
+  inspection;
+* run baseline policies visually and through `scripts/eval_policy.py`.
 
 Acceptance:
 
-* city network builds;
-* max-pressure baseline runs visually;
+* city network builds with movement-safe `.tll.xml` programs;
+* `scripts/inspect_movement_city.py` reports clean or actionable graph status;
+* max-pressure and queue baselines run visually;
 * generated phases are valid;
-* movement programs are extracted cleanly;
-* diagnostics identify unsupported/problematic junctions.
+* movement programs are extracted cleanly for intended control nodes.
 
 Immediate next checks before city training:
 

@@ -1,4 +1,4 @@
-"""Build a SUMO network from OSM and verify it visually with the greedy expert.
+"""Build a SUMO network from OSM for movement-based signal control.
 
 Pipeline
 --------
@@ -10,10 +10,10 @@ Pipeline
    count / speed / name
 4. Promote 3+arm junctions to traffic_light via --tls.set
 5. Audit       — junction-arm-count table
-6. TLL         — canonical 8-phase signal programs
+6. TLL         — movement-safe conflict-synthesized signal programs
 7. Detectors   — E2 laneAreaDetectors on incoming TL lanes (≤200 m)
 8. sumocfg     — ties everything together
-9. Verify      — launches SUMO-GUI with the greedy expert (--verify)
+9. Verify      — launches SUMO-GUI with the movement max-pressure runner
 
 Usage
 -----
@@ -31,8 +31,9 @@ Usage
 from __future__ import annotations
 
 import argparse
-import math
 import os
+import random
+import re
 import shutil
 import subprocess
 import sys
@@ -50,7 +51,11 @@ sys.path.append(os.path.join(SUMO_HOME, 'tools'))
 
 import sumolib  # noqa: E402  (needs SUMO_HOME on path first)
 
-from src.environment.phase_schema import NUM_PHASES, SLOT_DIR_PHASES  # noqa: E402
+from src.movement.phase_synthesis import (  # noqa: E402
+    TrafficLightLinkSpec,
+    synthesize_traffic_light_program,
+)
+from src.movement.schema import LaneId, TrafficLightId  # noqa: E402
 
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -58,6 +63,8 @@ YELLOW_DUR = 3
 ALLRED_DUR = 2
 GREEN_DUR = 25
 DET_NOMINAL = 200.0
+DEFAULT_ROUTE_COUNT = 120
+DEFAULT_DEMAND_VEHICLES_PER_HOUR = 900.0
 
 TL_TYPES = {'traffic_light', 'traffic_light_unregulated', 'traffic_light_right_on_red'}
 
@@ -107,19 +114,18 @@ def _parse_args() -> argparse.Namespace:
         help='Launch SUMO-GUI with greedy expert after build',
     )
     p.add_argument(
-        '--flow-range',
-        nargs=2,
+        '--route-count',
         type=int,
-        default=[700, 1200],
-        metavar=('MIN', 'MAX'),
-        help='Traffic demand range for verify step (veh/h)',
+        default=DEFAULT_ROUTE_COUNT,
+        metavar='N',
+        help='Maximum deterministic city O-D routes written to the route file',
     )
     p.add_argument(
-        '--demand-min-rate',
+        '--demand-vehicles-per-hour',
         type=float,
-        default=1.0,
-        metavar='R',
-        help='Min veh/h per O-D pair for verify step',
+        default=DEFAULT_DEMAND_VEHICLES_PER_HOUR,
+        metavar='VPH',
+        help='Total background demand distributed across generated city O-D routes',
     )
     return p.parse_args()
 
@@ -167,7 +173,6 @@ def _run_netconvert(osm_path: Path, net_path: Path, join_dist: float) -> None:
     # new phantom TLs and pass-throughs (e.g., TLs whose neighbors got merged).
     _plain_xml_cleanup(net_path, join_dist, netconvert)
     _final_phantom_tl_demote(net_path)
-    _final_unsupported_tl_demote(net_path)
     print(f'  Wrote {net_path}')
 
 
@@ -743,8 +748,6 @@ def _final_phantom_tl_demote(net_path: Path) -> None:
     any TL that slips through (e.g., a junction whose arm count changed in
     the rebuild). Pure text substitution preserves file formatting.
     """
-    import re
-
     net = sumolib.net.readNet(str(net_path), withConnections=True)
     content = net_path.read_text(encoding='utf-8')
 
@@ -774,43 +777,6 @@ def _final_phantom_tl_demote(net_path: Path) -> None:
         print(f'  Final demotion: {len(demoted)} junctions back to priority')
 
 
-def _unsupported_tl_ids_by_incoming_count(net) -> list[str]:
-    """Return TL node IDs that the current 3/4-arm representation cannot manage."""
-    unsupported: list[str] = []
-    for node in net.getNodes():
-        if node.getType() not in TL_TYPES:
-            continue
-        if len(node.getIncoming()) not in (3, 4):
-            unsupported.append(node.getID())
-    return sorted(unsupported)
-
-
-def _final_unsupported_tl_demote(net_path: Path) -> None:
-    """Demote TLs that cannot be represented by TrafficEnv.
-
-    Leaving 1/2/5+-incoming-arm TLs as signalized nodes means SUMO runs them
-    with stub programs while the model and expert ignore them.  That creates
-    unmanaged signal behavior in evaluation and training.  If the current
-    representation cannot control a junction, keep it as priority traffic.
-    """
-    import re
-
-    net = sumolib.net.readNet(str(net_path), withConnections=True)
-    demoted = _unsupported_tl_ids_by_incoming_count(net)
-    if not demoted:
-        return
-
-    content = net_path.read_text(encoding='utf-8')
-    for jid in demoted:
-        content = re.sub(
-            rf'(<junction\b(?=[^>]*\bid="{re.escape(jid)}")[^>]*)type="traffic_light[^"]*"',
-            r'\1type="priority"',
-            content,
-        )
-    net_path.write_text(content, encoding='utf-8')
-    print(f'  Final unsupported demotion: {len(demoted)} TL junctions back to priority')
-
-
 # ---------------------------------------------------------------------------
 # Step 3 — audit
 # ---------------------------------------------------------------------------
@@ -838,89 +804,8 @@ def _audit(net) -> tuple[list[str], list[str], list[tuple[str, int]]]:
 
 
 # ---------------------------------------------------------------------------
-# Step 4 — TLL builder
+# Step 4 — movement TLL builder
 # ---------------------------------------------------------------------------
-
-
-def _bearing(from_xy: tuple, to_xy: tuple) -> float:
-    dx = to_xy[0] - from_xy[0]
-    dy = to_xy[1] - from_xy[1]
-    return math.degrees(math.atan2(dx, dy)) % 360
-
-
-def _approach_bearing(edge) -> float:
-    shape = edge.getShape()
-    if len(shape) < 2:
-        return 0.0
-    p1, p2 = shape[-2], shape[-1]
-    return _bearing(p2, p1)
-
-
-def _bearing_diff(b1: float, b2: float) -> float:
-    d = abs(b1 - b2) % 360.0
-    return d if d <= 180.0 else 360.0 - d
-
-
-def _slot_order(node) -> list:
-    incoming = list(node.getIncoming())
-    n = len(incoming)
-    if n == 4:
-        return sorted(incoming, key=_approach_bearing)
-    # 3-way: find the pair closest to 180° apart -> slots 0/2; stem -> slot 1
-    bearings = [(_approach_bearing(e), e) for e in incoming]
-    best_diff = float('inf')
-    best_pair = (0, 1)
-    for i in range(3):
-        for j in range(i + 1, 3):
-            d = _bearing_diff(bearings[i][0], bearings[j][0])
-            diff = abs(d - 180.0)
-            if diff < best_diff:
-                best_diff = diff
-                best_pair = (i, j)
-    i, j = best_pair
-    stem_idx = next(k for k in range(3) if k not in best_pair)
-    b_i, b_j = bearings[i][0], bearings[j][0]
-    if b_i <= b_j:
-        slot0_edge, slot2_edge = bearings[i][1], bearings[j][1]
-    else:
-        slot0_edge, slot2_edge = bearings[j][1], bearings[i][1]
-    return [slot0_edge, bearings[stem_idx][1], slot2_edge]
-
-
-def _build_phase_strings(node) -> tuple[list[str], list[str], str] | None:
-    incoming = list(node.getIncoming())
-    if len(incoming) not in (3, 4):
-        return None
-    slots = _slot_order(node)
-    slot_map = {e.getID(): i for i, e in enumerate(slots)}
-
-    link_info: list[tuple[int, str, str]] = []
-    for in_edge in node.getIncoming():
-        for out_edge in in_edge.getOutgoing():
-            for conn in in_edge.getConnections(out_edge):
-                tl_idx = conn.getTLLinkIndex()
-                if tl_idx < 0:
-                    continue
-                link_info.append((tl_idx, in_edge.getID(), conn.getDirection()))
-
-    if not link_info:
-        return None
-
-    n_links = max(t[0] for t in link_info) + 1
-    phase_states = [['r'] * n_links for _ in range(NUM_PHASES)]
-
-    for tl_idx, from_edge, direction in link_info:
-        slot_idx = slot_map.get(from_edge)
-        if slot_idx is None:
-            continue
-        for ph, ch in SLOT_DIR_PHASES.get((slot_idx, direction.lower()), []):
-            existing = phase_states[ph][tl_idx]
-            if existing == 'r' or (existing == 'g' and ch == 'G'):
-                phase_states[ph][tl_idx] = ch
-
-    green_states = [''.join(s) for s in phase_states]
-    yellow_states = [''.join('y' if c in 'Gg' else 'r' for c in s) for s in green_states]
-    return green_states, yellow_states, 'r' * n_links
 
 
 def _all_tl_junction_ids(net_path: Path) -> set[str]:
@@ -943,57 +828,97 @@ def _link_count(node) -> int:
     return max(indices) + 1 if indices else 0
 
 
-def _write_stub(root: ET.Element, jid: str, n_links: int) -> None:
-    tll = ET.SubElement(root, 'tlLogic', id=jid, type='static', programID='canonical', offset='0')
-    ET.SubElement(tll, 'phase', duration='30', state='G' * max(n_links, 1))
-    ET.SubElement(tll, 'phase', duration='3', state='y' * max(n_links, 1))
-
-
 def _build_tll(net, net_path: Path, tll_path: Path) -> int:
     root = ET.Element('additional')
     written = 0
-    covered: set[str] = set()
-
-    node_map = {n.getID(): n for n in net.getNodes()}
+    skipped: list[tuple[str, str]] = []
 
     for node in sorted(net.getNodes(), key=lambda n: n.getID()):
         if node.getType() not in TL_TYPES:
             continue
         jid = node.getID()
-        n_in = len(node.getIncoming())
-
-        if n_in not in (3, 4):
-            _write_stub(root, jid, _link_count(node))
-            covered.add(jid)
+        link_specs = _movement_link_specs(node)
+        if not link_specs:
+            skipped.append((jid, 'no SUMO controlled links'))
+            continue
+        duplicate_signal_indices = _duplicate_signal_indices(link_specs)
+        if duplicate_signal_indices:
+            skipped.append(
+                (
+                    jid,
+                    'shared traffic-light link indices are not supported by city TLL synthesis: '
+                    f'{duplicate_signal_indices}',
+                )
+            )
+            continue
+        try:
+            synthesized_program = synthesize_traffic_light_program(
+                traffic_light_id=TrafficLightId(jid),
+                links=link_specs,
+                are_foes=node.areFoes,
+            )
+        except ValueError as exc:
+            skipped.append((jid, str(exc)))
+            continue
+        if not synthesized_program.selectable_phases:
+            skipped.append((jid, 'movement synthesis produced no selectable phases'))
             continue
 
-        result = _build_phase_strings(node)
-        if result is None:
-            _write_stub(root, jid, _link_count(node))
-            covered.add(jid)
-            print(f'  STUB {jid} (3/4-way, no controlled links)')
-            continue
-
-        greens, yellows, allred = result
-        tll = ET.SubElement(root, 'tlLogic', id=jid, type='static', programID='canonical', offset='0')
-        for g, y in zip(greens, yellows):
-            ET.SubElement(tll, 'phase', duration=str(GREEN_DUR), state=g)
-            ET.SubElement(tll, 'phase', duration=str(YELLOW_DUR), state=y)
+        n_links = max(link.traffic_light_link_index for link in link_specs) + 1
+        allred = 'r' * n_links
+        tll = ET.SubElement(root, 'tlLogic', id=jid, type='static', programID='movement_safe', offset='0')
+        for phase in synthesized_program.selectable_phases:
+            green = str(phase.state)
+            ET.SubElement(tll, 'phase', duration=str(GREEN_DUR), state=green)
+            ET.SubElement(tll, 'phase', duration=str(YELLOW_DUR), state=_yellow_state(green))
             ET.SubElement(tll, 'phase', duration=str(ALLRED_DUR), state=allred)
-        covered.add(jid)
         written += 1
-
-    for jid in sorted(_all_tl_junction_ids(net_path) - covered):
-        node = node_map.get(jid)
-        n_links = _link_count(node) if node else 1
-        _write_stub(root, jid, n_links)
-        print(f'  STUB {jid} (gap-fill)')
 
     xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent='    ')
     xml_str = '\n'.join(xml_str.split('\n')[1:])
     tll_path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + xml_str, encoding='utf-8')
-    print(f'  Wrote {written} canonical + stubs -> {tll_path}')
+    print(f'  Wrote {written} movement-safe traffic-light programs -> {tll_path}')
+    for jid, reason in skipped:
+        print(f'  SKIP {jid}: {reason}')
+    missing = sorted(_all_tl_junction_ids(net_path) - {str(logic.get('id')) for logic in root.findall('tlLogic')})
+    if missing:
+        print(f'  {len(missing)} traffic lights rely on net.xml default programs until inspected/demoted')
     return written
+
+
+def _movement_link_specs(node) -> list[TrafficLightLinkSpec]:
+    specs: list[TrafficLightLinkSpec] = []
+    for incoming in node.getIncoming():
+        for outgoing in incoming.getOutgoing():
+            for connection in incoming.getConnections(outgoing):
+                link_index = int(connection.getTLLinkIndex())
+                if link_index < 0:
+                    continue
+                request_index = int(connection.getJunctionIndex())
+                specs.append(
+                    TrafficLightLinkSpec(
+                        traffic_light_link_index=link_index,
+                        incoming_lane_id=LaneId(str(connection.getFromLane().getID())),
+                        outgoing_lane_id=LaneId(str(connection.getToLane().getID())),
+                        outgoing_edge_id=str(connection.getTo().getID()),
+                        request_index=request_index if request_index >= 0 else None,
+                    )
+                )
+    return sorted(specs, key=lambda spec: spec.traffic_light_link_index)
+
+
+def _duplicate_signal_indices(link_specs: list[TrafficLightLinkSpec]) -> tuple[int, ...]:
+    seen: set[int] = set()
+    duplicates: set[int] = set()
+    for link_spec in link_specs:
+        if link_spec.traffic_light_link_index in seen:
+            duplicates.add(link_spec.traffic_light_link_index)
+        seen.add(link_spec.traffic_light_link_index)
+    return tuple(sorted(duplicates))
+
+
+def _yellow_state(green: str) -> str:
+    return ''.join('y' if char in {'G', 'g'} else 'r' for char in green)
 
 
 # ---------------------------------------------------------------------------
@@ -1032,7 +957,121 @@ def _build_detectors(net, add_path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — sumocfg
+# Step 6 — routes
+# ---------------------------------------------------------------------------
+
+
+def _write_routes(
+    net,
+    rou_path: Path,
+    route_count: int,
+    demand_vehicles_per_hour: float,
+) -> int:
+    routes = _city_routes(net, route_count=route_count)
+    root = ET.Element('routes')
+    ET.SubElement(
+        root,
+        'vType',
+        {
+            'id': 'car',
+            'accel': '2.6',
+            'decel': '4.5',
+            'length': '5.0',
+            'minGap': '2.5',
+            'maxSpeed': '13.89',
+        },
+    )
+    for route_index, edge_ids in enumerate(routes):
+        route_id = f'city_route_{route_index}'
+        ET.SubElement(root, 'route', {'id': route_id, 'edges': ' '.join(edge_ids)})
+        ET.SubElement(
+            root,
+            'flow',
+            {
+                'id': f'city_flow_{route_index}',
+                'type': 'car',
+                'route': route_id,
+                'begin': '0',
+                'end': '3600',
+                'vehsPerHour': f'{demand_vehicles_per_hour / max(len(routes), 1):.3f}',
+                'departLane': 'best',
+                'departSpeed': 'random',
+            },
+        )
+    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent='    ')
+    xml_str = '\n'.join(xml_str.split('\n')[1:])
+    rou_path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + xml_str, encoding='utf-8')
+    print(f'  Wrote {len(routes)} city O-D flows -> {rou_path}')
+    return len(routes)
+
+
+def _city_routes(net, route_count: int) -> tuple[tuple[str, ...], ...]:
+    if route_count <= 0:
+        raise ValueError('route_count must be positive.')
+    candidate_edges = _normal_edges(net)
+    source_edges = _boundary_source_edges(candidate_edges)
+    sink_edges = _boundary_sink_edges(candidate_edges)
+    if not source_edges or not sink_edges:
+        source_edges = candidate_edges
+        sink_edges = candidate_edges
+    routes: list[tuple[str, ...]] = []
+    pairs = [
+        (source, sink)
+        for source in sorted(source_edges, key=lambda edge: str(edge.getID()))
+        for sink in sorted(sink_edges, key=lambda edge: str(edge.getID()))
+        if source != sink
+    ]
+    random.Random(42).shuffle(pairs)
+    for source, sink in pairs:
+        route = _shortest_route(net, source, sink)
+        if route is None or route in routes:
+            continue
+        routes.append(route)
+        if len(routes) >= route_count:
+            break
+    if not routes:
+        raise RuntimeError('No valid city O-D routes found. Inspect network connectivity before running policies.')
+    return tuple(sorted(routes, key=lambda edge_ids: (edge_ids[0], edge_ids[-1], len(edge_ids), edge_ids)))
+
+
+def _normal_edges(net) -> tuple[object, ...]:
+    return tuple(
+        edge
+        for edge in net.getEdges()
+        if not str(edge.getID()).startswith(':')
+        and str(edge.getFunction()) == ''
+        and float(edge.getLength()) > 0.0
+        and int(edge.getLaneNumber()) > 0
+    )
+
+
+def _boundary_source_edges(edges: tuple[object, ...]) -> tuple[object, ...]:
+    edge_ids = {str(edge.getID()) for edge in edges}
+    return tuple(
+        edge for edge in edges if not any(str(incoming.getID()) in edge_ids for incoming in edge.getIncoming().keys())
+    )
+
+
+def _boundary_sink_edges(edges: tuple[object, ...]) -> tuple[object, ...]:
+    edge_ids = {str(edge.getID()) for edge in edges}
+    return tuple(
+        edge for edge in edges if not any(str(outgoing.getID()) in edge_ids for outgoing in edge.getOutgoing().keys())
+    )
+
+
+def _shortest_route(net, source: object, sink: object) -> tuple[str, ...] | None:
+    path, _cost = net.getOptimalPath(
+        source,
+        sink,
+        fastest=False,
+    )
+    if path is None or len(path) < 2:
+        return None
+    return tuple(str(edge.getID()) for edge in path)
+
+
+# ---------------------------------------------------------------------------
+# Step 7 — sumocfg
 # ---------------------------------------------------------------------------
 
 
@@ -1089,26 +1128,32 @@ def main() -> None:
         osm_path = Path(args.osm)
         print(f'  Using existing {osm_path}')
 
-    print('\n[2/6] netconvert')
+    print('\n[2/7] netconvert')
     _run_netconvert(osm_path, net_path, args.join_dist)
 
-    print('\n[3/6] Audit')
-    net = sumolib.net.readNet(str(net_path), withConnections=True)
-    three_way, four_way, _ = _audit(net)
-    usable = len(three_way) + len(four_way)
+    print('\n[3/7] Audit')
+    net = sumolib.net.readNet(str(net_path), withConnections=True, withFoes=True)
+    _audit(net)
+    usable = len([node for node in net.getNodes() if node.getType() in TL_TYPES])
     if usable == 0:
-        raise RuntimeError('No usable 3/4-way TL junctions found — check bbox or OSM data.')
+        raise RuntimeError('No traffic-light junctions found — check bbox or OSM data.')
 
-    print('\n[4/6] Traffic light programs')
+    print('\n[4/7] Traffic light programs')
     _build_tll(net, net_path, tll_path)
 
-    print('\n[5/6] Detectors')
+    print('\n[5/7] Detectors')
     _build_detectors(net, add_path)
 
-    print('\n[6/6] Config')
+    print('\n[6/7] Routes')
+    _write_routes(
+        net=net,
+        rou_path=rou_path,
+        route_count=args.route_count,
+        demand_vehicles_per_hour=args.demand_vehicles_per_hour,
+    )
+
+    print('\n[7/7] Config')
     _write_sumocfg(cfg_path, name)
-    rou_path.write_text('<routes/>\n', encoding='utf-8')
-    print(f'  Wrote placeholder {rou_path}')
 
     print(f'\n{"=" * 62}')
     print(f'  Build complete.  Usable TL junctions: {usable}')
@@ -1116,20 +1161,15 @@ def main() -> None:
     print(f'{"=" * 62}\n')
 
     if args.verify:
-        print('Launching SUMO-GUI with greedy expert ...\n')
+        print('Launching SUMO-GUI with movement max-pressure ...\n')
         verify_cmd = [
             sys.executable,
-            str(ROOT / 'scripts' / 'run_grid.py'),
-            '--mode',
-            'expert',
+            str(ROOT / 'scripts' / 'run.py'),
             '--cfg',
             str(cfg_path),
+            '--method',
+            'max-pressure',
             '--gui',
-            '--flow-range',
-            str(args.flow_range[0]),
-            str(args.flow_range[1]),
-            '--demand-min-rate',
-            str(args.demand_min_rate),
         ]
         subprocess.run(verify_cmd)
 
