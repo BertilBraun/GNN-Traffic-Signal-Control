@@ -27,6 +27,10 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '1',
             '--demand-scale',
             '0.5',
+            '--demand-scale-min',
+            '0.4',
+            '--demand-scale-max',
+            '0.85',
             '--eval-demand-scale',
             '0.75',
             '--gui',
@@ -50,6 +54,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.num_workers == 2
     assert args.value_warmup_iterations == 1
     assert args.demand_scale == 0.5
+    assert args.demand_scale_min == 0.4
+    assert args.demand_scale_max == 0.85
     assert args.eval_demand_scale == 0.75
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
@@ -103,6 +109,8 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.cfg.name == 'grid.sumocfg'
     assert args.cfg.parent.name == 'grid_3x3_dedicated'
     assert args.demand_scale == 1.0
+    assert args.demand_scale_min is None
+    assert args.demand_scale_max is None
     assert args.eval_demand_scale == 1.0
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
@@ -115,3 +123,39 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.num_workers == 3
     assert args.fixed_rollout_seed is None
     assert args.time_to_teleport == -1
+
+
+def test_train_rl_cli_maps_fixed_demand_to_min_max(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--demand-scale',
+            '0.65',
+        ],
+    )
+
+    assert train_rl.demand_scale_bounds(train_rl.parse_args()) == (0.65, 0.65)
+
+
+def test_train_rl_cli_allows_demand_scale_range(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--demand-scale',
+            '0.65',
+            '--demand-scale-min',
+            '0.4',
+            '--demand-scale-max',
+            '0.85',
+        ],
+    )
+
+    assert train_rl.demand_scale_bounds(train_rl.parse_args()) == (0.4, 0.85)

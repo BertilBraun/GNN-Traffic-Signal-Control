@@ -2015,9 +2015,11 @@ Immediate next checks before city training:
 
 * evaluate the current best checkpoint on 4x4 with more seeds and longer
   episodes;
-* sweep demand scales, currently targeting `0.5`, `0.65`, `0.85`, and `1.0`;
-* choose a demand range that produces visually meaningful queues without
-  routine gridlock;
+* use the current 4x4 demand checks as the generated-grid baseline; `0.85`
+  still favors the learned policy on waiting, travel time, time loss, stops,
+  and nonstop pass rate;
+* train generated-grid PPO with sampled rollout demand, initially `0.4..0.85`,
+  and keep evaluation demand fixed for readable comparisons;
 * keep 10 s decisions and disabled SUMO gridlock teleporting as the default
   training/evaluation setup.
 

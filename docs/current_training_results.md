@@ -42,6 +42,8 @@ At iteration 270:
 
 ## 4x4 Transfer Check
 
+### Demand Scale 0.65
+
 The same best checkpoint was evaluated on the generated 4x4 dedicated-lane grid
 with unseen seeds `100`, `101`, and `102`, 600 simulation seconds, 10 s
 decisions, demand scale `0.65`, and initial occupancy sampled from 5% to 8%.
@@ -57,6 +59,24 @@ grid. The learned policy improves completed-trip travel metrics and stop
 behavior substantially. Detector-local wait density is mixed: learned beats
 max-pressure but not queue on this short 3-seed evaluation.
 
+### Demand Scale 0.85
+
+The same checkpoint was also evaluated on the 4x4 grid with unseen seeds `100`
+through `104`, 1200 simulation seconds, 10 s decisions, demand scale `0.85`,
+and initial occupancy sampled from 5% to 8%.
+
+| policy | completion | throughput | wait | travel | time loss | queue | wait density | stops / vehicle | nonstop pass |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| max-pressure | 81.6% | 3318.0/h | 112.83 s | 245.76 s | 161.53 s | 0.68 | 0.1070 | 3.84 | 14.3% |
+| queue | 83.3% | 3390.6/h | 95.22 s | 225.95 s | 141.63 s | 0.57 | 0.0791 | 3.78 | 16.1% |
+| learned | 85.9% | 3493.8/h | 75.20 s | 197.87 s | 113.32 s | 0.46 | 0.0904 | 2.79 | 38.6% |
+
+This higher-demand check is stronger evidence that the policy did not only
+learn an under-saturated scenario. Learned remains clearly better on waiting
+time, travel time, time loss, stops per vehicle, and nonstop pass rate. Queue
+still has lower detector-local wait density, so wait density should be treated
+as a secondary diagnostic rather than the primary policy-selection metric.
+
 ## Interpretation
 
 The current result is strong enough to stop treating PPO as broken. The next
@@ -64,7 +84,6 @@ risk is generalization: generated-grid transfer is encouraging, but city
 networks will introduce irregular topology, uneven approach lengths, different
 phase structures, and demand calibration problems.
 
-Before city-network training, evaluate the current best policy over more seeds
-and a demand sweep such as `0.5`, `0.65`, `0.85`, and `1.0` on 4x4. The demand
-range used for training should then cover the visually acceptable operating
-regime rather than one under-saturated scenario.
+For the next generated-grid PPO run, train with a rollout demand distribution
+instead of a fixed scale. A practical first range is `0.4` to `0.85`, with
+evaluation held fixed at a representative high-demand value such as `0.85`.

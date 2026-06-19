@@ -37,6 +37,9 @@ def combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
         mean_top_action_probability=sum(stat.mean_top_action_probability for stat in stats) / count,
         policy_decision_fraction=sum(stat.policy_decision_fraction for stat in stats) / count,
         teleport_count=sum(stat.teleport_count for stat in stats),
+        mean_demand_scale=sum(stat.mean_demand_scale for stat in stats) / count,
+        minimum_demand_scale=min(stat.minimum_demand_scale for stat in stats),
+        maximum_demand_scale=max(stat.maximum_demand_scale for stat in stats),
         simulation_elapsed_s=max(stat.simulation_elapsed_s for stat in stats),
     )
 

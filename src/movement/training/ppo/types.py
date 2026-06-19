@@ -38,7 +38,8 @@ class MovementPpoConfig:
     transitions_per_batch: int
     yellow_duration: int
     min_green_steps: int
-    demand_scale: float
+    demand_scale_min: float
+    demand_scale_max: float
     global_reward_weight: float
     reward_clip: float
     teleport_penalty: float
@@ -122,6 +123,9 @@ class RolloutStats:
     mean_top_action_probability: float
     policy_decision_fraction: float
     teleport_count: int
+    mean_demand_scale: float
+    minimum_demand_scale: float
+    maximum_demand_scale: float
     simulation_elapsed_s: float
 
 

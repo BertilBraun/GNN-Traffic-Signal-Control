@@ -11,7 +11,7 @@ from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, Sto
 from src.movement.evaluation import EvaluationMetrics
 from src.movement.training.ppo.evaluation import checkpoint_selection_score
 from src.movement.training.ppo.reward import clip_reward, delay_density_reward, speed_deficit_density
-from src.movement.training.ppo.rollout import rollout_seed
+from src.movement.training.ppo.rollout import rollout_seed, sample_demand_scale
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.rollout import MovementRolloutBuffer
@@ -116,6 +116,17 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
         )
         == 100
     )
+
+
+def test_demand_scale_sampling_is_seeded_and_bounded() -> None:
+    first = sample_demand_scale(demand_scale_min=0.4, demand_scale_max=0.85, seed=42)
+    second = sample_demand_scale(demand_scale_min=0.4, demand_scale_max=0.85, seed=42)
+    other = sample_demand_scale(demand_scale_min=0.4, demand_scale_max=0.85, seed=43)
+
+    assert first == second
+    assert first != other
+    assert 0.4 <= first <= 0.85
+    assert sample_demand_scale(demand_scale_min=0.65, demand_scale_max=0.65, seed=42) == 0.65
 
 
 def test_delay_density_reward_penalizes_local_and_global_delay() -> None:

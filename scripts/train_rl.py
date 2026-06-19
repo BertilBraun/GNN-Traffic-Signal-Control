@@ -47,7 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--transitions-per-batch', type=int, default=32, help='Decision transitions per minibatch')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
-    parser.add_argument('--demand-scale', type=float, default=1.0, help='Rollout demand multiplier')
+    parser.add_argument(
+        '--demand-scale',
+        type=float,
+        default=1.0,
+        help='Fixed rollout demand multiplier used when min/max are not set',
+    )
+    parser.add_argument(
+        '--demand-scale-min',
+        type=float,
+        default=None,
+        help='Minimum rollout demand multiplier sampled per rollout',
+    )
+    parser.add_argument(
+        '--demand-scale-max',
+        type=float,
+        default=None,
+        help='Maximum rollout demand multiplier sampled per rollout',
+    )
     parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global delay-density reward weight')
     parser.add_argument('--reward-clip', type=float, default=1.0, help='Absolute per-decision reward limit')
     parser.add_argument('--teleport-penalty', type=float, default=0.0, help='Global reward penalty per teleport')
@@ -109,6 +126,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    demand_scale_min, demand_scale_max = demand_scale_bounds(args)
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     run_name = args.resume_checkpoint.parent.name if args.resume_checkpoint is not None else stamp
     checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / run_name
@@ -135,7 +153,8 @@ def main() -> None:
             transitions_per_batch=args.transitions_per_batch,
             yellow_duration=args.yellow_duration,
             min_green_steps=args.min_green_steps,
-            demand_scale=args.demand_scale,
+            demand_scale_min=demand_scale_min,
+            demand_scale_max=demand_scale_max,
             global_reward_weight=args.global_reward_weight,
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
@@ -161,6 +180,13 @@ def main() -> None:
         )
     )
     print(f'PPO training complete: iterations={result.iterations} checkpoint={result.checkpoint_path}')
+
+
+def demand_scale_bounds(args: argparse.Namespace) -> tuple[float, float]:
+    return (
+        args.demand_scale_min if args.demand_scale_min is not None else args.demand_scale,
+        args.demand_scale_max if args.demand_scale_max is not None else args.demand_scale,
+    )
 
 
 if __name__ == '__main__':

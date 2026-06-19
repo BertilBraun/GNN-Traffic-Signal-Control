@@ -51,7 +51,7 @@ class RolloutMetrics:
         self.local_delay_densities.extend(interval_reward.local_delay_densities)
         self.global_delay_densities.append(interval_reward.global_delay_density)
 
-    def stats(self, simulation_elapsed_s: float) -> RolloutStats:
+    def stats(self, simulation_elapsed_s: float, demand_scale: float) -> RolloutStats:
         return RolloutStats(
             mean_reward=sum(self.rewards) / max(1, len(self.rewards)),
             reward_standard_deviation=standard_deviation(self.rewards),
@@ -69,5 +69,8 @@ class RolloutMetrics:
             mean_top_action_probability=sum(self.top_action_probabilities) / max(1, len(self.top_action_probabilities)),
             policy_decision_fraction=self.policy_decision_count / max(1, self.total_decision_count),
             teleport_count=self.teleport_count,
+            mean_demand_scale=demand_scale,
+            minimum_demand_scale=demand_scale,
+            maximum_demand_scale=demand_scale,
             simulation_elapsed_s=simulation_elapsed_s,
         )

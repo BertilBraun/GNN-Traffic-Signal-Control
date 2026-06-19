@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from random import Random
 from time import perf_counter
 
 import torch
@@ -180,9 +181,14 @@ def collect_rollout(
     rollout_seed: int,
 ) -> RolloutRunResult:
     net_path = resolve_sumocfg_net_path(config.cfg_path)
+    demand_scale = sample_demand_scale(
+        demand_scale_min=config.demand_scale_min,
+        demand_scale_max=config.demand_scale_max,
+        seed=rollout_seed,
+    )
     demand_route_files = route_files_for_demand_scale(
         cfg_path=config.cfg_path,
-        demand_scale=config.demand_scale,
+        demand_scale=demand_scale,
     )
     target_occupancy = sample_target_occupancy(
         minimum_occupancy=config.initial_occupancy_min,
@@ -212,7 +218,11 @@ def collect_rollout(
             cfg_path=config.cfg_path,
             programs=runtime.programs,
         )
-        print_initial_population(rollout_seed=rollout_seed, initial_population=initial_population)
+        print_initial_population(
+            rollout_seed=rollout_seed,
+            initial_population=initial_population,
+            demand_scale=demand_scale,
+        )
         rollout = collect_runtime_rollout(
             config=config,
             runtime=runtime,
@@ -222,6 +232,7 @@ def collect_rollout(
             movement_normalizer=movement_normalizer,
             device=device,
             simulation_started=simulation_started,
+            demand_scale=demand_scale,
         )
         return rollout
     finally:
@@ -239,6 +250,7 @@ def collect_runtime_rollout(
     movement_normalizer: RunningNormalizer,
     device: torch.device,
     simulation_started: float,
+    demand_scale: float,
 ) -> RolloutRunResult:
     vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
     lane_flow_tracker = LaneGroupFlowTracker(
@@ -285,7 +297,10 @@ def collect_runtime_rollout(
     )
     return RolloutRunResult(
         buffer=buffer,
-        stats=metrics.stats(simulation_elapsed_s=perf_counter() - simulation_started),
+        stats=metrics.stats(
+            simulation_elapsed_s=perf_counter() - simulation_started,
+            demand_scale=demand_scale,
+        ),
         bootstrap_values=next_values,
     )
 
@@ -434,9 +449,20 @@ def worker_request(request: RolloutCollectionRequest, rollout_seed: int) -> Roll
     )
 
 
-def print_initial_population(rollout_seed: int, initial_population: InitialTrafficPopulation) -> None:
+def sample_demand_scale(demand_scale_min: float, demand_scale_max: float, seed: int) -> float:
+    if demand_scale_min == demand_scale_max:
+        return demand_scale_min
+    return Random(seed).uniform(demand_scale_min, demand_scale_max)
+
+
+def print_initial_population(
+    rollout_seed: int,
+    initial_population: InitialTrafficPopulation,
+    demand_scale: float,
+) -> None:
     print(
         f'  rollout seed={rollout_seed} '
+        f'demand_scale={demand_scale:.3f} '
         f'initial_occupancy={initial_population.target_occupancy:.3f} '
         f'initial_vehicles={initial_population.generated_vehicle_count}/'
         f'{initial_population.requested_vehicle_count}'

@@ -91,6 +91,12 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
 
 
 def validate_config(config: MovementPpoConfig) -> None:
+    if config.demand_scale_min <= 0.0:
+        raise ValueError('demand_scale_min must be positive.')
+    if config.demand_scale_max <= 0.0:
+        raise ValueError('demand_scale_max must be positive.')
+    if config.demand_scale_min > config.demand_scale_max:
+        raise ValueError('demand_scale_min must not exceed demand_scale_max.')
     if config.max_teleports_per_rollout < 0:
         raise ValueError('max_teleports_per_rollout must not be negative.')
     if config.target_kl <= 0.0:
@@ -303,6 +309,8 @@ def print_iteration_summary(
         f'entropy={update_stats.entropy:.4f} '
         f'norm_entropy={rollout_stats.normalized_entropy:.3f} '
         f'top_p={rollout_stats.mean_top_action_probability:.3f} '
+        f'demand={rollout_stats.mean_demand_scale:.2f}'
+        f'[{rollout_stats.minimum_demand_scale:.2f}, {rollout_stats.maximum_demand_scale:.2f}] '
         f'clip={rollout_stats.reward_clip_fraction:.1%}/{update_stats.ratio_clip_fraction:.1%} '
         f'kl={update_stats.approximate_kl:.5f} '
         f'kl_stop={int(update_stats.early_stopped)} '

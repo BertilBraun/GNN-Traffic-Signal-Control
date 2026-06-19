@@ -61,6 +61,21 @@ python scripts\train_rl.py `
   --initial-occupancy-max 0.08
 ```
 
+PPO can sample background demand per rollout. `--demand-scale` remains the
+fixed-value shorthand; when min/max are supplied, every rollout samples a
+deterministic scale from that range using its rollout seed.
+
+```powershell
+python scripts\train_rl.py `
+  --il-checkpoint checkpoints\il\<run>\movement_policy_best.pt `
+  --demand-scale-min 0.4 `
+  --demand-scale-max 0.85 `
+  --eval-demand-scale 0.85
+```
+
+Passing only `--demand-scale 0.65` is equivalent to training with
+`--demand-scale-min 0.65 --demand-scale-max 0.65`.
+
 Set both occupancy bounds to zero to disable initial population generation.
 Periodic evaluation uses the same deterministic occupancy range. For a fixed
 evaluation seed, every policy receives the same generated initial vehicles and
@@ -150,6 +165,23 @@ nonstop TLS pass rate        18.4%      19.2%        45.1%
 The result is encouraging but still preliminary. The next validation should use
 more seeds, longer episodes, and a demand sweep to measure where the learned
 policy degrades.
+
+A harder 4x4 evaluation at demand scale `0.85`, seeds `100` through `104`, and
+1200 simulation seconds still favored the learned policy:
+
+```text
+metric                 max-pressure      queue      learned
+completion rate              81.6%      83.3%        85.9%
+throughput                  3318/h     3391/h       3494/h
+average waiting time       112.83s     95.22s       75.20s
+average travel time        245.76s    225.95s      197.87s
+average time loss          161.53s    141.63s      113.32s
+TLS stops / vehicle           3.84       3.78         2.79
+nonstop TLS pass rate        14.3%      16.1%        38.6%
+```
+
+For further generated-grid PPO training, sample rollout demand over roughly
+`0.4..0.85` and keep evaluation fixed at a representative target demand.
 
 ## Resuming PPO
 
