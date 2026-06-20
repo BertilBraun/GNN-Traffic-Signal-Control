@@ -49,6 +49,17 @@ def test_city_route_builder_writes_destination_routes(tmp_path: Path) -> None:
     assert 'vehsPerHour="' in content
 
 
+def test_city_routes_include_internal_origins_and_destinations() -> None:
+    network = sumolib.net.readNet(str(GRID_NET), withConnections=True)
+
+    routes = build_network._city_routes(network, route_count=30)
+    source_edges = {route[0] for route in routes}
+    destination_edges = {route[-1] for route in routes}
+
+    assert any(not edge_id.split('_to_', 1)[0].startswith('S_') for edge_id in source_edges)
+    assert any(not edge_id.split('_to_', 1)[1].startswith('S_') for edge_id in destination_edges)
+
+
 def test_city_additional_file_matches_empty_grid_additional(tmp_path: Path) -> None:
     add_path = tmp_path / 'city.add.xml'
 

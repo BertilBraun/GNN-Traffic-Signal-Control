@@ -64,8 +64,9 @@ OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 YELLOW_DUR = 3
 ALLRED_DUR = 2
 GREEN_DUR = 25
-DEFAULT_ROUTE_COUNT = 120
+DEFAULT_ROUTE_COUNT = 300
 DEFAULT_DEMAND_VEHICLES_PER_HOUR = 900.0
+ROUTE_SAMPLE_ATTEMPTS_PER_REQUESTED_ROUTE = 30
 
 TL_TYPES = {'traffic_light', 'traffic_light_unregulated', 'traffic_light_right_on_red'}
 
@@ -1000,23 +1001,22 @@ def _city_routes(net, route_count: int) -> tuple[tuple[str, ...], ...]:
     if route_count <= 0:
         raise ValueError('route_count must be positive.')
     candidate_edges = _normal_edges(net)
-    source_edges = _boundary_source_edges(candidate_edges)
-    sink_edges = _boundary_sink_edges(candidate_edges)
-    if not source_edges or not sink_edges:
-        source_edges = candidate_edges
-        sink_edges = candidate_edges
+    if not candidate_edges:
+        raise ValueError('Network has no normal drivable edges for route generation.')
     routes: list[tuple[str, ...]] = []
-    pairs = [
-        (source, sink)
-        for source in sorted(source_edges, key=lambda edge: str(edge.getID()))
-        for sink in sorted(sink_edges, key=lambda edge: str(edge.getID()))
-        if source != sink
-    ]
-    random.Random(42).shuffle(pairs)
-    for source, sink in pairs:
-        route = _shortest_route(net, source, sink)
-        if route is None or route in routes:
+    route_set: set[tuple[str, ...]] = set()
+    edge_weights = tuple(_edge_storage_capacity(edge) for edge in candidate_edges)
+    random_generator = random.Random(42)
+    max_attempts = route_count * ROUTE_SAMPLE_ATTEMPTS_PER_REQUESTED_ROUTE
+    for _attempt in range(max_attempts):
+        source = random_generator.choices(candidate_edges, weights=edge_weights, k=1)[0]
+        sink = random_generator.choices(candidate_edges, weights=edge_weights, k=1)[0]
+        if source == sink:
             continue
+        route = _shortest_route(net, source, sink)
+        if route is None or route in route_set:
+            continue
+        route_set.add(route)
         routes.append(route)
         if len(routes) >= route_count:
             break
@@ -1036,18 +1036,8 @@ def _normal_edges(net) -> tuple[object, ...]:
     )
 
 
-def _boundary_source_edges(edges: tuple[object, ...]) -> tuple[object, ...]:
-    edge_ids = {str(edge.getID()) for edge in edges}
-    return tuple(
-        edge for edge in edges if not any(str(incoming.getID()) in edge_ids for incoming in edge.getIncoming().keys())
-    )
-
-
-def _boundary_sink_edges(edges: tuple[object, ...]) -> tuple[object, ...]:
-    edge_ids = {str(edge.getID()) for edge in edges}
-    return tuple(
-        edge for edge in edges if not any(str(outgoing.getID()) in edge_ids for outgoing in edge.getOutgoing().keys())
-    )
+def _edge_storage_capacity(edge: object) -> float:
+    return float(edge.getLength()) * float(edge.getLaneNumber())
 
 
 def _shortest_route(net, source: object, sink: object) -> tuple[str, ...] | None:

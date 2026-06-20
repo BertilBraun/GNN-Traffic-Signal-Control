@@ -16,7 +16,7 @@ python scripts\build_network.py `
   --bbox 48.147,11.568,48.155,11.581 `
   --out-dir configs\munich_small `
   --name munich_small `
-  --route-count 120 `
+  --route-count 300 `
   --demand-vehicles-per-hour 900
 ```
 
@@ -43,6 +43,11 @@ configs/<city>/<city>.sumocfg
 movement features compute detector-like observation windows directly from
 vehicle positions and lane-group geometry; they do not require SUMO
 `laneAreaDetector` elements.
+
+City route generation samples origins and destinations from all normal drivable
+edges, weighted by edge storage. This intentionally creates internal city trips
+instead of only boundary-to-boundary through traffic, which tends to overload a
+few shortest corridors.
 
 ## Inspect Movement Extraction
 
