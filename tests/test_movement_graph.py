@@ -5,7 +5,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.extraction import extract_traffic_light_program
-from src.movement.graph import _select_continuation, build_movement_graph
+from src.movement.graph import _resolve_overlapping_corridors, _select_continuation, build_movement_graph
 from src.movement.runtime import MovementControlRuntime
 
 
@@ -150,3 +150,19 @@ def test_corridor_branch_requires_one_unique_straight_continuation() -> None:
         )
         is None
     )
+
+
+def test_overlapping_corridors_fall_back_to_controlled_edges() -> None:
+    resolved = _resolve_overlapping_corridors(
+        {
+            'a_in': ('a_in', 'shared', 'signal_out'),
+            'b_in': ('b_in', 'shared', 'signal_out'),
+            'clear_in': ('clear_in', 'clear_out'),
+        }
+    )
+
+    assert resolved == {
+        'a_in': ('a_in',),
+        'b_in': ('b_in',),
+        'clear_in': ('clear_in', 'clear_out'),
+    }

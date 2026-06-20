@@ -46,7 +46,8 @@ def test_city_route_builder_writes_destination_routes(tmp_path: Path) -> None:
     assert route_count > 0
     assert '<route id="city_route_' in content
     assert '<flow id="city_flow_' in content
-    assert 'vehsPerHour="' in content
+    assert 'probability="' in content
+    assert 'vehsPerHour="' not in content
 
 
 def test_city_routes_include_internal_origins_and_destinations() -> None:

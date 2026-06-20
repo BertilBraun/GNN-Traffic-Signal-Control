@@ -973,6 +973,7 @@ def _write_routes(
             'maxSpeed': '13.89',
         },
     )
+    per_route_probability = demand_vehicles_per_hour / 3600.0 / max(len(routes), 1)
     for route_index, edge_ids in enumerate(routes):
         route_id = f'city_route_{route_index}'
         ET.SubElement(root, 'route', {'id': route_id, 'edges': ' '.join(edge_ids)})
@@ -985,7 +986,7 @@ def _write_routes(
                 'route': route_id,
                 'begin': '0',
                 'end': '3600',
-                'vehsPerHour': f'{demand_vehicles_per_hour / max(len(routes), 1):.3f}',
+                'probability': f'{per_route_probability:.6f}',
                 'departLane': 'best',
                 'departSpeed': 'random',
             },

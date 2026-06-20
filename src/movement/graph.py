@@ -74,29 +74,53 @@ def _collect_corridors(
         EdgeId(str(edge.getID())): edge for edge in network.getEdges() if not str(edge.getID()).startswith(':')
     }
     signalized_ids = {str(traffic_light_id) for traffic_light_id in programs}
-    corridor_by_edge: dict[EdgeId, tuple[EdgeId, ...]] = {}
+    corridor_by_controlled_edge: dict[EdgeId, tuple[EdgeId, ...]] = {}
     for edge_id in controlled_edges:
         if edge_id not in edges_by_id:
-            corridor_by_edge[edge_id] = (edge_id,)
+            corridor_by_controlled_edge[edge_id] = (edge_id,)
             continue
         corridor = _corridor_for_edge(
             edge=edges_by_id[edge_id],
             signalized_ids=signalized_ids,
         )
-        corridor_ids = tuple(EdgeId(str(edge.getID())) for edge in corridor)
-        for corridor_edge_id in corridor_ids:
-            existing = corridor_by_edge.get(corridor_edge_id)
-            if existing is not None and existing != corridor_ids:
-                raise ValueError(
-                    f'Overlapping corridor contractions for edge {corridor_edge_id}: {existing} and {corridor_ids}.'
-                )
-            corridor_by_edge[corridor_edge_id] = corridor_ids
+        corridor_by_controlled_edge[edge_id] = tuple(EdgeId(str(edge.getID())) for edge in corridor)
+    resolved_corridors = _resolve_overlapping_corridors(corridor_by_controlled_edge)
     return tuple(
         sorted(
-            {corridor_by_edge[edge_id] for edge_id in controlled_edges},
+            set(resolved_corridors.values()),
             key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids),
         )
     )
+
+
+def _resolve_overlapping_corridors(
+    corridor_by_controlled_edge: Mapping[EdgeId, tuple[EdgeId, ...]],
+) -> dict[EdgeId, tuple[EdgeId, ...]]:
+    resolved = dict(corridor_by_controlled_edge)
+    while True:
+        corridors_by_edge: dict[EdgeId, set[tuple[EdgeId, ...]]] = {}
+        for _controlled_edge_id, corridor in resolved.items():
+            for edge_id in corridor:
+                corridors_by_edge.setdefault(edge_id, set()).add(corridor)
+        overlapping_controlled_edges = {
+            controlled_edge_id
+            for corridors in corridors_by_edge.values()
+            if len(corridors) > 1
+            for corridor in corridors
+            for controlled_edge_id, controlled_corridor in resolved.items()
+            if controlled_corridor == corridor
+        }
+        if not overlapping_controlled_edges:
+            return resolved
+        next_resolved = {
+            controlled_edge_id: (
+                (controlled_edge_id,) if controlled_edge_id in overlapping_controlled_edges else corridor
+            )
+            for controlled_edge_id, corridor in resolved.items()
+        }
+        if next_resolved == resolved:
+            return resolved
+        resolved = next_resolved
 
 
 def _corridor_for_edge(edge: object, signalized_ids: set[str]) -> tuple[object, ...]:
