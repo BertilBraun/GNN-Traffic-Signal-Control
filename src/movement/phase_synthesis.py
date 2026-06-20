@@ -229,7 +229,21 @@ def _same_outgoing_edge_conflict(
 ) -> bool:
     if first.outgoing_edge_id is None or first.outgoing_edge_id != second.outgoing_edge_id:
         return False
-    return first.incoming_lane_id is None or first.incoming_lane_id != second.incoming_lane_id
+    first_incoming_edge_id = _edge_id_from_lane_id(first.incoming_lane_id)
+    second_incoming_edge_id = _edge_id_from_lane_id(second.incoming_lane_id)
+    if first_incoming_edge_id is None or second_incoming_edge_id is None:
+        return True
+    return first_incoming_edge_id != second_incoming_edge_id
+
+
+def _edge_id_from_lane_id(lane_id: LaneId | None) -> str | None:
+    if lane_id is None:
+        return None
+    text = str(lane_id)
+    edge_text, separator, lane_index = text.rpartition('_')
+    if separator and lane_index.isdigit() and edge_text:
+        return edge_text
+    return text
 
 
 def _sumo_requests_are_foes(
