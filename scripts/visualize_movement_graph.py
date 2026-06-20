@@ -313,7 +313,7 @@ function render() {{
     if (layout === 'relaxed') node.addEventListener('pointerdown', event => beginAnchorDrag(junction.junction_id, event));
     junctionLayer.appendChild(node);
     if (showLabels) {{
-      const label = element('text', {{x: point.x + 7 * nodeScale, y: point.y - 7 * nodeScale, class: 'label', 'font-size': 9 * labelScale}});
+      const label = element('text', {{x: point.x + 7 * nodeScale, y: point.y - 7 * nodeScale, class: 'label', style: `font-size:${{9 * labelScale}}px`}});
       label.textContent = junction.selectable_phase_count > 0
         ? `${{junction.junction_id}} · ${{junction.selectable_phase_count}} phases`
         : junction.junction_id;
@@ -329,7 +329,7 @@ function render() {{
     node.addEventListener('click', event => selectNode('lane', lane, event));
     laneLayer.appendChild(node);
     if (showLabels) {{
-      const label = element('text', {{x: point.x + 5 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', 'font-size': 7 * labelScale}});
+      const label = element('text', {{x: point.x + 5 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', style: `font-size:${{7 * labelScale}}px`}});
       label.textContent = `L${{lane.lane_group_id}}`;
       laneLayer.appendChild(label);
     }}
@@ -342,7 +342,7 @@ function render() {{
     node.addEventListener('click', event => selectNode('movement', movement, event));
     movementLayer.appendChild(node);
     if (showLabels && movementsByTls.get(movement.traffic_light_id).length <= 12) {{
-      const label = element('text', {{x: point.x + 4 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', 'font-size': 7 * labelScale}});
+      const label = element('text', {{x: point.x + 4 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', style: `font-size:${{7 * labelScale}}px`}});
       label.textContent = `M${{movement.movement_id}}`;
       movementLayer.appendChild(label);
     }}
