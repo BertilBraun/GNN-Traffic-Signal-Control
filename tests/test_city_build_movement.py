@@ -49,6 +49,16 @@ def test_city_route_builder_writes_destination_routes(tmp_path: Path) -> None:
     assert 'vehsPerHour="' in content
 
 
+def test_city_additional_file_matches_empty_grid_additional(tmp_path: Path) -> None:
+    add_path = tmp_path / 'city.add.xml'
+
+    build_network._write_additional(add_path)
+    content = add_path.read_text(encoding='utf-8')
+
+    assert '<additional/>' in content
+    assert 'laneAreaDetector' not in content
+
+
 def test_inspection_suspicion_checks_accept_current_grid_graph() -> None:
     runtime = MovementControlRuntime(cfg_path=GRID_CFG, gui=False, seed=42)
     try:

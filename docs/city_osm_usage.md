@@ -2,7 +2,12 @@
 
 The OSM build path now targets the movement-based controller, not the legacy
 fixed-intersection pipeline. It writes movement-safe traffic-light programs,
-city O-D flows, detectors, and a SUMO config.
+city O-D flows, an empty additional file, and a SUMO config.
+
+By default, the builder controls only traffic lights imported or guessed from
+OSM/netconvert. It does not turn every 3+-arm city junction into a signal. Use
+`--promote-all-junctions-to-tl` only for experiments where you intentionally
+want every intersection controlled like a generated grid.
 
 ## Build A City Config
 
@@ -33,6 +38,11 @@ configs/<city>/<city>.rou.xml
 configs/<city>/<city>.add.xml
 configs/<city>/<city>.sumocfg
 ```
+
+`<city>.add.xml` is intentionally empty, matching generated grids. Current
+movement features compute detector-like observation windows directly from
+vehicle positions and lane-group geometry; they do not require SUMO
+`laneAreaDetector` elements.
 
 ## Inspect Movement Extraction
 

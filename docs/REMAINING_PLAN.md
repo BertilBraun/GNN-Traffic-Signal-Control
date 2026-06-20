@@ -1989,7 +1989,7 @@ grid at demand scale `0.65`; see `docs/current_training_results.md`.
 
 First movement-based OSM support is now implemented in `scripts/build_network.py`.
 The city build path writes movement-safe conflict-synthesized `.tll.xml`
-programs, simple deterministic city O-D flows, detectors, and a SUMO config
+programs, simple deterministic city O-D flows, an empty additional file, and a SUMO config
 for the active movement runtime. `scripts/inspect_movement_city.py` validates a
 city config by starting `MovementControlRuntime`, extracting selectable
 programs, building the movement graph, and reporting skipped traffic lights and

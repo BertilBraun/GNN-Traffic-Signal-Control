@@ -8,10 +8,10 @@ Pipeline
    one-way 1-in/1-out and two-way 2-in/2-out cases), which netconvert's
    --geometry.remove refuses to merge when adjacent edges differ in lane
    count / speed / name
-4. Promote 3+arm junctions to traffic_light via --tls.set
+4. Optionally promote 3+arm junctions to traffic_light via --tls.set
 5. Audit       — junction-arm-count table
 6. TLL         — movement-safe conflict-synthesized signal programs
-7. Detectors   — E2 laneAreaDetectors on incoming TL lanes (≤200 m)
+7. Additional  — empty file, matching generated grids
 8. sumocfg     — ties everything together
 9. Verify      — launches SUMO-GUI with the movement max-pressure runner
 
@@ -64,7 +64,6 @@ OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 YELLOW_DUR = 3
 ALLRED_DUR = 2
 GREEN_DUR = 25
-DET_NOMINAL = 200.0
 DEFAULT_ROUTE_COUNT = 120
 DEFAULT_DEMAND_VEHICLES_PER_HOUR = 900.0
 
@@ -114,6 +113,11 @@ def _parse_args() -> argparse.Namespace:
         '--verify',
         action='store_true',
         help='Launch SUMO-GUI with movement max-pressure after build',
+    )
+    p.add_argument(
+        '--promote-all-junctions-to-tl',
+        action='store_true',
+        help='Promote every 3+-arm road junction to traffic_light instead of using OSM/netconvert signals only',
     )
     p.add_argument(
         '--route-count',
@@ -166,14 +170,19 @@ out skel qt;
 # ---------------------------------------------------------------------------
 
 
-def _run_netconvert(osm_path: Path, net_path: Path, join_dist: float) -> None:
+def _run_netconvert(
+    osm_path: Path,
+    net_path: Path,
+    join_dist: float,
+    promote_all_junctions_to_tl: bool,
+) -> None:
     netconvert = os.path.join(SUMO_HOME, 'bin', 'netconvert')
     _netconvert_from_osm(osm_path, net_path, join_dist, netconvert)
     _plain_xml_cleanup(net_path, join_dist, netconvert)
-    _promote_junctions_to_tl(net_path, netconvert, join_dist)
-    # Second cleanup pass: TL promotion + tls.join in the rebuild may surface
-    # new phantom TLs and pass-throughs (e.g., TLs whose neighbors got merged).
-    _plain_xml_cleanup(net_path, join_dist, netconvert)
+    if promote_all_junctions_to_tl:
+        _promote_junctions_to_tl(net_path, netconvert, join_dist)
+        # TL promotion + tls.join in the rebuild may surface new phantom TLs and pass-throughs.
+        _plain_xml_cleanup(net_path, join_dist, netconvert)
     _final_phantom_tl_demote(net_path)
     print(f'  Wrote {net_path}')
 
@@ -924,38 +933,18 @@ def _yellow_state(green: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Step 5 — detectors
+# Step 5 — additional file
 # ---------------------------------------------------------------------------
 
 
-def _build_detectors(net, add_path: Path) -> int:
-    root = ET.Element('additional')
-    n_det = 0
-    for node in sorted(net.getNodes(), key=lambda n: n.getID()):
-        if node.getType() != 'traffic_light':
-            continue
-        for edge in node.getIncoming():
-            for lane in edge.getLanes():
-                lane_len = lane.getLength()
-                det_len = min(DET_NOMINAL, lane_len)
-                pos = max(0.0, lane_len - det_len)
-                ET.SubElement(
-                    root,
-                    'laneAreaDetector',
-                    id=f'det_{lane.getID()}',
-                    lane=lane.getID(),
-                    pos=f'{pos:.2f}',
-                    length=f'{det_len:.2f}',
-                    freq='3600',
-                    file='detector_out.xml',
-                    friendlyPos='true',
-                )
-                n_det += 1
-    xml_str = minidom.parseString(ET.tostring(root)).toprettyxml(indent='    ')
-    xml_str = '\n'.join(xml_str.split('\n')[1:])
-    add_path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + xml_str, encoding='utf-8')
-    print(f'  Wrote {n_det} detectors -> {add_path}')
-    return n_det
+def _write_additional(add_path: Path) -> None:
+    _write_xml(add_path, ET.Element('additional'))
+    print(f'  Wrote empty additional file -> {add_path}')
+
+
+def _write_xml(path: Path, root: ET.Element) -> None:
+    xml = minidom.parseString(ET.tostring(root)).toprettyxml(indent='    ')
+    path.write_text(xml, encoding='utf-8')
 
 
 # ---------------------------------------------------------------------------
@@ -1123,7 +1112,7 @@ def main() -> None:
     print(f'  Out dir : {out_dir}')
     print(f'{"=" * 62}\n')
 
-    print('[1/6] OSM')
+    print('[1/7] OSM')
     if args.bbox:
         _download_osm(args.bbox, osm_path)
     else:
@@ -1131,7 +1120,12 @@ def main() -> None:
         print(f'  Using existing {osm_path}')
 
     print('\n[2/7] netconvert')
-    _run_netconvert(osm_path, net_path, args.join_dist)
+    _run_netconvert(
+        osm_path=osm_path,
+        net_path=net_path,
+        join_dist=args.join_dist,
+        promote_all_junctions_to_tl=args.promote_all_junctions_to_tl,
+    )
 
     print('\n[3/7] Audit')
     net = sumolib.net.readNet(str(net_path), withConnections=True, withFoes=True)
@@ -1143,8 +1137,8 @@ def main() -> None:
     print('\n[4/7] Traffic light programs')
     _build_tll(net, net_path, tll_path)
 
-    print('\n[5/7] Detectors')
-    _build_detectors(net, add_path)
+    print('\n[5/7] Additional file')
+    _write_additional(add_path)
 
     print('\n[6/7] Routes')
     _write_routes(
