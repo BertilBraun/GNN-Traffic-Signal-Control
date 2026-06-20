@@ -452,10 +452,14 @@ function render() {{
   }}
   viewport.appendChild(vehicles);
   updateStats();
+  refreshSelectionDetails();
 }}
 function selectLaneGroup(laneGroup, event) {{
   event.stopPropagation();
-  selected = `L${{laneGroup.id}}`;
+  selected = {{type: 'laneGroup', id: laneGroup.id}};
+  updateLaneGroupDetails(laneGroup);
+}}
+function updateLaneGroupDetails(laneGroup) {{
   const counts = countFor(laneGroup.id);
   const movements = data.movements.filter(m => m.inputLaneGroupId === laneGroup.id || m.outputLaneGroupId === laneGroup.id);
   const movementText = movements.slice(0, 12).map(m => `M${{m.id}} ${{m.inputLaneGroupId === laneGroup.id ? 'input' : 'output'}} @ ${{m.tls}}`).join('<br>');
@@ -469,6 +473,10 @@ function selectLaneGroup(laneGroup, event) {{
 }}
 function selectVehicle(vehicle, event) {{
   event.stopPropagation();
+  selected = {{type: 'vehicle', id: vehicle.id}};
+  updateVehicleDetails(vehicle);
+}}
+function updateVehicleDetails(vehicle) {{
   document.getElementById('details').innerHTML =
     `<strong>Vehicle ${{vehicle.id}}</strong>` +
     `Lane: ${{vehicle.laneId}}<br>` +
@@ -476,6 +484,24 @@ function selectVehicle(vehicle, event) {{
     `LaneGroup: ${{vehicle.laneGroupId === null ? 'none' : `L${{vehicle.laneGroupId}}`}}<br>` +
     `Speed: ${{vehicle.speed.toFixed(2)}} m/s<br>` +
     `In detector window: ${{vehicle.inDetector ? 'yes' : 'no'}}`;
+}}
+function refreshSelectionDetails() {{
+  if (!selected) return;
+  if (selected.type === 'laneGroup') {{
+    const laneGroup = laneGroups.get(selected.id);
+    if (laneGroup) updateLaneGroupDetails(laneGroup);
+    return;
+  }}
+  if (selected.type === 'vehicle') {{
+    const vehicle = vehicleById.get(selected.id);
+    if (vehicle) {{
+      updateVehicleDetails(vehicle);
+    }} else {{
+      document.getElementById('details').innerHTML =
+        `<strong>Vehicle ${{selected.id}}</strong>` +
+        `Not present in the current timestep.`;
+    }}
+  }}
 }}
 function updateStats() {{
   const sample = currentSample();
@@ -517,7 +543,10 @@ svg.addEventListener('pointermove', event => {{
   render();
 }});
 svg.addEventListener('pointerup', () => panStart = null);
-svg.addEventListener('click', () => document.getElementById('details').textContent = 'Select a detector window, LaneGroup, or vehicle.');
+svg.addEventListener('click', () => {{
+  selected = null;
+  document.getElementById('details').textContent = 'Select a detector window, LaneGroup, or vehicle.';
+}});
 render();
 </script>
 </body>
