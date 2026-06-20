@@ -115,8 +115,8 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
 .movement {{ fill: #d66767; stroke: #ffd0d0; stroke-width: 1; }}
 .node {{ cursor: pointer; }}
 .node.selected {{ stroke: #fff; stroke-width: 3; }}
-.label {{ fill: #dce4e7; font-size: 11px; paint-order: stroke; stroke: #0d1113; stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }}
-.minor-label {{ fill: #9eaaaf; font-size: 9px; paint-order: stroke; stroke: #0d1113; stroke-width: 3px; pointer-events: none; }}
+.label {{ fill: #dce4e7; font-size: 9px; paint-order: stroke; stroke: #0d1113; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }}
+.minor-label {{ fill: #9eaaaf; font-size: 7px; paint-order: stroke; stroke: #0d1113; stroke-width: 2px; pointer-events: none; }}
 @media (max-width: 800px) {{
   .app {{ grid-template-columns: 230px 1fr; }}
   .sidebar {{ padding: 13px; }}
@@ -262,6 +262,8 @@ function curvedPath(a, b, bend) {{
 }}
 function render() {{
   svg.replaceChildren();
+  const nodeScale = Math.max(.18, Math.min(.85, .85 / zoom));
+  const labelScale = Math.max(.16, Math.min(.78, .78 / zoom));
   const defs = element('defs');
   addMarker(defs, 'arrow-input', '#48b5d6');
   addMarker(defs, 'arrow-output', '#e7ad52');
@@ -283,7 +285,8 @@ function render() {{
   const groups = element('g');
   for (const [tlsId, movements] of movementsByTls) {{
     const center = junctionPosition(tlsId);
-    const circle = element('circle', {{cx: center.x, cy: center.y, r: movements.length > 12 ? 48 : 40, class: `junction-group ${{selected === `junction:${{tlsId}}` ? 'selected' : ''}}`}});
+    const radius = (movements.length > 12 ? 48 : 40) * nodeScale;
+    const circle = element('circle', {{cx: center.x, cy: center.y, r: radius, class: `junction-group ${{selected === `junction:${{tlsId}}` ? 'selected' : ''}}`}});
     circle.addEventListener('click', event => selectNode('junction', junctionById.get(tlsId), event));
     groups.appendChild(circle);
   }}
@@ -304,12 +307,13 @@ function render() {{
     if (!junction.is_signalized && !showUnsignalized) continue;
     const point = junctionPosition(junction.junction_id);
     const stub = junction.junction_type === 'dead_end';
-    const node = element('circle', {{cx: point.x, cy: point.y, r: junction.is_signalized ? 8 : 6, class: `node junction ${{junction.is_signalized ? 'signal' : stub ? 'stub' : 'unsignalized'}} ${{selected === `junction:${{junction.junction_id}}` ? 'selected' : ''}}`}});
+    const nodeRadius = (junction.is_signalized ? 6 : 4.5) * nodeScale;
+    const node = element('circle', {{cx: point.x, cy: point.y, r: nodeRadius, class: `node junction ${{junction.is_signalized ? 'signal' : stub ? 'stub' : 'unsignalized'}} ${{selected === `junction:${{junction.junction_id}}` ? 'selected' : ''}}`}});
     node.addEventListener('click', event => selectNode('junction', junction, event));
     if (layout === 'relaxed') node.addEventListener('pointerdown', event => beginAnchorDrag(junction.junction_id, event));
     junctionLayer.appendChild(node);
     if (showLabels) {{
-      const label = element('text', {{x: point.x + 10, y: point.y - 9, class: 'label'}});
+      const label = element('text', {{x: point.x + 7 * nodeScale, y: point.y - 7 * nodeScale, class: 'label', 'font-size': 9 * labelScale}});
       label.textContent = junction.selectable_phase_count > 0
         ? `${{junction.junction_id}} · ${{junction.selectable_phase_count}} phases`
         : junction.junction_id;
@@ -320,11 +324,12 @@ function render() {{
   const laneLayer = element('g');
   for (const lane of data.lane_groups) {{
     const point = lanePosition(lane);
-    const node = element('rect', {{x: point.x - 5, y: point.y - 5, width: 10, height: 10, transform: `rotate(45 ${{point.x}} ${{point.y}})`, class: `node lane ${{selected === `lane:${{lane.lane_group_id}}` ? 'selected' : ''}}`}});
+    const markerSize = 7 * nodeScale;
+    const node = element('rect', {{x: point.x - markerSize / 2, y: point.y - markerSize / 2, width: markerSize, height: markerSize, transform: `rotate(45 ${{point.x}} ${{point.y}})`, class: `node lane ${{selected === `lane:${{lane.lane_group_id}}` ? 'selected' : ''}}`}});
     node.addEventListener('click', event => selectNode('lane', lane, event));
     laneLayer.appendChild(node);
     if (showLabels) {{
-      const label = element('text', {{x: point.x + 8, y: point.y + 3, class: 'minor-label'}});
+      const label = element('text', {{x: point.x + 5 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', 'font-size': 7 * labelScale}});
       label.textContent = `L${{lane.lane_group_id}}`;
       laneLayer.appendChild(label);
     }}
@@ -333,11 +338,11 @@ function render() {{
   const movementLayer = element('g');
   for (const movement of data.movements) {{
     const point = movementPosition(movement);
-    const node = element('circle', {{cx: point.x, cy: point.y, r: 4.5, class: `node movement ${{selected === `movement:${{movement.movement_id}}` ? 'selected' : ''}}`}});
+    const node = element('circle', {{cx: point.x, cy: point.y, r: 3.4 * nodeScale, class: `node movement ${{selected === `movement:${{movement.movement_id}}` ? 'selected' : ''}}`}});
     node.addEventListener('click', event => selectNode('movement', movement, event));
     movementLayer.appendChild(node);
     if (showLabels && movementsByTls.get(movement.traffic_light_id).length <= 12) {{
-      const label = element('text', {{x: point.x + 6, y: point.y + 3, class: 'minor-label'}});
+      const label = element('text', {{x: point.x + 4 * nodeScale, y: point.y + 2 * nodeScale, class: 'minor-label', 'font-size': 7 * labelScale}});
       label.textContent = `M${{movement.movement_id}}`;
       movementLayer.appendChild(label);
     }}
@@ -411,14 +416,30 @@ svg.addEventListener('pointermove', event => {{
 svg.addEventListener('pointerup', () => panStart = null);
 svg.addEventListener('wheel', event => {{
   event.preventDefault();
-  zoom = Math.max(.45, Math.min(3.2, zoom * (event.deltaY < 0 ? 1.12 : .89)));
+  const rect = svg.getBoundingClientRect();
+  const cursorX = (event.clientX - rect.left) / rect.width * WIDTH;
+  const cursorY = (event.clientY - rect.top) / rect.height * HEIGHT;
+  const graphX = (cursorX - panX) / zoom;
+  const graphY = (cursorY - panY) / zoom;
+  zoom = Math.max(.35, Math.min(10, zoom * (event.deltaY < 0 ? 1.18 : .85)));
+  panX = cursorX - graphX * zoom;
+  panY = cursorY - graphY * zoom;
   render();
 }}, {{passive: false}});
 document.getElementById('map-layout').onclick = () => setLayout('map');
 document.getElementById('force-layout').onclick = () => setLayout('relaxed');
 for (const id of ['show-roads', 'show-unsignalized', 'show-messages', 'show-labels']) document.getElementById(id).onchange = render;
-document.getElementById('zoom-in').onclick = () => {{ zoom = Math.min(3.2, zoom * 1.2); render(); }};
-document.getElementById('zoom-out').onclick = () => {{ zoom = Math.max(.45, zoom / 1.2); render(); }};
+function zoomAtCenter(factor) {{
+  const centerX = WIDTH / 2, centerY = HEIGHT / 2;
+  const graphX = (centerX - panX) / zoom;
+  const graphY = (centerY - panY) / zoom;
+  zoom = Math.max(.35, Math.min(10, zoom * factor));
+  panX = centerX - graphX * zoom;
+  panY = centerY - graphY * zoom;
+  render();
+}}
+document.getElementById('zoom-in').onclick = () => zoomAtCenter(1.25);
+document.getElementById('zoom-out').onclick = () => zoomAtCenter(.8);
 document.getElementById('reset-view').onclick = () => {{ zoom = 1; panX = 0; panY = 0; render(); }};
 document.getElementById('network-name').textContent = data.network_name;
 const signalized = data.junctions.filter(j => j.is_signalized).length;
