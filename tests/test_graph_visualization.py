@@ -37,6 +37,8 @@ def test_graph_visualization_distinguishes_gnn_nodes_from_sumo_context() -> None
     assert len(visualization.movements) == len(graph.movements)
     assert len(visualization.lane_groups) == 24
     assert any(len(lane_group.edge_ids) == 2 for lane_group in visualization.lane_groups)
+    assert {lane_group.component_id for lane_group in visualization.lane_groups} == {0}
+    assert {movement.component_id for movement in visualization.movements} == {0}
     assert all(movement.traffic_light_id in runtime.programs for movement in visualization.movements)
     assert junctions['N1_1'].selectable_phase_count == 17
 

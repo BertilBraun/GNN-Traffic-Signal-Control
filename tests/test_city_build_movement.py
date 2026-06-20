@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts import build_network  # noqa: E402
 from scripts.inspect_movement_city import (  # noqa: E402
+    _connectivity_report,
     _suspicious_lane_groups,
     _suspicious_movements,
 )
@@ -77,10 +78,13 @@ def test_inspection_suspicion_checks_accept_current_grid_graph() -> None:
         runtime.start()
         graph = build_movement_graph(runtime.programs, net_path=GRID_NET)
         network = sumolib.net.readNet(str(GRID_NET), withConnections=True)
+        connectivity = _connectivity_report(graph)
         lane_group_warnings = _suspicious_lane_groups(graph=graph, network=network)
         movement_warnings = _suspicious_movements(graph)
     finally:
         runtime.close()
 
+    assert connectivity.component_count == 1
+    assert connectivity.unused_lane_groups == ()
     assert lane_group_warnings == ()
     assert movement_warnings == ()

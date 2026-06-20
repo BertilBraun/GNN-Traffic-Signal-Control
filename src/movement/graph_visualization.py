@@ -37,6 +37,7 @@ class LaneGroupVisualization(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     lane_group_id: int
+    component_id: int
     edge_ids: tuple[str, ...]
     junction_ids: tuple[str, ...]
     from_junction_id: str
@@ -50,6 +51,7 @@ class MovementVisualization(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     movement_id: int
+    component_id: int
     traffic_light_id: str
     input_lane_group_id: int
     output_lane_group_id: int
@@ -90,6 +92,7 @@ def build_graph_visualization(
     )
     lane_group_edge_ids = {str(edge_id) for lane_group in graph.lane_groups for edge_id in lane_group.edge_ids}
     network_edges = {str(edge.getID()): edge for edge in network.getEdges() if not str(edge.getID()).startswith(':')}
+    component_by_lane_group, component_by_movement = _component_ids(graph)
     roads = tuple(
         RoadVisualization(
             edge_id=edge_id,
@@ -103,6 +106,7 @@ def build_graph_visualization(
     lane_groups = tuple(
         LaneGroupVisualization(
             lane_group_id=int(lane_group.lane_group_id),
+            component_id=component_by_lane_group[int(lane_group.lane_group_id)],
             edge_ids=tuple(str(edge_id) for edge_id in lane_group.edge_ids),
             junction_ids=(
                 str(network_edges[str(lane_group.edge_ids[0])].getFromNode().getID()),
@@ -119,6 +123,7 @@ def build_graph_visualization(
     movements = tuple(
         MovementVisualization(
             movement_id=int(movement.movement_id),
+            component_id=component_by_movement[int(movement.movement_id)],
             traffic_light_id=str(movement.traffic_light_id),
             input_lane_group_id=int(movement.input_lane_group_id),
             output_lane_group_id=int(movement.output_lane_group_id),
@@ -133,6 +138,51 @@ def build_graph_visualization(
         lane_groups=lane_groups,
         movements=movements,
     )
+
+
+def _component_ids(graph: MovementGraph) -> tuple[dict[int, int], dict[int, int]]:
+    neighbors: dict[str, set[str]] = {
+        **{f'L{int(lane_group.lane_group_id)}': set() for lane_group in graph.lane_groups},
+        **{f'M{int(movement.movement_id)}': set() for movement in graph.movements},
+    }
+    for movement in graph.movements:
+        movement_node = f'M{int(movement.movement_id)}'
+        for lane_group_id in (int(movement.input_lane_group_id), int(movement.output_lane_group_id)):
+            lane_node = f'L{lane_group_id}'
+            neighbors[movement_node].add(lane_node)
+            neighbors[lane_node].add(movement_node)
+
+    components: list[tuple[set[int], set[int]]] = []
+    seen: set[str] = set()
+    for node in sorted(neighbors, key=_component_node_sort_key):
+        if node in seen:
+            continue
+        pending = [node]
+        component_nodes: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            component_nodes.add(current)
+            pending.extend(sorted(neighbors[current] - seen, key=_component_node_sort_key))
+        components.append(
+            (
+                {int(component_node[1:]) for component_node in component_nodes if component_node.startswith('L')},
+                {int(component_node[1:]) for component_node in component_nodes if component_node.startswith('M')},
+            )
+        )
+    components = sorted(components, key=lambda item: (-(len(item[0]) + len(item[1])), min(item[0], default=-1)))
+    component_by_lane_group: dict[int, int] = {}
+    component_by_movement: dict[int, int] = {}
+    for component_id, (lane_group_ids, movement_ids) in enumerate(components):
+        component_by_lane_group.update({lane_group_id: component_id for lane_group_id in lane_group_ids})
+        component_by_movement.update({movement_id: component_id for movement_id in movement_ids})
+    return component_by_lane_group, component_by_movement
+
+
+def _component_node_sort_key(node: str) -> tuple[str, int]:
+    return (node[0], int(node[1:]))
 
 
 def _effective_lane_count(edge_ids: tuple[object, ...], network_edges: Mapping[str, object]) -> float:

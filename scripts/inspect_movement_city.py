@@ -34,8 +34,28 @@ class InspectionReport:
     movement_count: int
     phase_counts_by_traffic_light: tuple[tuple[str, int], ...]
     skipped_traffic_lights: tuple[SkippedTrafficLight, ...]
+    connectivity: 'ConnectivityReport'
     suspicious_lane_groups: tuple[str, ...]
     suspicious_movements: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GraphComponent:
+    lane_group_ids: tuple[int, ...]
+    movement_ids: tuple[int, ...]
+    traffic_light_ids: tuple[str, ...]
+    lane_group_edges: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
+class ConnectivityReport:
+    component_count: int
+    largest_component_lane_groups: int
+    largest_component_movements: int
+    components: tuple[GraphComponent, ...]
+    input_only_lane_groups: tuple[int, ...]
+    output_only_lane_groups: tuple[int, ...]
+    unused_lane_groups: tuple[int, ...]
 
 
 def inspect_city_config(
@@ -74,6 +94,7 @@ def inspect_city_config(
                 for traffic_light_id, program in sorted(runtime.programs.items())
             ),
             skipped_traffic_lights=skipped,
+            connectivity=_connectivity_report(graph),
             suspicious_lane_groups=_suspicious_lane_groups(graph=graph, network=network),
             suspicious_movements=_suspicious_movements(graph),
         )
@@ -151,6 +172,82 @@ def _suspicious_movements(graph: MovementGraph) -> tuple[str, ...]:
     return tuple(warnings)
 
 
+def _connectivity_report(graph: MovementGraph) -> ConnectivityReport:
+    lane_group_ids = {int(lane_group.lane_group_id) for lane_group in graph.lane_groups}
+    movement_ids = {int(movement.movement_id) for movement in graph.movements}
+    neighbors: dict[str, set[str]] = {
+        **{f'L{lane_group_id}': set() for lane_group_id in lane_group_ids},
+        **{f'M{movement_id}': set() for movement_id in movement_ids},
+    }
+    input_lane_group_ids = {int(movement.input_lane_group_id) for movement in graph.movements}
+    output_lane_group_ids = {int(movement.output_lane_group_id) for movement in graph.movements}
+    movement_by_id = {int(movement.movement_id): movement for movement in graph.movements}
+    lane_group_by_id = {int(lane_group.lane_group_id): lane_group for lane_group in graph.lane_groups}
+    for movement in graph.movements:
+        movement_node = f'M{int(movement.movement_id)}'
+        for lane_group_id in (int(movement.input_lane_group_id), int(movement.output_lane_group_id)):
+            lane_node = f'L{lane_group_id}'
+            neighbors[movement_node].add(lane_node)
+            neighbors[lane_node].add(movement_node)
+
+    components: list[GraphComponent] = []
+    seen: set[str] = set()
+    for node in sorted(neighbors, key=_component_node_sort_key):
+        if node in seen:
+            continue
+        pending = [node]
+        component_nodes: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            component_nodes.add(current)
+            pending.extend(sorted(neighbors[current] - seen, key=_component_node_sort_key))
+        component_lane_group_ids = tuple(
+            sorted(int(component_node[1:]) for component_node in component_nodes if component_node.startswith('L'))
+        )
+        component_movement_ids = tuple(
+            sorted(int(component_node[1:]) for component_node in component_nodes if component_node.startswith('M'))
+        )
+        traffic_light_ids = tuple(
+            sorted(
+                {str(movement_by_id[movement_id].traffic_light_id) for movement_id in component_movement_ids},
+                key=str,
+            )
+        )
+        lane_group_edges = tuple(
+            tuple(str(edge_id) for edge_id in lane_group_by_id[lane_group_id].edge_ids)
+            for lane_group_id in component_lane_group_ids
+        )
+        components.append(
+            GraphComponent(
+                lane_group_ids=component_lane_group_ids,
+                movement_ids=component_movement_ids,
+                traffic_light_ids=traffic_light_ids,
+                lane_group_edges=lane_group_edges,
+            )
+        )
+    components = sorted(
+        components,
+        key=lambda component: (-len(component.lane_group_ids) - len(component.movement_ids), component.lane_group_ids),
+    )
+    largest = components[0] if components else GraphComponent((), (), (), ())
+    return ConnectivityReport(
+        component_count=len(components),
+        largest_component_lane_groups=len(largest.lane_group_ids),
+        largest_component_movements=len(largest.movement_ids),
+        components=tuple(components),
+        input_only_lane_groups=tuple(sorted(input_lane_group_ids - output_lane_group_ids)),
+        output_only_lane_groups=tuple(sorted(output_lane_group_ids - input_lane_group_ids)),
+        unused_lane_groups=tuple(sorted(lane_group_ids - input_lane_group_ids - output_lane_group_ids)),
+    )
+
+
+def _component_node_sort_key(node: str) -> tuple[str, int]:
+    return (node[0], int(node[1:]))
+
+
 def print_report(report: InspectionReport) -> None:
     """Print a compact human-readable movement graph inspection report."""
     print('Movement city inspection')
@@ -167,6 +264,27 @@ def print_report(report: InspectionReport) -> None:
             print(f'    {skipped.traffic_light_id}: {skipped.reason}')
     else:
         print('    none')
+    print('  graph connectivity:')
+    print(f'    message graph components: {report.connectivity.component_count}')
+    print(
+        '    largest component: '
+        f'{report.connectivity.largest_component_lane_groups} lane groups, '
+        f'{report.connectivity.largest_component_movements} movements'
+    )
+    print(f'    input-only lane groups: {len(report.connectivity.input_only_lane_groups)}')
+    print(f'    output-only lane groups: {len(report.connectivity.output_only_lane_groups)}')
+    print(f'    unused lane groups: {len(report.connectivity.unused_lane_groups)}')
+    print('    smallest components:')
+    for component in sorted(
+        report.connectivity.components,
+        key=lambda item: (len(item.lane_group_ids) + len(item.movement_ids), item.lane_group_ids),
+    )[:10]:
+        edge_preview = ', '.join(' -> '.join(edge_ids) for edge_ids in component.lane_group_edges[:3])
+        suffix = ' ...' if len(component.lane_group_edges) > 3 else ''
+        print(
+            f'      L={len(component.lane_group_ids)} M={len(component.movement_ids)} '
+            f'TLS={len(component.traffic_light_ids)} edges=[{edge_preview}{suffix}]'
+        )
     print('  suspicious lane groups:')
     _print_warning_lines(report.suspicious_lane_groups)
     print('  suspicious movements:')

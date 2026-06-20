@@ -183,6 +183,7 @@ let relaxed = new Map();
 const junctionById = new Map(data.junctions.map(j => [j.junction_id, j]));
 const laneById = new Map(data.lane_groups.map(l => [l.lane_group_id, l]));
 const movementsByTls = new Map();
+const componentColors = ['#62b6cb', '#f0b64d', '#8ec07c', '#d3869b', '#b8a0ff', '#e07a5f', '#7bc8a4', '#f2cc8f'];
 for (const movement of data.movements) {{
   if (!movementsByTls.has(movement.traffic_light_id)) movementsByTls.set(movement.traffic_light_id, []);
   movementsByTls.get(movement.traffic_light_id).push(movement);
@@ -230,6 +231,9 @@ function movementPosition(movement) {{
   const angle = -Math.PI / 2 + index / group.length * Math.PI * 2;
   return {{x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius}};
 }}
+function componentColor(componentId) {{
+  return componentColors[componentId % componentColors.length];
+}}
 function element(name, attrs = {{}}) {{
   const node = document.createElementNS(NS, name);
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
@@ -242,8 +246,8 @@ function addMarker(defs, id, color, reverse = false) {{
 }}
 function details(type, item) {{
   const target = document.getElementById('details');
-  if (type === 'lane') target.innerHTML = `<strong>LaneGroup L${{item.lane_group_id}}</strong>SUMO edges: ${{item.edge_ids.join(' -> ')}}<br>Direction: ${{item.from_junction_id}} -> ${{item.to_junction_id}}<br>Length: ${{item.length_m.toFixed(1)}} m<br>Effective lanes: ${{item.effective_lane_count.toFixed(2)}}<br>Effective speed: ${{item.effective_speed_limit_mps.toFixed(2)}} m/s<br><br>This is a real GNN node.`;
-  if (type === 'movement') target.innerHTML = `<strong>Movement M${{item.movement_id}}</strong>Traffic light: ${{item.traffic_light_id}}<br>Input: L${{item.input_lane_group_id}}<br>Output: L${{item.output_lane_group_id}}<br>Controlled links: ${{item.controlled_link_count}}<br><br>This is a real GNN node.`;
+  if (type === 'lane') target.innerHTML = `<strong>LaneGroup L${{item.lane_group_id}}</strong>Component: ${{item.component_id}}<br>SUMO edges: ${{item.edge_ids.join(' -> ')}}<br>Direction: ${{item.from_junction_id}} -> ${{item.to_junction_id}}<br>Length: ${{item.length_m.toFixed(1)}} m<br>Effective lanes: ${{item.effective_lane_count.toFixed(2)}}<br>Effective speed: ${{item.effective_speed_limit_mps.toFixed(2)}} m/s<br><br>This is a real GNN node.`;
+  if (type === 'movement') target.innerHTML = `<strong>Movement M${{item.movement_id}}</strong>Component: ${{item.component_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Input: L${{item.input_lane_group_id}}<br>Output: L${{item.output_lane_group_id}}<br>Controlled links: ${{item.controlled_link_count}}<br><br>This is a real GNN node.`;
   if (type === 'junction') {{
     const count = (movementsByTls.get(item.junction_id) || []).length;
     target.innerHTML = `<strong>Junction ${{item.junction_id}}</strong>SUMO type: ${{item.junction_type}}<br>Signalized: ${{item.is_signalized ? 'yes' : 'no'}}<br>Movement nodes: ${{count}}<br>Selectable phases: ${{item.selectable_phase_count}}<br><br>This anchor is visual context, not a GNN node.`;
@@ -325,7 +329,7 @@ function render() {{
   for (const lane of data.lane_groups) {{
     const point = lanePosition(lane);
     const markerSize = 7 * nodeScale;
-    const node = element('rect', {{x: point.x - markerSize / 2, y: point.y - markerSize / 2, width: markerSize, height: markerSize, transform: `rotate(45 ${{point.x}} ${{point.y}})`, class: `node lane ${{selected === `lane:${{lane.lane_group_id}}` ? 'selected' : ''}}`}});
+    const node = element('rect', {{x: point.x - markerSize / 2, y: point.y - markerSize / 2, width: markerSize, height: markerSize, transform: `rotate(45 ${{point.x}} ${{point.y}})`, class: `node lane ${{selected === `lane:${{lane.lane_group_id}}` ? 'selected' : ''}}`, style: `fill:${{componentColor(lane.component_id)}}`}});
     node.addEventListener('click', event => selectNode('lane', lane, event));
     laneLayer.appendChild(node);
     if (showLabels) {{
@@ -338,7 +342,7 @@ function render() {{
   const movementLayer = element('g');
   for (const movement of data.movements) {{
     const point = movementPosition(movement);
-    const node = element('circle', {{cx: point.x, cy: point.y, r: 3.4 * nodeScale, class: `node movement ${{selected === `movement:${{movement.movement_id}}` ? 'selected' : ''}}`}});
+    const node = element('circle', {{cx: point.x, cy: point.y, r: 3.4 * nodeScale, class: `node movement ${{selected === `movement:${{movement.movement_id}}` ? 'selected' : ''}}`, style: `fill:${{componentColor(movement.component_id)}}`}});
     node.addEventListener('click', event => selectNode('movement', movement, event));
     movementLayer.appendChild(node);
     if (showLabels && movementsByTls.get(movement.traffic_light_id).length <= 12) {{
@@ -447,6 +451,7 @@ const unsignalized = data.junctions.length - signalized;
 document.getElementById('stats').innerHTML = `
   <span>LaneGroup nodes</span><b>${{data.lane_groups.length}}</b>
   <span>Movement nodes</span><b>${{data.movements.length}}</b>
+  <span>GNN components</span><b>${{new Set(data.lane_groups.map(lane => lane.component_id)).size}}</b>
   <span>Signalized anchors</span><b>${{signalized}}</b>
   <span>Other SUMO junctions</span><b>${{unsignalized}}</b>
   <span>Typed message edges</span><b>${{data.movements.length * 4}}</b>`;
