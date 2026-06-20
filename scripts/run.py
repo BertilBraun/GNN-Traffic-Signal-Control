@@ -35,7 +35,7 @@ from src.movement.normalization import RunningNormalizer  # noqa: E402
 from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.runtime import MovementControlRuntime
-from src.movement.schema import MovementIndex, TrafficLightProgram
+from src.movement.schema import TrafficLightProgram
 from src.movement.training.il.checkpoint import (  # noqa: E402
     load_movement_checkpoint,
     normalizer_from_state,
@@ -60,36 +60,6 @@ def select_control_states(
         selection = select_highest_scoring_phase(program, movement_scores)
         states[tls_id] = program.selectable_phases[selection.local_phase_index].state
     return states
-
-
-def print_phase_debug(
-    traffic_light_id: str,
-    program: TrafficLightProgram,
-    lane_api: LaneFeatureApi,
-    movement_scores: Mapping[MovementIndex, float],
-    selected_state: str,
-) -> None:
-    """Print movement and phase score details for one traffic light."""
-    print(f'  TLS {traffic_light_id} selected={selected_state}')
-    movement_by_index = {movement.movement_index: movement for movement in program.movements}
-    for phase_index, phase in enumerate(program.selectable_phases):
-        phase_score = sum(float(movement_scores[movement_index]) for movement_index in phase.enabled_movement_indices)
-        marker = '*' if str(phase.state) == selected_state else ' '
-        enabled = ', '.join(str(int(movement_index)) for movement_index in phase.enabled_movement_indices)
-        print(
-            f'  {marker} phase local={phase_index} sumo={int(phase.sumo_phase_index)} score={phase_score:.2f} links=[{enabled}]'
-        )
-        for movement_index in phase.enabled_movement_indices:
-            movement = movement_by_index[movement_index]
-            incoming_queue = lane_api.getLastStepHaltingNumber(movement.incoming_lane_id)
-            outgoing_queue = lane_api.getLastStepHaltingNumber(movement.outgoing_lane_id)
-            print(
-                '      '
-                f'm{int(movement_index)} sig={int(movement.signal_index)} '
-                f'in={movement.incoming_lane_id} q={incoming_queue} '
-                f'out={movement.outgoing_lane_id} q={outgoing_queue} '
-                f'score={float(movement_scores[movement_index]):.2f}'
-            )
 
 
 def select_graph_score_control_states(
@@ -226,12 +196,6 @@ def parse_args() -> argparse.Namespace:
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     parser.add_argument('--verbose', action='store_true', help='Print selected phases each decision')
-    parser.add_argument(
-        '--debug-tls',
-        nargs='*',
-        default=(),
-        help='Traffic-light IDs for detailed baseline phase-score debugging',
-    )
     return parser.parse_args()
 
 
@@ -311,22 +275,11 @@ def main() -> None:
                         device=args.device,
                     )
                 else:
-                    desired_states = {}
-                    debug_tls = set(args.debug_tls)
-                    for traffic_light_id, program in runtime.programs.items():
-                        movement_scores = compute_movement_scores(program, runtime.lane_api, method=scoring_method)
-                        selection = select_highest_scoring_phase(program, movement_scores)
-                        selected_state = str(program.selectable_phases[selection.local_phase_index].state)
-                        desired_states[traffic_light_id] = selected_state
-                        if traffic_light_id in debug_tls:
-                            print(f't={step:5d}s method={args.method}')
-                            print_phase_debug(
-                                traffic_light_id=traffic_light_id,
-                                program=program,
-                                lane_api=runtime.lane_api,
-                                movement_scores=movement_scores,
-                                selected_state=selected_state,
-                            )
+                    desired_states = select_control_states(
+                        runtime.programs,
+                        runtime.lane_api,
+                        method=scoring_method,
+                    )
                 accepted_states = runtime.request_targets(desired_states)
                 if args.verbose:
                     print(f't={step:5d}s method={args.method} desired={desired_states} accepted={accepted_states}')
