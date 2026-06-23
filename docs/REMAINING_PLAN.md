@@ -2084,9 +2084,17 @@ Acceptance:
 
 Planned city-network first pass:
 
-* build roughly 10 visually inspected city networks with calibrated demand;
-* train on nine and hold one out for transfer evaluation;
-* rotate the held-out city once the first split is stable;
+* start with five visually inspected city networks with calibrated demand;
+* train on four and hold one out for transfer evaluation;
+* prefer European city areas that are not strongly grid-like but still have many
+  signalized intersections;
+* include Karlsruhe-Oststadt as a personally relevant inspection/training
+  candidate, but balance it with denser signalized areas such as Mannheim,
+  Stuttgart, Frankfurt, Freiburg, Heidelberg, or similar candidates after bbox
+  verification;
+* keep generated city configs local under ignored `configs/` paths and commit
+  only hand-authored build commands, recipes, scripts, and docs;
+* rotate or expand the held-out city once the first split is stable;
 * start by continuing from the generated-grid checkpoint instead of training
   city PPO from scratch;
 * evaluate against max-pressure and queue on the held-out network.
