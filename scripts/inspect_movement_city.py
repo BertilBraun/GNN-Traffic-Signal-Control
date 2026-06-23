@@ -32,11 +32,14 @@ class InspectionReport:
     selectable_traffic_light_count: int
     lane_group_count: int
     movement_count: int
+    lane_lane_connector_count: int
+    pass_through_traffic_light_count: int
     phase_counts_by_traffic_light: tuple[tuple[str, int], ...]
     skipped_traffic_lights: tuple[SkippedTrafficLight, ...]
     connectivity: 'ConnectivityReport'
     suspicious_lane_groups: tuple[str, ...]
     suspicious_movements: tuple[str, ...]
+    signalized_connector_errors: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,8 @@ def inspect_city_config(
             selectable_traffic_light_count=len(runtime.programs),
             lane_group_count=len(graph.lane_groups),
             movement_count=len(graph.movements),
+            lane_lane_connector_count=len(graph.lane_lane_connectors),
+            pass_through_traffic_light_count=len(graph.pass_through_traffic_light_ids),
             phase_counts_by_traffic_light=tuple(
                 (traffic_light_id, len(program.selectable_phases))
                 for traffic_light_id, program in sorted(runtime.programs.items())
@@ -97,6 +102,7 @@ def inspect_city_config(
             connectivity=_connectivity_report(graph),
             suspicious_lane_groups=_suspicious_lane_groups(graph=graph, network=network),
             suspicious_movements=_suspicious_movements(graph),
+            signalized_connector_errors=_signalized_connector_errors(graph),
         )
     finally:
         runtime.close()
@@ -181,6 +187,8 @@ def _connectivity_report(graph: MovementGraph) -> ConnectivityReport:
     }
     input_lane_group_ids = {int(movement.input_lane_group_id) for movement in graph.movements}
     output_lane_group_ids = {int(movement.output_lane_group_id) for movement in graph.movements}
+    connector_source_lane_group_ids = {int(connector.source_lane_group_id) for connector in graph.lane_lane_connectors}
+    connector_target_lane_group_ids = {int(connector.target_lane_group_id) for connector in graph.lane_lane_connectors}
     movement_by_id = {int(movement.movement_id): movement for movement in graph.movements}
     lane_group_by_id = {int(lane_group.lane_group_id): lane_group for lane_group in graph.lane_groups}
     for movement in graph.movements:
@@ -189,6 +197,11 @@ def _connectivity_report(graph: MovementGraph) -> ConnectivityReport:
             lane_node = f'L{lane_group_id}'
             neighbors[movement_node].add(lane_node)
             neighbors[lane_node].add(movement_node)
+    for connector in graph.lane_lane_connectors:
+        source_node = f'L{int(connector.source_lane_group_id)}'
+        target_node = f'L{int(connector.target_lane_group_id)}'
+        neighbors[source_node].add(target_node)
+        neighbors[target_node].add(source_node)
 
     components: list[GraphComponent] = []
     seen: set[str] = set()
@@ -240,7 +253,24 @@ def _connectivity_report(graph: MovementGraph) -> ConnectivityReport:
         components=tuple(components),
         input_only_lane_groups=tuple(sorted(input_lane_group_ids - output_lane_group_ids)),
         output_only_lane_groups=tuple(sorted(output_lane_group_ids - input_lane_group_ids)),
-        unused_lane_groups=tuple(sorted(lane_group_ids - input_lane_group_ids - output_lane_group_ids)),
+        unused_lane_groups=tuple(
+            sorted(
+                lane_group_ids
+                - input_lane_group_ids
+                - output_lane_group_ids
+                - connector_source_lane_group_ids
+                - connector_target_lane_group_ids
+            )
+        ),
+    )
+
+
+def _signalized_connector_errors(graph: MovementGraph) -> tuple[str, ...]:
+    controllable_ids = {str(movement.traffic_light_id) for movement in graph.movements}
+    return tuple(
+        f'L{int(connector.source_lane_group_id)} -> L{int(connector.target_lane_group_id)} via {connector.via_junction_id}'
+        for connector in graph.lane_lane_connectors
+        if connector.via_junction_id in controllable_ids
     )
 
 
@@ -253,8 +283,10 @@ def print_report(report: InspectionReport) -> None:
     print('Movement city inspection')
     print(f'  traffic lights in SUMO: {report.traffic_light_count}')
     print(f'  traffic lights with selectable phases: {report.selectable_traffic_light_count}')
+    print(f'  pass-through/single-phase traffic lights: {report.pass_through_traffic_light_count}')
     print(f'  lane groups: {report.lane_group_count}')
     print(f'  movements: {report.movement_count}')
+    print(f'  lane-lane connector edges: {report.lane_lane_connector_count}')
     print('  selectable phases per traffic light:')
     for traffic_light_id, phase_count in report.phase_counts_by_traffic_light:
         print(f'    {traffic_light_id}: {phase_count}')
@@ -289,6 +321,8 @@ def print_report(report: InspectionReport) -> None:
     _print_warning_lines(report.suspicious_lane_groups)
     print('  suspicious movements:')
     _print_warning_lines(report.suspicious_movements)
+    print('  signalized connector errors:')
+    _print_warning_lines(report.signalized_connector_errors)
 
 
 def _print_warning_lines(warnings: tuple[str, ...]) -> None:

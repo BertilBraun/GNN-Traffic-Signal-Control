@@ -28,6 +28,6 @@ def extract_programs_from_trafficlight_api(
             phase_states=phase_states,
             controlled_links=trafficlight_api.getControlledLinks(tls_id),
         )
-        if program.selectable_phases:
+        if len(program.selectable_phases) > 1:
             programs[tls_id] = program
     return programs

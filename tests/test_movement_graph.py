@@ -17,12 +17,12 @@ def test_build_graph_keeps_opposite_lane_groups_separate() -> None:
     programs = {
         'B': extract_traffic_light_program(
             tls_id='B',
-            phase_states=['G'],
+            phase_states=['G', 'g'],
             controlled_links=[('A_to_B_0', 'B_to_C_0', None)],
         ),
         'A': extract_traffic_light_program(
             tls_id='A',
-            phase_states=['G'],
+            phase_states=['G', 'g'],
             controlled_links=[('B_to_A_0', 'A_to_D_0', None)],
         ),
     }
@@ -89,12 +89,12 @@ def test_build_graph_edges_and_phase_incidence_align_with_program_order() -> Non
 def test_build_graph_is_deterministic_regardless_of_program_mapping_order() -> None:
     program_a = extract_traffic_light_program(
         tls_id='A',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[('B_to_A_0', 'A_to_C_0', None)],
     )
     program_b = extract_traffic_light_program(
         tls_id='B',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[('A_to_B_0', 'B_to_D_0', None)],
     )
 
@@ -104,7 +104,7 @@ def test_build_graph_is_deterministic_regardless_of_program_mapping_order() -> N
     assert first == second
 
 
-def test_build_graph_contracts_unambiguous_unsignalized_corner_corridors() -> None:
+def test_grid_graph_uses_unsignalized_lane_connectors_without_corridor_contraction() -> None:
     runtime = MovementControlRuntime(cfg_path=GRID_CFG, gui=False, seed=42)
     try:
         runtime.start()
@@ -112,23 +112,47 @@ def test_build_graph_contracts_unambiguous_unsignalized_corner_corridors() -> No
     finally:
         runtime.close()
 
-    corner_lane_group_id = graph.lane_group_id_by_edge['N0_1_to_N0_0']
-    assert graph.lane_group_id_by_edge['N0_0_to_N1_0'] == corner_lane_group_id
-    assert graph.lane_groups[corner_lane_group_id].edge_ids == (
-        'N0_1_to_N0_0',
-        'N0_0_to_N1_0',
-    )
-    assert graph.lane_group_id_by_edge['N0_1_to_N1_1'] != corner_lane_group_id
+    source_lane_group_id = graph.lane_group_id_by_edge['N0_1_to_N0_0']
+    through_lane_group_id = graph.lane_group_id_by_edge['N0_0_to_N1_0']
+    assert through_lane_group_id != source_lane_group_id
+    assert graph.lane_groups[source_lane_group_id].edge_ids == ('N0_1_to_N0_0',)
     assert any(
-        movement.traffic_light_id == 'N0_1' and movement.output_lane_group_id == corner_lane_group_id
+        connector.source_lane_group_id == source_lane_group_id
+        and connector.target_lane_group_id == through_lane_group_id
+        and connector.via_junction_id == 'N0_0'
+        and connector.connector_type == 'unsignalized'
+        and connector.freeflow_time_s > 0.0
+        for connector in graph.lane_lane_connectors
+    )
+    assert sum(1 for connector in graph.lane_lane_connectors if connector.via_junction_id == 'N0_0') > 1
+    assert any(
+        movement.traffic_light_id == 'N0_1' and movement.output_lane_group_id == source_lane_group_id
         for movement in graph.movements
     )
     assert any(
-        movement.traffic_light_id == 'N1_0' and movement.input_lane_group_id == corner_lane_group_id
+        movement.traffic_light_id == 'N1_0' and movement.input_lane_group_id == through_lane_group_id
         for movement in graph.movements
     )
-    assert len(graph.lane_groups) == 24
+    assert all(
+        connector.via_junction_id not in {str(movement.traffic_light_id) for movement in graph.movements}
+        for connector in graph.lane_lane_connectors
+    )
+    assert len(graph.lane_groups) == 48
     assert len(graph.movements) == 60
+
+
+def test_single_phase_traffic_light_is_pass_through_not_policy_control() -> None:
+    program = extract_traffic_light_program(
+        tls_id='J0',
+        phase_states=['G'],
+        controlled_links=[('north_in_0', 'south_out_0', None)],
+    )
+
+    graph = build_movement_graph({'J0': program})
+
+    assert graph.movements == ()
+    assert graph.phase_incidences == {}
+    assert graph.pass_through_traffic_light_ids == ('J0',)
 
 
 def test_corridor_branch_requires_one_unique_straight_continuation() -> None:

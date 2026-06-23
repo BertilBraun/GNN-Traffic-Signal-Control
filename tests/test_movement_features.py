@@ -28,7 +28,7 @@ def test_detector_helpers_use_lane_group_length_cap() -> None:
 def test_feature_frame_extracts_lane_group_rows_in_graph_order() -> None:
     program = extract_traffic_light_program(
         tls_id='J0',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[
             [('north_in_0', 'south_out_0', None), ('north_in_1', 'south_out_1', None)],
         ],
@@ -81,7 +81,7 @@ def test_feature_frame_extracts_lane_group_rows_in_graph_order() -> None:
 def test_feature_frame_excludes_vehicles_upstream_of_detector_range() -> None:
     program = extract_traffic_light_program(
         tls_id='J0',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[[('north_in_0', 'south_out_0', None)]],
     )
     graph = build_movement_graph({'J0': program})
@@ -118,7 +118,7 @@ def test_feature_frame_excludes_vehicles_upstream_of_detector_range() -> None:
 def test_feature_frame_extracts_oracle_movement_demand_by_graph_id() -> None:
     program = extract_traffic_light_program(
         tls_id='J0',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[
             [('north_in_0', 'south_out_0', None), ('north_in_1', 'south_out_1', None)],
         ],
@@ -155,7 +155,7 @@ def test_feature_frame_extracts_oracle_movement_demand_by_graph_id() -> None:
 def test_lane_group_flow_tracker_reports_recent_detector_crossings() -> None:
     program = extract_traffic_light_program(
         tls_id='J0',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[[('north_in_0', 'south_out_0', None)]],
     )
     graph = build_movement_graph({'J0': program})
@@ -185,7 +185,7 @@ def test_lane_group_flow_tracker_reports_recent_detector_crossings() -> None:
 def test_feature_frame_aggregates_contracted_corridor_geometry() -> None:
     program = extract_traffic_light_program(
         tls_id='J0',
-        phase_states=['G'],
+        phase_states=['G', 'g'],
         controlled_links=[[('north_a_0', 'south_out_0', None)]],
     )
     base_graph = build_movement_graph({'J0': program})

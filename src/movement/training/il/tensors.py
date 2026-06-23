@@ -38,8 +38,16 @@ def edge_tensors_from_sample(
         'output_lane_to_movement': edge_tensor(sample.edge_indices.output_lane_to_movement, torch_device),
         'movement_to_input_lane': edge_tensor(sample.edge_indices.movement_to_input_lane, torch_device),
         'movement_to_output_lane': edge_tensor(sample.edge_indices.movement_to_output_lane, torch_device),
+        'lane_to_lane': edge_tensor(sample.edge_indices.lane_to_lane, torch_device),
+        'lane_to_lane_weight': torch.tensor(
+            sample.edge_indices.lane_to_lane_weight,
+            dtype=torch.float32,
+            device=torch_device,
+        ),
     }
 
 
 def edge_tensor(edges: tuple[tuple[int, int], ...], device: torch.device) -> torch.Tensor:
+    if not edges:
+        return torch.empty((2, 0), dtype=torch.long, device=device)
     return torch.tensor(edges, dtype=torch.long, device=device).t().contiguous()

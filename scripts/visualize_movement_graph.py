@@ -105,6 +105,7 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
 .message {{ fill: none; stroke-width: 1.4; opacity: .58; }}
 .message.input {{ stroke: #48b5d6; }}
 .message.output {{ stroke: #e7ad52; }}
+.message.connector {{ stroke: #8ec07c; stroke-width: 1.8; }}
 .junction-group {{ fill: #1d292d; stroke: #55727b; stroke-width: 1.4; opacity: .75; }}
 .junction-group.selected {{ stroke: #fff; stroke-width: 2.4; }}
 .junction {{ fill: #0d1113; stroke-width: 2; }}
@@ -155,6 +156,7 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
         <div class="legend-row"><span class="swatch" style="border-color:#7d878b;background:#0d1113"></span> Unsignalized SUMO junction</div>
         <div class="legend-row"><span class="line" style="background:#48b5d6"></span> Input-lane messages</div>
         <div class="legend-row"><span class="line" style="background:#e7ad52"></span> Output-lane messages</div>
+        <div class="legend-row"><span class="line" style="background:#8ec07c"></span> Unsignalized LaneGroup connectors</div>
       </div>
     </div>
     <div class="section">
@@ -182,6 +184,14 @@ let zoom = 1, panX = 0, panY = 0;
 let relaxed = new Map();
 const junctionById = new Map(data.junctions.map(j => [j.junction_id, j]));
 const laneById = new Map(data.lane_groups.map(l => [l.lane_group_id, l]));
+const outgoingConnectorsByLane = new Map();
+const incomingConnectorsByLane = new Map();
+for (const connector of data.lane_connectors) {{
+  if (!outgoingConnectorsByLane.has(connector.source_lane_group_id)) outgoingConnectorsByLane.set(connector.source_lane_group_id, []);
+  if (!incomingConnectorsByLane.has(connector.target_lane_group_id)) incomingConnectorsByLane.set(connector.target_lane_group_id, []);
+  outgoingConnectorsByLane.get(connector.source_lane_group_id).push(connector);
+  incomingConnectorsByLane.get(connector.target_lane_group_id).push(connector);
+}}
 const movementsByTls = new Map();
 const componentColors = ['#62b6cb', '#f0b64d', '#8ec07c', '#d3869b', '#b8a0ff', '#e07a5f', '#7bc8a4', '#f2cc8f'];
 for (const movement of data.movements) {{
@@ -246,7 +256,12 @@ function addMarker(defs, id, color, reverse = false) {{
 }}
 function details(type, item) {{
   const target = document.getElementById('details');
-  if (type === 'lane') target.innerHTML = `<strong>LaneGroup L${{item.lane_group_id}}</strong>Component: ${{item.component_id}}<br>SUMO edges: ${{item.edge_ids.join(' -> ')}}<br>Direction: ${{item.from_junction_id}} -> ${{item.to_junction_id}}<br>Length: ${{item.length_m.toFixed(1)}} m<br>Effective lanes: ${{item.effective_lane_count.toFixed(2)}}<br>Effective speed: ${{item.effective_speed_limit_mps.toFixed(2)}} m/s<br><br>This is a real GNN node.`;
+  if (type === 'lane') {{
+    const outgoing = outgoingConnectorsByLane.get(item.lane_group_id) || [];
+    const incoming = incomingConnectorsByLane.get(item.lane_group_id) || [];
+    const connectorText = [...outgoing.map(c => `out L${{c.target_lane_group_id}} via ${{c.via_junction_id}} ${{c.freeflow_time_s.toFixed(1)}}s ${{c.distance_m.toFixed(1)}}m`), ...incoming.map(c => `in L${{c.source_lane_group_id}} via ${{c.via_junction_id}} ${{c.freeflow_time_s.toFixed(1)}}s ${{c.distance_m.toFixed(1)}}m`)].slice(0, 8).join('<br>') || 'none';
+    target.innerHTML = `<strong>LaneGroup L${{item.lane_group_id}}</strong>Component: ${{item.component_id}}<br>SUMO edges: ${{item.edge_ids.join(' -> ')}}<br>Direction: ${{item.from_junction_id}} -> ${{item.to_junction_id}}<br>Length: ${{item.length_m.toFixed(1)}} m<br>Effective lanes: ${{item.effective_lane_count.toFixed(2)}}<br>Effective speed: ${{item.effective_speed_limit_mps.toFixed(2)}} m/s<br>Connector edges:<br>${{connectorText}}`;
+  }}
   if (type === 'movement') target.innerHTML = `<strong>Movement M${{item.movement_id}}</strong>Component: ${{item.component_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Input: L${{item.input_lane_group_id}}<br>Output: L${{item.output_lane_group_id}}<br>Controlled links: ${{item.controlled_link_count}}<br><br>This is a real GNN node.`;
   if (type === 'junction') {{
     const count = (movementsByTls.get(item.junction_id) || []).length;
@@ -271,6 +286,7 @@ function render() {{
   const defs = element('defs');
   addMarker(defs, 'arrow-input', '#48b5d6');
   addMarker(defs, 'arrow-output', '#e7ad52');
+  addMarker(defs, 'arrow-connector', '#8ec07c');
   svg.appendChild(defs);
   const viewport = element('g', {{transform: `translate(${{panX}} ${{panY}}) scale(${{zoom}})`}});
   svg.appendChild(viewport);
@@ -297,6 +313,11 @@ function render() {{
   viewport.appendChild(groups);
   if (showMessages) {{
     const edges = element('g');
+    for (const connector of data.lane_connectors) {{
+      const sourcePoint = lanePosition(laneById.get(connector.source_lane_group_id));
+      const targetPoint = lanePosition(laneById.get(connector.target_lane_group_id));
+      edges.appendChild(element('path', {{d: curvedPath(sourcePoint, targetPoint, 0), class: 'message connector', 'marker-end': 'url(#arrow-connector)'}}));
+    }}
     for (const movement of data.movements) {{
       const movementPoint = movementPosition(movement);
       const inputPoint = lanePosition(laneById.get(movement.input_lane_group_id));
@@ -451,10 +472,11 @@ const unsignalized = data.junctions.length - signalized;
 document.getElementById('stats').innerHTML = `
   <span>LaneGroup nodes</span><b>${{data.lane_groups.length}}</b>
   <span>Movement nodes</span><b>${{data.movements.length}}</b>
+  <span>Lane connectors</span><b>${{data.lane_connectors.length}}</b>
   <span>GNN components</span><b>${{new Set(data.lane_groups.map(lane => lane.component_id)).size}}</b>
   <span>Signalized anchors</span><b>${{signalized}}</b>
   <span>Other SUMO junctions</span><b>${{unsignalized}}</b>
-  <span>Typed message edges</span><b>${{data.movements.length * 4}}</b>`;
+  <span>Typed message edges</span><b>${{data.movements.length * 4 + data.lane_connectors.length}}</b>`;
 svg.addEventListener('click', () => {{ selected = null; document.getElementById('details').textContent = 'Select a node or junction.'; render(); }});
 render();
 </script>

@@ -9,8 +9,10 @@ import sumolib
 
 from .graph_schema import (
     GraphMovementId,
+    LaneLaneConnectorEdge,
     LaneGroupId,
     LaneGroupNode,
+    LaneMovementEdgeMetadata,
     MovementGraph,
     MovementNode,
     PhaseIncidence,
@@ -24,22 +26,32 @@ def build_movement_graph(
     net_path: str | Path | None = None,
 ) -> MovementGraph:
     """Build a deterministic static graph from extracted traffic-light programs."""
-    controlled_edges = _collect_lane_group_edges(programs)
-    corridors = (
-        _collect_corridors(controlled_edges, programs, net_path)
-        if net_path is not None
-        else tuple((edge_id,) for edge_id in controlled_edges)
+    controllable_programs = _controllable_programs(programs)
+    pass_through_traffic_light_ids = tuple(
+        sorted(
+            TrafficLightId(str(program.traffic_light_id))
+            for program in programs.values()
+            if len(program.selectable_phases) <= 1
+        )
+    )
+    controlled_edges = _collect_lane_group_edges(controllable_programs)
+    network = sumolib.net.readNet(str(net_path), withConnections=True) if net_path is not None else None
+    lane_group_edge_ids = (
+        _collect_network_lane_group_edges(network=network, controlled_edges=controlled_edges)
+        if network is not None
+        else controlled_edges
     )
     lane_groups = tuple(
-        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_ids=edge_ids) for index, edge_ids in enumerate(corridors)
+        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_ids=(edge_id,))
+        for index, edge_id in enumerate(lane_group_edge_ids)
     )
     lane_group_id_by_edge = {
         edge_id: lane_group.lane_group_id for lane_group in lane_groups for edge_id in lane_group.edge_ids
     }
 
-    movement_keys = _collect_movement_keys(programs)
+    movement_keys = _collect_movement_keys(controllable_programs)
     movement_id_by_key = {key: GraphMovementId(index) for index, key in enumerate(movement_keys)}
-    controlled_indices_by_key = _collect_controlled_indices_by_key(programs)
+    controlled_indices_by_key = _collect_controlled_indices_by_key(controllable_programs)
     movements = tuple(
         MovementNode(
             movement_id=movement_id_by_key[key],
@@ -55,13 +67,150 @@ def build_movement_graph(
         lane_groups=lane_groups,
         movements=movements,
         edges=_build_edges(movements),
+        lane_lane_connectors=(
+            _build_lane_lane_connectors(
+                network=network,
+                lane_group_id_by_edge=lane_group_id_by_edge,
+                controllable_traffic_light_ids={
+                    str(program.traffic_light_id) for program in controllable_programs.values()
+                },
+            )
+            if network is not None
+            else ()
+        ),
+        lane_movement_metadata=_build_lane_movement_metadata(
+            movements=movements,
+            lane_groups=lane_groups,
+            network=network,
+        ),
         phase_incidences=_build_phase_incidences(
-            programs=programs,
+            programs=controllable_programs,
             movement_id_by_key=movement_id_by_key,
         ),
         lane_group_id_by_edge=lane_group_id_by_edge,
         movement_id_by_key=movement_id_by_key,
+        pass_through_traffic_light_ids=pass_through_traffic_light_ids,
     )
+
+
+def _controllable_programs(
+    programs: Mapping[str | TrafficLightId, TrafficLightProgram],
+) -> dict[str | TrafficLightId, TrafficLightProgram]:
+    return {
+        traffic_light_id: program
+        for traffic_light_id, program in programs.items()
+        if len(program.selectable_phases) > 1
+    }
+
+
+def _collect_network_lane_group_edges(
+    network: object,
+    controlled_edges: tuple[EdgeId, ...],
+) -> tuple[EdgeId, ...]:
+    edge_ids = {EdgeId(str(edge.getID())) for edge in network.getEdges() if not str(edge.getID()).startswith(':')}
+    edge_ids.update(controlled_edges)
+    return tuple(sorted(edge_ids, key=str))
+
+
+def _build_lane_lane_connectors(
+    network: object,
+    lane_group_id_by_edge: Mapping[EdgeId, LaneGroupId],
+    controllable_traffic_light_ids: set[str],
+) -> tuple[LaneLaneConnectorEdge, ...]:
+    network_edges = {
+        EdgeId(str(edge.getID())): edge for edge in network.getEdges() if not str(edge.getID()).startswith(':')
+    }
+    connectors: dict[tuple[LaneGroupId, LaneGroupId, str], LaneLaneConnectorEdge] = {}
+    for source_edge_id, source_edge in sorted(network_edges.items(), key=lambda item: str(item[0])):
+        for connection in _outgoing_connections(source_edge):
+            target_edge_id = EdgeId(str(connection.getTo().getID()))
+            if str(target_edge_id).startswith(':') or target_edge_id not in lane_group_id_by_edge:
+                continue
+            via_junction_id = str(source_edge.getToNode().getID())
+            if via_junction_id in controllable_traffic_light_ids:
+                continue
+            source_lane_group_id = lane_group_id_by_edge[source_edge_id]
+            target_lane_group_id = lane_group_id_by_edge[target_edge_id]
+            target_edge = network_edges[target_edge_id]
+            key = (source_lane_group_id, target_lane_group_id, via_junction_id)
+            connectors[key] = _connector_edge(
+                source_lane_group_id=source_lane_group_id,
+                target_lane_group_id=target_lane_group_id,
+                source_edge_id=source_edge_id,
+                target_edge_id=target_edge_id,
+                via_junction_id=via_junction_id,
+                source_edge=source_edge,
+                target_edge=target_edge,
+            )
+    return tuple(connectors[key] for key in sorted(connectors, key=lambda item: (int(item[0]), int(item[1]), item[2])))
+
+
+def _outgoing_connections(edge: object) -> tuple[object, ...]:
+    return tuple(connection for values in edge.getOutgoing().values() for connection in values)
+
+
+def _connector_edge(
+    source_lane_group_id: LaneGroupId,
+    target_lane_group_id: LaneGroupId,
+    source_edge_id: EdgeId,
+    target_edge_id: EdgeId,
+    via_junction_id: str,
+    source_edge: object,
+    target_edge: object,
+) -> LaneLaneConnectorEdge:
+    distance_m = 0.5 * float(source_edge.getLength()) + 0.5 * float(target_edge.getLength())
+    freeflow_time_s = 0.5 * _freeflow_time_s(source_edge) + 0.5 * _freeflow_time_s(target_edge)
+    lane_count = float(min(int(source_edge.getLaneNumber()), int(target_edge.getLaneNumber())))
+    return LaneLaneConnectorEdge(
+        source_lane_group_id=source_lane_group_id,
+        target_lane_group_id=target_lane_group_id,
+        source_edge_id=source_edge_id,
+        target_edge_id=target_edge_id,
+        via_junction_id=via_junction_id,
+        distance_m=distance_m,
+        freeflow_time_s=freeflow_time_s,
+        lane_count=lane_count,
+        connector_type='unsignalized',
+    )
+
+
+def _build_lane_movement_metadata(
+    movements: tuple[MovementNode, ...],
+    lane_groups: tuple[LaneGroupNode, ...],
+    network: object | None,
+) -> tuple[LaneMovementEdgeMetadata, ...]:
+    network_edges = (
+        {EdgeId(str(edge.getID())): edge for edge in network.getEdges() if not str(edge.getID()).startswith(':')}
+        if network is not None
+        else {}
+    )
+    lane_group_by_id = {lane_group.lane_group_id: lane_group for lane_group in lane_groups}
+    metadata: list[LaneMovementEdgeMetadata] = []
+    for movement in movements:
+        for lane_group_id, connector_type in (
+            (movement.input_lane_group_id, 'signalized_input'),
+            (movement.output_lane_group_id, 'signalized_output'),
+        ):
+            edge_id = lane_group_by_id[lane_group_id].edge_id
+            edge = network_edges.get(edge_id)
+            metadata.append(
+                LaneMovementEdgeMetadata(
+                    lane_group_id=lane_group_id,
+                    movement_id=movement.movement_id,
+                    distance_m=0.0,
+                    freeflow_time_s=0.0,
+                    lane_count=0.0 if edge is None else float(edge.getLaneNumber()),
+                    connector_type=connector_type,
+                )
+            )
+    return tuple(metadata)
+
+
+def _freeflow_time_s(edge: object) -> float:
+    speed = float(edge.getSpeed())
+    if speed <= 0.0:
+        return 0.0
+    return float(edge.getLength()) / speed
 
 
 def _collect_corridors(

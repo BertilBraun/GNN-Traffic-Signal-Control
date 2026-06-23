@@ -35,8 +35,9 @@ def test_graph_visualization_distinguishes_gnn_nodes_from_sumo_context() -> None
     assert junctions['N0_0'].is_signalized is False
     assert len(visualization.lane_groups) == len(graph.lane_groups)
     assert len(visualization.movements) == len(graph.movements)
-    assert len(visualization.lane_groups) == 24
-    assert any(len(lane_group.edge_ids) == 2 for lane_group in visualization.lane_groups)
+    assert len(visualization.lane_groups) == 48
+    assert len(visualization.lane_connectors) == len(graph.lane_lane_connectors)
+    assert all(len(lane_group.edge_ids) == 1 for lane_group in visualization.lane_groups)
     assert {lane_group.component_id for lane_group in visualization.lane_groups} == {0}
     assert {movement.component_id for movement in visualization.movements} == {0}
     assert all(movement.traffic_light_id in runtime.programs for movement in visualization.movements)

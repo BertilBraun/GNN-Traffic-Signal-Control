@@ -58,6 +58,18 @@ class MovementVisualization(BaseModel):
     controlled_link_count: int
 
 
+class LaneConnectorVisualization(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_lane_group_id: int
+    target_lane_group_id: int
+    via_junction_id: str
+    distance_m: float
+    freeflow_time_s: float
+    lane_count: float
+    connector_type: str
+
+
 class MovementGraphVisualization(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -66,6 +78,7 @@ class MovementGraphVisualization(BaseModel):
     roads: tuple[RoadVisualization, ...]
     lane_groups: tuple[LaneGroupVisualization, ...]
     movements: tuple[MovementVisualization, ...]
+    lane_connectors: tuple[LaneConnectorVisualization, ...]
 
 
 def build_graph_visualization(
@@ -131,12 +144,25 @@ def build_graph_visualization(
         )
         for movement in graph.movements
     )
+    lane_connectors = tuple(
+        LaneConnectorVisualization(
+            source_lane_group_id=int(connector.source_lane_group_id),
+            target_lane_group_id=int(connector.target_lane_group_id),
+            via_junction_id=connector.via_junction_id,
+            distance_m=connector.distance_m,
+            freeflow_time_s=connector.freeflow_time_s,
+            lane_count=connector.lane_count,
+            connector_type=connector.connector_type,
+        )
+        for connector in graph.lane_lane_connectors
+    )
     return MovementGraphVisualization(
         network_name=net_path.parent.name,
         junctions=junctions,
         roads=roads,
         lane_groups=lane_groups,
         movements=movements,
+        lane_connectors=lane_connectors,
     )
 
 
@@ -151,6 +177,11 @@ def _component_ids(graph: MovementGraph) -> tuple[dict[int, int], dict[int, int]
             lane_node = f'L{lane_group_id}'
             neighbors[movement_node].add(lane_node)
             neighbors[lane_node].add(movement_node)
+    for connector in graph.lane_lane_connectors:
+        source_node = f'L{int(connector.source_lane_group_id)}'
+        target_node = f'L{int(connector.target_lane_group_id)}'
+        neighbors[source_node].add(target_node)
+        neighbors[target_node].add(source_node)
 
     components: list[tuple[set[int], set[int]]] = []
     seen: set[str] = set()

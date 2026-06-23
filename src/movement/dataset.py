@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TypeAlias
@@ -28,6 +29,8 @@ class MovementEdgeIndices:
     output_lane_to_movement: tuple[tuple[int, int], ...]
     movement_to_input_lane: tuple[tuple[int, int], ...]
     movement_to_output_lane: tuple[tuple[int, int], ...]
+    lane_to_lane: tuple[tuple[int, int], ...] = ()
+    lane_to_lane_weight: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -183,11 +186,22 @@ def _edge_indices(graph: MovementGraph) -> MovementEdgeIndices:
         output_lane_to_movement=_int_edges(graph.edges.output_lane_to_movement),
         movement_to_input_lane=_int_edges(graph.edges.movement_to_input_lane),
         movement_to_output_lane=_int_edges(graph.edges.movement_to_output_lane),
+        lane_to_lane=tuple(
+            (int(connector.source_lane_group_id), int(connector.target_lane_group_id))
+            for connector in graph.lane_lane_connectors
+        ),
+        lane_to_lane_weight=tuple(
+            _connector_weight(connector.freeflow_time_s) for connector in graph.lane_lane_connectors
+        ),
     )
 
 
 def _int_edges(edges: Iterable[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
     return tuple((int(src), int(dst)) for src, dst in edges)
+
+
+def _connector_weight(freeflow_time_s: float) -> float:
+    return float(math.exp(-float(freeflow_time_s) / 30.0))
 
 
 def _stored_phase_incidence(incidence: PhaseIncidence) -> StoredPhaseIncidence:
@@ -277,11 +291,15 @@ def _sample_from_dict(data: Mapping[str, JsonValue]) -> MovementDatasetSample:
 
 def _edge_indices_from_json(value: JsonValue) -> MovementEdgeIndices:
     edge_indices = _require_json_object(value)
+    lane_to_lane = edge_indices.get('lane_to_lane', ())
+    lane_to_lane_weight = edge_indices.get('lane_to_lane_weight', ())
     return MovementEdgeIndices(
         input_lane_to_movement=_tuple2_int_pairs(edge_indices['input_lane_to_movement']),
         output_lane_to_movement=_tuple2_int_pairs(edge_indices['output_lane_to_movement']),
         movement_to_input_lane=_tuple2_int_pairs(edge_indices['movement_to_input_lane']),
         movement_to_output_lane=_tuple2_int_pairs(edge_indices['movement_to_output_lane']),
+        lane_to_lane=_tuple2_int_pairs(lane_to_lane),
+        lane_to_lane_weight=tuple(_json_float(item) for item in _require_sequence(lane_to_lane_weight)),
     )
 
 

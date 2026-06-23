@@ -158,7 +158,7 @@ class MovementActorCritic(MovementScorer):
 
 
 class MovementLaneHop(nn.Module):
-    """One Movement-to-LaneGroup-to-Movement macro-hop."""
+    """One junction macro-hop over signalized and unsignalized transitions."""
 
     def __init__(self, hidden_dim: int) -> None:
         super().__init__()
@@ -174,6 +174,7 @@ class MovementLaneHop(nn.Module):
             nn.Linear(hidden_dim * 3, hidden_dim),
             nn.ReLU(),
         )
+        self.lane_to_lane = nn.Linear(hidden_dim, hidden_dim)
 
     def forward(
         self,
@@ -181,28 +182,39 @@ class MovementLaneHop(nn.Module):
         movement_embeddings: torch.Tensor,
         edge_index_dict: dict[str, torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        move_to_input = _aggregate(
-            edge_index_dict['movement_to_input_lane'],
-            self.move_to_input(movement_embeddings),
-            num_targets=lane_embeddings.shape[0],
-        )
-        move_to_output = _aggregate(
-            edge_index_dict['movement_to_output_lane'],
-            self.move_to_output(movement_embeddings),
-            num_targets=lane_embeddings.shape[0],
-        )
-        updated_lane = self.lane_update(torch.cat((lane_embeddings, move_to_input, move_to_output), dim=-1))
         input_to_move = _aggregate(
             edge_index_dict['input_lane_to_movement'],
-            self.input_to_move(updated_lane),
+            self.input_to_move(lane_embeddings),
             num_targets=movement_embeddings.shape[0],
         )
         output_to_move = _aggregate(
             edge_index_dict['output_lane_to_movement'],
-            self.output_to_move(updated_lane),
+            self.output_to_move(lane_embeddings),
             num_targets=movement_embeddings.shape[0],
         )
         updated_move = self.move_update(torch.cat((movement_embeddings, input_to_move, output_to_move), dim=-1))
+        move_to_input = _aggregate(
+            edge_index_dict['movement_to_input_lane'],
+            self.move_to_input(updated_move),
+            num_targets=lane_embeddings.shape[0],
+        )
+        move_to_output = _aggregate(
+            edge_index_dict['movement_to_output_lane'],
+            self.move_to_output(updated_move),
+            num_targets=lane_embeddings.shape[0],
+        )
+        lane_to_lane = _aggregate(
+            edge_index_dict.get(
+                'lane_to_lane',
+                torch.empty((2, 0), dtype=torch.long, device=lane_embeddings.device),
+            ),
+            self.lane_to_lane(lane_embeddings),
+            num_targets=lane_embeddings.shape[0],
+            edge_weight=edge_index_dict.get('lane_to_lane_weight'),
+        )
+        updated_lane = self.lane_update(
+            torch.cat((lane_embeddings, move_to_input + lane_to_lane, move_to_output), dim=-1)
+        )
         return updated_lane, updated_move
 
 
@@ -210,6 +222,7 @@ def _aggregate(
     edge_index: torch.Tensor,
     source_features: torch.Tensor,
     num_targets: int,
+    edge_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Mean-aggregate source features along a 2 x E edge index."""
     if edge_index.numel() == 0:
@@ -217,10 +230,13 @@ def _aggregate(
     source_indices = edge_index[0].long()
     target_indices = edge_index[1].long()
     aggregated_features = source_features.new_zeros((num_targets, source_features.shape[-1]))
+    messages = source_features[source_indices]
+    if edge_weight is not None:
+        messages = messages * edge_weight.to(device=source_features.device, dtype=source_features.dtype).view(-1, 1)
     aggregated_features.index_add_(
         0,
         target_indices,
-        source_features[source_indices],
+        messages,
     )
     counts = source_features.new_zeros((num_targets, 1))
     counts.index_add_(

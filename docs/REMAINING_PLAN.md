@@ -11,13 +11,16 @@ Phase scores are computed by aggregating movement scores.
 The controller enforces all signal legality and transition constraints.
 ```
 
-The new learning architecture uses a directed bipartite graph:
+The learning architecture now uses movement nodes plus explicit pass-through
+LaneGroup connector edges:
 
 ```text
-LaneGroup ↔ Movement ↔ LaneGroup
+Signalized junction:    LaneGroup <-> Movement <-> LaneGroup
+Unsignalized junction:  LaneGroup -> LaneGroup
 ```
 
-A `LaneGroup` represents a directed road segment between signalized junctions.
+A `LaneGroup` represents a directed road segment/lane group, usually one normal
+SUMO edge for city/OSM networks.
 A `Movement` represents one legal signal-controlled flow from an incoming `LaneGroup` to an outgoing `LaneGroup`.
 
 The old fixed canonical 8-phase architecture is retained only as legacy reference material.
@@ -348,7 +351,9 @@ Signal and intersection information still exists in runtime metadata, phase synt
 
 ## 9.2 Directed LaneGroup
 
-A `LaneGroup` represents a directed road segment between two signalized junctions.
+A `LaneGroup` represents a directed road segment or simple lane group between
+junctions. City/OSM graphs intentionally avoid broad unsignalized corridor
+contraction so branching topology remains visible.
 
 For signalized junctions `A` and `B`:
 
@@ -460,19 +465,19 @@ Reason:
 * the model does not need conflict edges for safety;
 * explicit conflict or phase-competition edges can be tested later as an ablation.
 
-No direct road-continuation edges are used in v1.
+Direct `LaneGroup -> LaneGroup` connector edges are used for legal SUMO
+connections across unsignalized or pass-through junctions. They are not allowed
+across controllable signalized junctions; signalized traversal must pass through
+`Movement` nodes.
 
-Continuation is already represented by:
-
-```text
-L_AB → M_ABC → L_BC → M_BCD → L_CD
-```
+Traffic lights with zero or one selectable phase are excluded from policy
+control and treated as pass-through topology for graph construction.
 
 ---
 
 ## 9.5 Hop Definition
 
-A macro-hop is defined as movement-to-movement information transfer through an intermediate lane group.
+A macro-hop is defined as one junction transition.
 
 For a target movement:
 
@@ -575,29 +580,25 @@ This gives the zero-hop model enough information to imitate local movement scori
 
 Each macro-hop consists of two stages.
 
-### Stage 1: Movement → LaneGroup
+### Stage 1: LaneGroup -> Movement
 
-Movements send messages to their adjacent lane groups.
+Movements update from their adjacent input and output lane groups.
 
-A lane group receives messages from:
+### Stage 2: Movement/LaneGroup -> LaneGroup
 
-* movements feeding into it;
-* movements leaving from it.
+Lane groups update from:
 
-These relation types should be distinguished.
+* movement-mediated signalized messages;
+* direct unsignalized `LaneGroup -> LaneGroup` connector messages.
 
-### Stage 2: LaneGroup → Movement
+Unsignalized connector messages use deterministic fixed decay:
 
-Lane groups send messages to their adjacent movements.
+```text
+weight = exp(-freeflow_time_s / 30)
+```
 
-A movement receives:
-
-* incoming-demand context from its input lane group;
-* downstream-supply context from its output lane group.
-
-After one macro-hop, a movement has information about adjacent movements through shared lane groups.
-
-After two macro-hops, a movement has corridor-level context one continuation further away.
+After one macro-hop, a movement has information one junction away. After two
+macro-hops, it has corridor-level context one more junction further away.
 
 ---
 

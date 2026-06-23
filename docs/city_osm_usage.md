@@ -49,6 +49,33 @@ edges, weighted by edge storage. This intentionally creates internal city trips
 instead of only boundary-to-boundary through traffic, which tends to overload a
 few shortest corridors.
 
+## Movement Graph Design
+
+City movement graphs no longer depend on broad unsignalized corridor
+contraction. With a SUMO network file, each `LaneGroup` is a directed normal
+SUMO edge. Controlled multi-phase traffic lights create `Movement` nodes, and
+movement scores remain the learned policy output.
+
+One `num_hops` macro-hop means one junction transition:
+
+```text
+signalized:    LaneGroup -> Movement -> LaneGroup
+unsignalized:  LaneGroup -> LaneGroup
+```
+
+Direct `LaneGroup -> LaneGroup` connector edges are created only from legal SUMO
+connections across non-controllable/pass-through junctions. Controllable
+signalized junctions must be traversed through `Movement` nodes. Traffic lights
+with zero or one selectable phase are excluded from the policy control set and
+are treated as pass-through topology when connector edges are built.
+
+Connector metadata includes source/target lane groups, via junction, distance
+context, freeflow time, bottleneck lane count, and connector type. The first
+model pass uses deterministic decay `exp(-freeflow_time_s / 30)` for direct
+unsignalized lane-to-lane messages. Signalized lane/movement edges currently use
+deterministic unit message weight; their metadata is stored for future decay
+variants.
+
 ## Inspect Movement Extraction
 
 Run this before training or long evaluations:
@@ -64,9 +91,12 @@ The report prints:
 traffic lights with selectable phases
 lane groups
 movements
+lane-lane connector edges
+pass-through/single-phase traffic lights
 per-traffic-light selectable phase counts
 unsupported/skipped traffic lights and reasons
 suspicious lane groups or movements
+connector edges that incorrectly cross controllable signalized junctions
 ```
 
 Skipped traffic lights should be inspected before training. A small number can
@@ -81,9 +111,15 @@ python scripts\visualize_movement_graph.py `
   --open
 ```
 
-Use the SUMO map layout first to check whether contracted LaneGroups follow
-directed corridors between signalized junctions. Use the relaxed layout for
-dense city centers where labels overlap.
+Use the SUMO map layout first to check whether one-edge LaneGroups and green
+unsignalized connector edges follow the SUMO road topology. Use the relaxed
+layout for dense city centers where labels overlap. Clicking a LaneGroup shows
+incoming/outgoing connector metadata, including via junction, freeflow time, and
+distance context.
+
+After architecture changes, old learned checkpoints and saved IL/PPO datasets
+may be incompatible or may not generalize. Regenerate datasets and checkpoints
+for the current graph schema before training or evaluating learned policies.
 
 ## Run Baselines Visually
 
