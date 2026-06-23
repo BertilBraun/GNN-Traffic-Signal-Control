@@ -78,9 +78,6 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
 .subtitle {{ color: #9eaaaf; font-size: 12px; margin-bottom: 18px; }}
 .section {{ border-top: 1px solid #30383c; padding: 15px 0; }}
 .section-title {{ color: #aeb8bc; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }}
-.segmented {{ display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #3a4448; border-radius: 6px; overflow: hidden; }}
-.segmented button {{ border: 0; padding: 8px; color: #b8c1c5; background: #1b2225; cursor: pointer; }}
-.segmented button.active {{ color: #fff; background: #365b68; }}
 .toggle {{ display: flex; align-items: center; gap: 9px; margin: 9px 0; color: #cbd2d5; font-size: 13px; }}
 .toggle input {{ accent-color: #49a9c5; }}
 .stats {{ display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 12px; }}
@@ -102,10 +99,13 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
 .toolbar button:hover {{ background: #293237; }}
 .road {{ stroke: #364044; stroke-width: 2; opacity: .6; }}
 .road.non-gnn {{ stroke-dasharray: 5 5; opacity: .38; }}
-.message {{ fill: none; stroke-width: 1.4; opacity: .58; }}
+.message {{ fill: none; opacity: .5; cursor: pointer; pointer-events: stroke; vector-effect: non-scaling-stroke; }}
 .message.input {{ stroke: #48b5d6; }}
 .message.output {{ stroke: #e7ad52; }}
-.message.connector {{ stroke: #8ec07c; stroke-width: 1.8; }}
+.message.connector {{ stroke: #8ec07c; }}
+.message.selected {{ stroke: #fff; opacity: .95; }}
+.message.related {{ opacity: .9; }}
+.message.dimmed {{ opacity: .13; }}
 .junction-group {{ fill: #1d292d; stroke: #55727b; stroke-width: 1.4; opacity: .75; }}
 .junction-group.selected {{ stroke: #fff; stroke-width: 2.4; }}
 .junction {{ fill: #0d1113; stroke-width: 2; }}
@@ -129,13 +129,6 @@ h1 {{ margin: 0 0 4px; font-size: 18px; letter-spacing: 0; }}
   <aside class="sidebar">
     <h1>Movement GNN</h1>
     <div class="subtitle" id="network-name"></div>
-    <div class="section">
-      <div class="section-title">Layout</div>
-      <div class="segmented">
-        <button id="map-layout" class="active">SUMO map</button>
-        <button id="force-layout">Relaxed</button>
-      </div>
-    </div>
     <div class="section">
       <div class="section-title">Layers</div>
       <label class="toggle"><input id="show-roads" type="checkbox" checked> SUMO road topology</label>
@@ -179,13 +172,15 @@ const data = JSON.parse(document.getElementById('graph-data').textContent);
 const svg = document.getElementById('graph');
 const NS = 'http://www.w3.org/2000/svg';
 const WIDTH = 1200, HEIGHT = 800, PAD = 70;
-let layout = 'map', selected = null;
+let selected = null;
 let zoom = 1, panX = 0, panY = 0;
-let relaxed = new Map();
 const junctionById = new Map(data.junctions.map(j => [j.junction_id, j]));
 const laneById = new Map(data.lane_groups.map(l => [l.lane_group_id, l]));
+const movementById = new Map(data.movements.map(m => [m.movement_id, m]));
 const outgoingConnectorsByLane = new Map();
 const incomingConnectorsByLane = new Map();
+const movementEdgesByMovement = new Map();
+const messageEdgesById = new Map();
 for (const connector of data.lane_connectors) {{
   if (!outgoingConnectorsByLane.has(connector.source_lane_group_id)) outgoingConnectorsByLane.set(connector.source_lane_group_id, []);
   if (!incomingConnectorsByLane.has(connector.target_lane_group_id)) incomingConnectorsByLane.set(connector.target_lane_group_id, []);
@@ -197,6 +192,31 @@ const componentColors = ['#62b6cb', '#f0b64d', '#8ec07c', '#d3869b', '#b8a0ff', 
 for (const movement of data.movements) {{
   if (!movementsByTls.has(movement.traffic_light_id)) movementsByTls.set(movement.traffic_light_id, []);
   movementsByTls.get(movement.traffic_light_id).push(movement);
+  const inputEdge = {{
+    id: `signal-input:${{movement.movement_id}}`,
+    type: 'signal-input',
+    source_lane_group_id: movement.input_lane_group_id,
+    target_movement_id: movement.movement_id,
+    traffic_light_id: movement.traffic_light_id
+  }};
+  const outputEdge = {{
+    id: `signal-output:${{movement.movement_id}}`,
+    type: 'signal-output',
+    source_movement_id: movement.movement_id,
+    target_lane_group_id: movement.output_lane_group_id,
+    traffic_light_id: movement.traffic_light_id
+  }};
+  movementEdgesByMovement.set(movement.movement_id, [inputEdge, outputEdge]);
+  messageEdgesById.set(inputEdge.id, inputEdge);
+  messageEdgesById.set(outputEdge.id, outputEdge);
+}}
+for (const connector of data.lane_connectors) {{
+  const edge = {{
+    ...connector,
+    id: `connector:${{connector.source_lane_group_id}}:${{connector.target_lane_group_id}}:${{connector.via_junction_id}}`,
+    type: 'connector'
+  }};
+  messageEdgesById.set(edge.id, edge);
 }}
 const xValues = data.junctions.map(j => j.x);
 const yValues = data.junctions.map(j => j.y);
@@ -212,9 +232,8 @@ function mapPosition(junction) {{
     y: HEIGHT - PAD - (junction.y - bounds.minY) / yRange * (HEIGHT - PAD * 2)
   }};
 }}
-for (const junction of data.junctions) relaxed.set(junction.junction_id, {{...mapPosition(junction), vx: 0, vy: 0}});
 function junctionPosition(id) {{
-  return layout === 'map' ? mapPosition(junctionById.get(id)) : relaxed.get(id);
+  return mapPosition(junctionById.get(id));
 }}
 function lanePosition(lane) {{
   const points = lane.junction_ids.map(junctionPosition);
@@ -227,7 +246,7 @@ function lanePosition(lane) {{
       const from = points[index], to = points[index + 1];
       const dx = to.x - from.x, dy = to.y - from.y;
       const length = Math.max(1, lengths[index]);
-      return {{x: from.x + dx * ratio - dy / length * 9, y: from.y + dy * ratio + dx / length * 9}};
+      return {{x: from.x + dx * ratio - dy / length * 1, y: from.y + dy * ratio + dx / length * 1}};
     }}
     travelled += lengths[index];
   }}
@@ -235,11 +254,31 @@ function lanePosition(lane) {{
 }}
 function movementPosition(movement) {{
   const center = junctionPosition(movement.traffic_light_id);
-  const group = movementsByTls.get(movement.traffic_light_id);
-  const index = group.findIndex(item => item.movement_id === movement.movement_id);
-  const radius = group.length > 12 ? 36 : 29;
-  const angle = -Math.PI / 2 + index / group.length * Math.PI * 2;
-  return {{x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius}};
+  const inputLane = laneById.get(movement.input_lane_group_id);
+  const inputPoint = lanePosition(inputLane);
+  let dx = inputPoint.x - center.x;
+  let dy = inputPoint.y - center.y;
+  let length = Math.hypot(dx, dy);
+  if (length < 1) {{
+    const group = movementsByTls.get(movement.traffic_light_id);
+    const index = group.findIndex(item => item.movement_id === movement.movement_id);
+    const angle = -Math.PI / 2 + index / Math.max(1, group.length) * Math.PI * 2;
+    dx = Math.cos(angle);
+    dy = Math.sin(angle);
+    length = 1;
+  }}
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const sameInput = movementsByTls
+    .get(movement.traffic_light_id)
+    .filter(item => item.input_lane_group_id === movement.input_lane_group_id);
+  const inputIndex = sameInput.findIndex(item => item.movement_id === movement.movement_id);
+  const tangentOffset = (inputIndex - (sameInput.length - 1) / 2) * 5;
+  const radius = sameInput.length > 3 ? 18 : 15;
+  return {{
+    x: center.x + unitX * radius - unitY * tangentOffset,
+    y: center.y + unitY * radius + unitX * tangentOffset
+  }};
 }}
 function componentColor(componentId) {{
   return componentColors[componentId % componentColors.length];
@@ -249,8 +288,8 @@ function element(name, attrs = {{}}) {{
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
   return node;
 }}
-function addMarker(defs, id, color, reverse = false) {{
-  const marker = element('marker', {{id, viewBox: '0 0 10 10', refX: reverse ? 2 : 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto-start-reverse'}});
+function addMarker(defs, id, color, markerSize, reverse = false) {{
+  const marker = element('marker', {{id, viewBox: '0 0 10 10', refX: reverse ? 2 : 8, refY: 5, markerWidth: markerSize, markerHeight: markerSize, orient: 'auto-start-reverse'}});
   marker.appendChild(element('path', {{d: reverse ? 'M 10 0 L 0 5 L 10 10 z' : 'M 0 0 L 10 5 L 0 10 z', fill: color}}));
   defs.appendChild(marker);
 }}
@@ -262,10 +301,26 @@ function details(type, item) {{
     const connectorText = [...outgoing.map(c => `out L${{c.target_lane_group_id}} via ${{c.via_junction_id}} ${{c.freeflow_time_s.toFixed(1)}}s ${{c.distance_m.toFixed(1)}}m`), ...incoming.map(c => `in L${{c.source_lane_group_id}} via ${{c.via_junction_id}} ${{c.freeflow_time_s.toFixed(1)}}s ${{c.distance_m.toFixed(1)}}m`)].slice(0, 8).join('<br>') || 'none';
     target.innerHTML = `<strong>LaneGroup L${{item.lane_group_id}}</strong>Component: ${{item.component_id}}<br>SUMO edges: ${{item.edge_ids.join(' -> ')}}<br>Direction: ${{item.from_junction_id}} -> ${{item.to_junction_id}}<br>Length: ${{item.length_m.toFixed(1)}} m<br>Effective lanes: ${{item.effective_lane_count.toFixed(2)}}<br>Effective speed: ${{item.effective_speed_limit_mps.toFixed(2)}} m/s<br>Connector edges:<br>${{connectorText}}`;
   }}
-  if (type === 'movement') target.innerHTML = `<strong>Movement M${{item.movement_id}}</strong>Component: ${{item.component_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Input: L${{item.input_lane_group_id}}<br>Output: L${{item.output_lane_group_id}}<br>Controlled links: ${{item.controlled_link_count}}<br><br>This is a real GNN node.`;
+  if (type === 'movement') {{
+    const edgeIds = (movementEdgesByMovement.get(item.movement_id) || []).map(edge => edge.id).join('<br>');
+    target.innerHTML = `<strong>Movement M${{item.movement_id}}</strong>Component: ${{item.component_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Input LaneGroup: L${{item.input_lane_group_id}}<br>Output LaneGroup: L${{item.output_lane_group_id}}<br>Controlled links: ${{item.controlled_link_count}}<br>Message edges:<br>${{edgeIds || 'none'}}`;
+  }}
   if (type === 'junction') {{
     const count = (movementsByTls.get(item.junction_id) || []).length;
     target.innerHTML = `<strong>Junction ${{item.junction_id}}</strong>SUMO type: ${{item.junction_type}}<br>Signalized: ${{item.is_signalized ? 'yes' : 'no'}}<br>Movement nodes: ${{count}}<br>Selectable phases: ${{item.selectable_phase_count}}<br><br>This anchor is visual context, not a GNN node.`;
+  }}
+  if (type === 'edge') {{
+    if (item.type === 'connector') {{
+      target.innerHTML = `<strong>Connector edge</strong>L${{item.source_lane_group_id}} -> L${{item.target_lane_group_id}}<br>Via junction: ${{item.via_junction_id}}<br>Type: ${{item.connector_type}}<br>Freeflow time: ${{item.freeflow_time_s.toFixed(2)}} s<br>Distance context: ${{item.distance_m.toFixed(1)}} m<br>Bottleneck lanes: ${{item.lane_count.toFixed(1)}}`;
+    }}
+    if (item.type === 'signal-input') {{
+      const movement = movementById.get(item.target_movement_id);
+      target.innerHTML = `<strong>Signal input edge</strong>L${{item.source_lane_group_id}} -> M${{item.target_movement_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Movement output: L${{movement.output_lane_group_id}}<br>This is movement demand context into the policy score target.`;
+    }}
+    if (item.type === 'signal-output') {{
+      const movement = movementById.get(item.source_movement_id);
+      target.innerHTML = `<strong>Signal output edge</strong>M${{item.source_movement_id}} -> L${{item.target_lane_group_id}}<br>Traffic light: ${{item.traffic_light_id}}<br>Movement input: L${{movement.input_lane_group_id}}<br>This is downstream supply context through a controllable signalized movement.`;
+    }}
   }}
 }}
 function selectNode(type, item, event) {{
@@ -274,19 +329,54 @@ function selectNode(type, item, event) {{
   details(type, item);
   render();
 }}
+function selectEdge(edge, event) {{
+  event.stopPropagation();
+  selected = `edge:${{edge.id}}`;
+  details('edge', edge);
+  render();
+}}
 function curvedPath(a, b, bend) {{
   const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.max(1, Math.hypot(dx, dy));
   return `M ${{a.x}} ${{a.y}} Q ${{mx - dy / length * bend}} ${{my + dx / length * bend}} ${{b.x}} ${{b.y}}`;
 }}
+function selectedEdgeId() {{
+  return selected && selected.startsWith('edge:') ? selected.slice(5) : null;
+}}
+function selectedLaneId() {{
+  return selected && selected.startsWith('lane:') ? Number(selected.slice(5)) : null;
+}}
+function selectedMovementId() {{
+  return selected && selected.startsWith('movement:') ? Number(selected.slice(9)) : null;
+}}
+function edgeTouchesLane(edge, laneId) {{
+  return edge.source_lane_group_id === laneId || edge.target_lane_group_id === laneId;
+}}
+function edgeTouchesMovement(edge, movementId) {{
+  return edge.source_movement_id === movementId || edge.target_movement_id === movementId;
+}}
+function messageClass(edge, baseClass) {{
+  const activeEdgeId = selectedEdgeId();
+  const activeLaneId = selectedLaneId();
+  const activeMovementId = selectedMovementId();
+  const isSelected = activeEdgeId === edge.id;
+  const isRelated =
+    (activeLaneId !== null && edgeTouchesLane(edge, activeLaneId)) ||
+    (activeMovementId !== null && edgeTouchesMovement(edge, activeMovementId));
+  const shouldDim = selected !== null && !isSelected && !isRelated && (activeEdgeId !== null || activeLaneId !== null || activeMovementId !== null);
+  return `message ${{baseClass}}${{isSelected ? ' selected' : ''}}${{isRelated ? ' related' : ''}}${{shouldDim ? ' dimmed' : ''}}`;
+}}
 function render() {{
   svg.replaceChildren();
   const nodeScale = Math.max(.18, Math.min(.85, .85 / zoom));
   const labelScale = Math.max(.16, Math.min(.78, .78 / zoom));
+  const edgeStroke = Math.max(5.0, 6.0 / Math.sqrt(zoom));
+  const connectorStroke = Math.max(5.0, 6.5 / Math.sqrt(zoom));
+  const markerSize = Math.max(3.6, 4.2 / Math.pow(zoom, .12));
   const defs = element('defs');
-  addMarker(defs, 'arrow-input', '#48b5d6');
-  addMarker(defs, 'arrow-output', '#e7ad52');
-  addMarker(defs, 'arrow-connector', '#8ec07c');
+  addMarker(defs, 'arrow-input', '#48b5d6', markerSize);
+  addMarker(defs, 'arrow-output', '#e7ad52', markerSize);
+  addMarker(defs, 'arrow-connector', '#8ec07c', markerSize);
   svg.appendChild(defs);
   const viewport = element('g', {{transform: `translate(${{panX}} ${{panY}}) scale(${{zoom}})`}});
   svg.appendChild(viewport);
@@ -305,7 +395,7 @@ function render() {{
   const groups = element('g');
   for (const [tlsId, movements] of movementsByTls) {{
     const center = junctionPosition(tlsId);
-    const radius = (movements.length > 12 ? 48 : 40) * nodeScale;
+    const radius = (movements.length > 12 ? 33 : 27) * nodeScale;
     const circle = element('circle', {{cx: center.x, cy: center.y, r: radius, class: `junction-group ${{selected === `junction:${{tlsId}}` ? 'selected' : ''}}`}});
     circle.addEventListener('click', event => selectNode('junction', junctionById.get(tlsId), event));
     groups.appendChild(circle);
@@ -314,16 +404,25 @@ function render() {{
   if (showMessages) {{
     const edges = element('g');
     for (const connector of data.lane_connectors) {{
+      const edge = messageEdgesById.get(`connector:${{connector.source_lane_group_id}}:${{connector.target_lane_group_id}}:${{connector.via_junction_id}}`);
       const sourcePoint = lanePosition(laneById.get(connector.source_lane_group_id));
       const targetPoint = lanePosition(laneById.get(connector.target_lane_group_id));
-      edges.appendChild(element('path', {{d: curvedPath(sourcePoint, targetPoint, 0), class: 'message connector', 'marker-end': 'url(#arrow-connector)'}}));
+      const path = element('path', {{d: curvedPath(sourcePoint, targetPoint, 0), class: messageClass(edge, 'connector'), 'marker-end': 'url(#arrow-connector)', style: `stroke-width:${{connectorStroke}}px`}});
+      path.addEventListener('click', event => selectEdge(edge, event));
+      edges.appendChild(path);
     }}
     for (const movement of data.movements) {{
       const movementPoint = movementPosition(movement);
       const inputPoint = lanePosition(laneById.get(movement.input_lane_group_id));
       const outputPoint = lanePosition(laneById.get(movement.output_lane_group_id));
-      edges.appendChild(element('path', {{d: curvedPath(inputPoint, movementPoint, 7), class: 'message input', 'marker-start': 'url(#arrow-input)', 'marker-end': 'url(#arrow-input)'}}));
-      edges.appendChild(element('path', {{d: curvedPath(outputPoint, movementPoint, -7), class: 'message output', 'marker-start': 'url(#arrow-output)', 'marker-end': 'url(#arrow-output)'}}));
+      const inputEdge = messageEdgesById.get(`signal-input:${{movement.movement_id}}`);
+      const outputEdge = messageEdgesById.get(`signal-output:${{movement.movement_id}}`);
+      const inputPath = element('path', {{d: curvedPath(inputPoint, movementPoint, 7), class: messageClass(inputEdge, 'input'), 'marker-end': 'url(#arrow-input)', style: `stroke-width:${{edgeStroke}}px`}});
+      const outputPath = element('path', {{d: curvedPath(movementPoint, outputPoint, -7), class: messageClass(outputEdge, 'output'), 'marker-end': 'url(#arrow-output)', style: `stroke-width:${{edgeStroke}}px`}});
+      inputPath.addEventListener('click', event => selectEdge(inputEdge, event));
+      outputPath.addEventListener('click', event => selectEdge(outputEdge, event));
+      edges.appendChild(inputPath);
+      edges.appendChild(outputPath);
     }}
     viewport.appendChild(edges);
   }}
@@ -335,7 +434,6 @@ function render() {{
     const nodeRadius = (junction.is_signalized ? 6 : 4.5) * nodeScale;
     const node = element('circle', {{cx: point.x, cy: point.y, r: nodeRadius, class: `node junction ${{junction.is_signalized ? 'signal' : stub ? 'stub' : 'unsignalized'}} ${{selected === `junction:${{junction.junction_id}}` ? 'selected' : ''}}`}});
     node.addEventListener('click', event => selectNode('junction', junction, event));
-    if (layout === 'relaxed') node.addEventListener('pointerdown', event => beginAnchorDrag(junction.junction_id, event));
     junctionLayer.appendChild(node);
     if (showLabels) {{
       const label = element('text', {{x: point.x + 7 * nodeScale, y: point.y - 7 * nodeScale, class: 'label', style: `font-size:${{9 * labelScale}}px`}});
@@ -374,66 +472,12 @@ function render() {{
   }}
   viewport.appendChild(movementLayer);
 }}
-function relax() {{
-  const nodes = data.junctions;
-  const positions = relaxed;
-  for (let iteration = 0; iteration < 320; iteration++) {{
-    for (const junction of nodes) {{
-      const point = positions.get(junction.junction_id);
-      point.vx *= .76; point.vy *= .76;
-    }}
-    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {{
-      const a = positions.get(nodes[i].junction_id), b = positions.get(nodes[j].junction_id);
-      let dx = b.x - a.x, dy = b.y - a.y, d2 = Math.max(100, dx * dx + dy * dy);
-      const force = 9000 / d2;
-      const length = Math.sqrt(d2);
-      dx /= length; dy /= length;
-      a.vx -= dx * force; a.vy -= dy * force; b.vx += dx * force; b.vy += dy * force;
-    }}
-    for (const road of data.roads) {{
-      const a = positions.get(road.from_junction_id), b = positions.get(road.to_junction_id);
-      const dx = b.x - a.x, dy = b.y - a.y, length = Math.max(1, Math.hypot(dx, dy));
-      const force = (length - 135) * .0025;
-      a.vx += dx / length * force; a.vy += dy / length * force;
-      b.vx -= dx / length * force; b.vy -= dy / length * force;
-    }}
-    for (const junction of nodes) {{
-      const point = positions.get(junction.junction_id);
-      point.vx += (WIDTH / 2 - point.x) * .00045;
-      point.vy += (HEIGHT / 2 - point.y) * .00045;
-      point.x = Math.max(PAD, Math.min(WIDTH - PAD, point.x + point.vx));
-      point.y = Math.max(PAD, Math.min(HEIGHT - PAD, point.y + point.vy));
-    }}
-  }}
-}}
-function setLayout(next) {{
-  layout = next;
-  document.getElementById('map-layout').classList.toggle('active', next === 'map');
-  document.getElementById('force-layout').classList.toggle('active', next === 'relaxed');
-  if (next === 'relaxed') relax();
-  render();
-}}
-let dragAnchor = null;
-function beginAnchorDrag(id, event) {{
-  dragAnchor = id;
-  event.stopPropagation();
-  svg.setPointerCapture(event.pointerId);
-}}
-svg.addEventListener('pointermove', event => {{
-  if (!dragAnchor) return;
-  const rect = svg.getBoundingClientRect();
-  const point = relaxed.get(dragAnchor);
-  point.x = ((event.clientX - rect.left) / rect.width * WIDTH - panX) / zoom;
-  point.y = ((event.clientY - rect.top) / rect.height * HEIGHT - panY) / zoom;
-  render();
-}});
-svg.addEventListener('pointerup', () => dragAnchor = null);
 let panStart = null;
 svg.addEventListener('pointerdown', event => {{
   if (event.target === svg) panStart = {{x: event.clientX, y: event.clientY, panX, panY}};
 }});
 svg.addEventListener('pointermove', event => {{
-  if (!panStart || dragAnchor) return;
+  if (!panStart) return;
   panX = panStart.panX + event.clientX - panStart.x;
   panY = panStart.panY + event.clientY - panStart.y;
   render();
@@ -451,8 +495,6 @@ svg.addEventListener('wheel', event => {{
   panY = cursorY - graphY * zoom;
   render();
 }}, {{passive: false}});
-document.getElementById('map-layout').onclick = () => setLayout('map');
-document.getElementById('force-layout').onclick = () => setLayout('relaxed');
 for (const id of ['show-roads', 'show-unsignalized', 'show-messages', 'show-labels']) document.getElementById(id).onchange = render;
 function zoomAtCenter(factor) {{
   const centerX = WIDTH / 2, centerY = HEIGHT / 2;

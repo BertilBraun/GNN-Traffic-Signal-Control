@@ -43,8 +43,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.dom import minidom
 
-import tqdm
-
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -845,7 +843,7 @@ def _build_tll(net, net_path: Path, tll_path: Path) -> int:
     written = 0
     skipped: list[tuple[str, str]] = []
 
-    for node in tqdm.tqdm(sorted(net.getNodes(), key=lambda n: n.getID()), total=len(net.getNodes())):
+    for node in sorted(net.getNodes(), key=lambda n: n.getID()):
         if node.getType() not in TL_TYPES:
             continue
         jid = node.getID()

@@ -20,6 +20,22 @@ python scripts\build_network.py `
   --demand-vehicles-per-hour 900
 ```
 
+Karlsruhe-Oststadt inspection config:
+
+```powershell
+python scripts\build_network.py `
+  --bbox 49.0000,8.4050,49.0230,8.4520 `
+  --out-dir configs\karlsruhe_oststadt `
+  --name karlsruhe_oststadt `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+```
+
+Generated city configs are reproducible artifacts. Prefer keeping the command
+in docs and regenerating them locally instead of committing generated `.net.xml`,
+`.rou.xml`, `.sumocfg`, HTML reports, or SUMO transient outputs.
+
 Using an existing OSM file:
 
 ```powershell
