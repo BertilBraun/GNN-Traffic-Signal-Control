@@ -62,6 +62,29 @@ def test_city_routes_include_internal_origins_and_destinations() -> None:
     assert any(not edge_id.split('_to_', 1)[1].startswith('S_') for edge_id in destination_edges)
 
 
+def test_city_route_search_uses_passenger_vehicle_class() -> None:
+    class FakeEdge:
+        def __init__(self, edge_id: str) -> None:
+            self._edge_id = edge_id
+
+        def getID(self) -> str:
+            return self._edge_id
+
+    class FakeNet:
+        def __init__(self) -> None:
+            self.requested_vclass = None
+
+        def getOptimalPath(self, source, sink, fastest=False, vClass=None):
+            self.requested_vclass = vClass
+            return (source, sink), 2.0
+
+    network = FakeNet()
+    route = build_network._shortest_route(network, FakeEdge('source'), FakeEdge('sink'))
+
+    assert route == ('source', 'sink')
+    assert network.requested_vclass == 'passenger'
+
+
 def test_city_additional_file_matches_empty_grid_additional(tmp_path: Path) -> None:
     add_path = tmp_path / 'city.add.xml'
 

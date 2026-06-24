@@ -1032,6 +1032,7 @@ def _normal_edges(net) -> tuple[object, ...]:
         and str(edge.getFunction()) == ''
         and float(edge.getLength()) > 0.0
         and int(edge.getLaneNumber()) > 0
+        and any(lane.allows('passenger') for lane in edge.getLanes())
     )
 
 
@@ -1044,6 +1045,7 @@ def _shortest_route(net, source: object, sink: object) -> tuple[str, ...] | None
         source,
         sink,
         fastest=False,
+        vClass='passenger',
     )
     if path is None or len(path) < 2:
         return None

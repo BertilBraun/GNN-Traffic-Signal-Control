@@ -36,6 +36,110 @@ Generated city configs are reproducible artifacts. Prefer keeping the command
 in docs and regenerating them locally instead of committing generated `.net.xml`,
 `.rou.xml`, `.sumocfg`, HTML reports, or SUMO transient outputs.
 
+## First-Pass Multi-City Training Set
+
+Use this first city split for movement-score IL collection and transfer checks:
+
+| split | city config | bbox (S,W,N,E) | rationale | expected risk |
+| --- | --- | --- | --- | --- |
+| train | `karlsruhe_oststadt` | `49.0000,8.4050,49.0230,8.4520` | Personally relevant Karlsruhe east-side area; moderate size with a mix of arterial, campus, and neighborhood streets. | Lower signal density than larger cores; keep as anchor/reference rather than the hardest training case. |
+| train | `mannheim_innenstadt` | `49.4780,8.4550,49.4980,8.4930` | Dense signalized Mannheim core around the Quadrate plus approaches; useful for many control targets. | Many skipped/unsupported imported traffic lights; inspect secondary components before relying on all movements. |
+| train | `stuttgart_mitte` | `48.7645,9.1580,48.7870,9.1975` | Dense, irregular central Stuttgart basin with many signalized movements and non-grid topology. | Larger movement count; runtime cost higher than Karlsruhe/Heidelberg. |
+| train | `heidelberg_bergheim` | `49.3980,8.6720,49.4200,8.7100` | Heidelberg Bergheim/Weststadt/central approaches; compact, irregular, and easier to inspect manually. | Fewer controllable lights than Mannheim/Stuttgart; useful as a stable mid-size training city. |
+| held-out eval | `freiburg_altstadt` | `47.9860,7.8290,48.0100,7.8690` | Freiburg Altstadt/Stuehlinger/Wiehre approaches; irregular old-center topology and good transfer target. | Moderate component fragmentation in peripheral lane groups; inspect GUI demand before transfer claims. |
+
+Frankfurt-Nordend/Bornheim was tried as a stronger dense candidate, but the
+initial bbox produced SUMO route-validity failures in generated demand. Revisit
+it after the first five-city loop is stable.
+
+Build commands:
+
+```powershell
+python scripts\build_network.py `
+  --bbox 49.0000,8.4050,49.0230,8.4520 `
+  --out-dir configs\karlsruhe_oststadt `
+  --name karlsruhe_oststadt `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+
+python scripts\build_network.py `
+  --bbox 49.4780,8.4550,49.4980,8.4930 `
+  --out-dir configs\mannheim_innenstadt `
+  --name mannheim_innenstadt `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+
+python scripts\build_network.py `
+  --bbox 48.7645,9.1580,48.7870,9.1975 `
+  --out-dir configs\stuttgart_mitte `
+  --name stuttgart_mitte `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+
+python scripts\build_network.py `
+  --bbox 49.3980,8.6720,49.4200,8.7100 `
+  --out-dir configs\heidelberg_bergheim `
+  --name heidelberg_bergheim `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+
+python scripts\build_network.py `
+  --bbox 47.9860,7.8290,48.0100,7.8690 `
+  --out-dir configs\freiburg_altstadt `
+  --name freiburg_altstadt `
+  --join-dist 35 `
+  --route-count 300 `
+  --demand-vehicles-per-hour 900
+```
+
+Verification commands, one city at a time:
+
+```powershell
+python scripts\inspect_movement_city.py `
+  --cfg configs\<city_name>\<city_name>.sumocfg `
+  --time-to-teleport -1
+
+python scripts\visualize_movement_graph.py `
+  --cfg configs\<city_name>\<city_name>.sumocfg `
+  --out reports\<city_name>_movement_graph.html
+
+python scripts\run.py `
+  --cfg configs\<city_name>\<city_name>.sumocfg `
+  --method max-pressure `
+  --gui `
+  --time-to-teleport -1
+```
+
+Initial inspected metrics with passenger-aware route sampling:
+
+| city config | SUMO TLs | selectable TLs | pass-through TLs | lane groups | movements | lane-lane connectors | components | largest component | signalized connector errors |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| `karlsruhe_oststadt` | 49 | 45 | 0 | 711 | 301 | 1147 | 4 | 708 lane groups, 301 movements | 0 |
+| `mannheim_innenstadt` | 108 | 86 | 0 | 1004 | 463 | 1476 | 7 | 984 lane groups, 461 movements | 0 |
+| `stuttgart_mitte` | 84 | 77 | 0 | 914 | 591 | 1254 | 2 | 913 lane groups, 591 movements | 0 |
+| `heidelberg_bergheim` | 64 | 56 | 0 | 744 | 347 | 1049 | 3 | 742 lane groups, 347 movements | 0 |
+| `freiburg_altstadt` | 67 | 57 | 0 | 876 | 423 | 1435 | 8 | 866 lane groups, 423 movements | 0 |
+
+Headless smoke check used before manual GUI inspection:
+
+```powershell
+python scripts\run.py `
+  --cfg configs\<city_name>\<city_name>.sumocfg `
+  --method max-pressure `
+  --steps 300 `
+  --time-to-teleport -1
+```
+
+Manual SUMO-GUI checks are still required before data collection: routes should
+show plausible internal city trips, not only boundary-to-boundary shortcuts, and
+900 vehicles/hour should not produce immediate gridlock. If demand is too light
+or overloaded, adjust `--demand-vehicles-per-hour` first, then bbox, before
+changing topology code.
+
 Using an existing OSM file:
 
 ```powershell
