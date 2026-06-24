@@ -10,7 +10,13 @@ sys.path.insert(0, str(ROOT))
 from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.evaluation import EvaluationMetrics
 from src.movement.training.ppo.evaluation import checkpoint_selection_score
-from src.movement.training.ppo.reward import clip_reward, delay_density_reward, speed_deficit_density
+from src.movement.training.ppo.reward import (
+    SpeedChangeTracker,
+    clip_reward,
+    delay_density_reward,
+    speed_change_density,
+    speed_deficit_density,
+)
 from src.movement.training.ppo.rollout import rollout_seed, sample_demand_scale
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
@@ -133,10 +139,12 @@ def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
     assert delay_density_reward(
         local_delay_density=0.2,
         global_delay_density=0.1,
+        speed_change_density=0.3,
         global_reward_weight=0.1,
+        speed_change_weight=0.02,
         teleport_penalty=0.5,
         teleport_count=2,
-    ) == pytest.approx(-1.21)
+    ) == pytest.approx(-1.216)
 
 
 def test_speed_deficit_density_counts_slow_moving_vehicles(
@@ -160,6 +168,35 @@ def test_speed_deficit_density_counts_slow_moving_vehicles(
     )
 
     assert density == pytest.approx(3.0 / 300.0)
+
+
+def test_speed_change_density_tracks_vehicle_speed_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_vehicle_ids = {'lane': ['veh0', 'veh1']}
+    speeds = {'veh0': 5.0, 'veh1': 10.0}
+    monkeypatch.setattr(
+        'src.movement.training.ppo.reward.traci.lane.getLastStepVehicleIDs',
+        lambda lane_id: lane_vehicle_ids[lane_id],
+    )
+    monkeypatch.setattr(
+        'src.movement.training.ppo.reward.traci.vehicle.getSpeed',
+        lambda vehicle_id: speeds[vehicle_id],
+    )
+
+    tracker = SpeedChangeTracker()
+    assert tracker.observe(lane_ids=('lane',), speed_limit_by_lane={'lane': 10.0}) == {'lane': 0.0}
+    speeds['veh0'] = 8.0
+    speeds['veh1'] = 4.0
+
+    speed_change_by_lane = tracker.observe(lane_ids=('lane',), speed_limit_by_lane={'lane': 10.0})
+
+    assert speed_change_by_lane == pytest.approx({'lane': 0.9})
+    assert speed_change_density(
+        lane_ids=('lane',),
+        speed_change_by_lane=speed_change_by_lane,
+        total_lane_length_m=100.0,
+    ) == pytest.approx(0.009)
 
 
 def test_checkpoint_selection_score_penalizes_incomplete_and_teleported_vehicles() -> None:

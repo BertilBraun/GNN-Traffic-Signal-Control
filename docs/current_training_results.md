@@ -20,6 +20,7 @@ learning rate: 2e-4
 PPO clip: 0.1
 target KL: 0.03
 entropy coefficient: 0.01
+speed-change reward weight: 0.00 (not used in this run)
 SUMO gridlock teleporting: disabled with --time-to-teleport -1
 ```
 

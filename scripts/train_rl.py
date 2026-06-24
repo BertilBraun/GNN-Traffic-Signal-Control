@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         help='Maximum rollout demand multiplier sampled per rollout',
     )
     parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global delay-density reward weight')
+    parser.add_argument(
+        '--speed-change-weight',
+        type=float,
+        default=0.02,
+        help='Auxiliary penalty weight for per-vehicle speed changes on incoming lanes',
+    )
     parser.add_argument('--reward-clip', type=float, default=1.0, help='Absolute per-decision reward limit')
     parser.add_argument('--teleport-penalty', type=float, default=0.0, help='Global reward penalty per teleport')
     parser.add_argument(
@@ -156,6 +162,7 @@ def main() -> None:
             demand_scale_min=demand_scale_min,
             demand_scale_max=demand_scale_max,
             global_reward_weight=args.global_reward_weight,
+            speed_change_weight=args.speed_change_weight,
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
             max_teleports_per_rollout=args.max_teleports_per_rollout,

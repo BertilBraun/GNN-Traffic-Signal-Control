@@ -38,7 +38,7 @@ from src.movement.training.ppo.policy import (
     rollout_context,
     states_from_actions,
 )
-from src.movement.training.ppo.reward import advance_and_reward
+from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
 from src.movement.training.ppo.rollout_metrics import RolloutMetrics
 from src.movement.training.ppo.types import (
     CollectedRollout,
@@ -266,6 +266,7 @@ def collect_runtime_rollout(
         lam=config.lam,
     )
     metrics = RolloutMetrics()
+    speed_change_tracker = SpeedChangeTracker()
     model.eval()
     for _decision_step in range(config.steps_per_rollout):
         if not runtime.is_running():
@@ -283,6 +284,7 @@ def collect_runtime_rollout(
             control_state=control_state,
             buffer=buffer,
             metrics=metrics,
+            speed_change_tracker=speed_change_tracker,
         )
     next_values = bootstrap_values(
         runtime=runtime,
@@ -318,6 +320,7 @@ def collect_decision_transition(
     control_state: MovementControlState,
     buffer: MovementRolloutBuffer,
     metrics: RolloutMetrics,
+    speed_change_tracker: SpeedChangeTracker,
 ) -> MovementControlState:
     sample = current_sample(
         context=context,
@@ -363,8 +366,10 @@ def collect_decision_transition(
         context=context,
         decision_interval=config.decision_interval,
         global_reward_weight=config.global_reward_weight,
+        speed_change_weight=config.speed_change_weight,
         reward_clip=config.reward_clip,
         teleport_penalty=config.teleport_penalty,
+        speed_change_tracker=speed_change_tracker,
     )
     metrics.observe_reward(interval_reward)
     buffer.add(

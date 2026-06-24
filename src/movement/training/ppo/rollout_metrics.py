@@ -18,6 +18,7 @@ class RolloutMetrics:
     raw_rewards: list[float]
     local_delay_densities: list[float]
     global_delay_densities: list[float]
+    speed_change_densities: list[float]
     normalized_entropies: list[float]
     top_action_probabilities: list[float]
     policy_decision_count: int
@@ -29,6 +30,7 @@ class RolloutMetrics:
         self.raw_rewards = []
         self.local_delay_densities = []
         self.global_delay_densities = []
+        self.speed_change_densities = []
         self.normalized_entropies = []
         self.top_action_probabilities = []
         self.policy_decision_count = 0
@@ -50,6 +52,7 @@ class RolloutMetrics:
         self.raw_rewards.extend(interval_reward.raw_rewards)
         self.local_delay_densities.extend(interval_reward.local_delay_densities)
         self.global_delay_densities.append(interval_reward.global_delay_density)
+        self.speed_change_densities.extend(interval_reward.speed_change_densities)
 
     def stats(self, simulation_elapsed_s: float, demand_scale: float) -> RolloutStats:
         return RolloutStats(
@@ -65,6 +68,7 @@ class RolloutMetrics:
             ),
             mean_local_delay_density=sum(self.local_delay_densities) / max(1, len(self.local_delay_densities)),
             mean_global_delay_density=sum(self.global_delay_densities) / max(1, len(self.global_delay_densities)),
+            mean_speed_change_density=sum(self.speed_change_densities) / max(1, len(self.speed_change_densities)),
             normalized_entropy=sum(self.normalized_entropies) / max(1, len(self.normalized_entropies)),
             mean_top_action_probability=sum(self.top_action_probabilities) / max(1, len(self.top_action_probabilities)),
             policy_decision_fraction=self.policy_decision_count / max(1, self.total_decision_count),

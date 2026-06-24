@@ -41,6 +41,7 @@ class MovementPpoConfig:
     demand_scale_min: float
     demand_scale_max: float
     global_reward_weight: float
+    speed_change_weight: float
     reward_clip: float
     teleport_penalty: float
     max_teleports_per_rollout: int
@@ -119,6 +120,7 @@ class RolloutStats:
     reward_clip_fraction: float
     mean_local_delay_density: float
     mean_global_delay_density: float
+    mean_speed_change_density: float
     normalized_entropy: float
     mean_top_action_probability: float
     policy_decision_fraction: float
@@ -157,4 +159,5 @@ class IntervalRewardResult:
     raw_rewards: tuple[float, ...]
     local_delay_densities: tuple[float, ...]
     global_delay_density: float
+    speed_change_densities: tuple[float, ...]
     teleport_count: int

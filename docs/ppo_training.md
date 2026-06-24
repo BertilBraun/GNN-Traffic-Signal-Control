@@ -92,8 +92,16 @@ simulation second in the decision interval. This avoids the legacy endpoint
 wait-delta reward's ability to improve when a stopped queue merely begins
 moving and its consecutive waiting counters reset.
 
+An auxiliary smoothness penalty is enabled with a small default weight of
+`0.02`. It tracks each vehicle's absolute speed change between consecutive
+simulation seconds while the vehicle is on incoming lanes, normalizes the
+change by the lane speed limit, and applies the same lane-length density
+normalization as the delay term. The intent is to mildly discourage stop-go
+behavior without overpowering the main speed-deficit objective. Configure it
+with `--speed-change-weight`; use `0.0` to disable it.
+
 The reward is clipped to `[-1, 1]` by default. TensorBoard logs the local and
-global delay-density components separately.
+global delay-density components and the speed-change density separately.
 Teleport events are logged but are not penalized by default. They can include
 route/lane-feasibility failures that are not attributable to one signal action;
 penalizing every junction for them can overwhelm the wait-density reward.

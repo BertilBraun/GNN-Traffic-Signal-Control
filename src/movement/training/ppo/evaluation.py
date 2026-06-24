@@ -49,6 +49,7 @@ def write_training_scalars(
     writer.add_scalar('episode/maximum_raw_reward', rollout_stats.maximum_raw_reward, iteration)
     writer.add_scalar('episode/mean_local_delay_density', rollout_stats.mean_local_delay_density, iteration)
     writer.add_scalar('episode/mean_global_delay_density', rollout_stats.mean_global_delay_density, iteration)
+    writer.add_scalar('episode/mean_speed_change_density', rollout_stats.mean_speed_change_density, iteration)
     writer.add_scalar('episode/mean_return', diagnostics.mean_return, iteration)
     writer.add_scalar('episode/return_standard_deviation', diagnostics.return_standard_deviation, iteration)
     writer.add_scalar('episode/mean_value', diagnostics.mean_value, iteration)
