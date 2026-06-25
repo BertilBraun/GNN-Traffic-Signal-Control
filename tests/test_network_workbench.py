@@ -160,15 +160,15 @@ def test_all_runs_interactive_prune_checkpoint(monkeypatch) -> None:
     def fake_summary(context: network_workbench.WorkbenchContext) -> None:
         calls.append(('summary',))
 
-    def fake_run_gui(context: network_workbench.WorkbenchContext) -> None:
-        calls.append(('run-gui',))
+    def fake_calibrate_demand(context: network_workbench.WorkbenchContext) -> None:
+        calls.append(('calibrate-demand',))
 
     monkeypatch.setattr(network_workbench, '_build', fake_build)
     monkeypatch.setattr(network_workbench, '_prune', fake_prune)
     monkeypatch.setattr(network_workbench, '_inspect', fake_inspect)
     monkeypatch.setattr(network_workbench, '_visualize', fake_visualize)
     monkeypatch.setattr(network_workbench, '_write_build_summary', fake_summary)
-    monkeypatch.setattr(network_workbench, '_run_gui', fake_run_gui)
+    monkeypatch.setattr(network_workbench, '_calibrate_demand', fake_calibrate_demand)
 
     network_workbench._run_workbench_command(
         context=context,
@@ -185,5 +185,85 @@ def test_all_runs_interactive_prune_checkpoint(monkeypatch) -> None:
         ('inspect',),
         ('visualize', True),
         ('summary',),
-        ('run-gui',),
+        ('calibrate-demand',),
     ]
+
+
+def test_runtime_demand_scale_action_updates_build_file_without_rebuild(tmp_path: Path, monkeypatch) -> None:
+    context = _write_test_build_file(tmp_path)
+    calls = []
+
+    def fake_build(context: network_workbench.WorkbenchContext, include_prune: bool) -> None:
+        calls.append(('build', include_prune))
+
+    monkeypatch.setattr(network_workbench, '_build', fake_build)
+
+    updated_context = network_workbench._apply_demand_action(
+        context=context,
+        action=network_workbench.DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=None,
+            demand_scale=2.5,
+            demand_scale_multiplier=None,
+            rebuild=False,
+        ),
+    )
+
+    loaded = load_build_recipe(updated_context.paths.recipe_path)
+    assert updated_context.recipe.verification.demand_scale == 2.5
+    assert loaded.verification.demand_scale == 2.5
+    assert loaded.demand.demand_vehicles_per_hour == 900.0
+    assert calls == []
+
+
+def test_base_demand_multiplier_action_updates_build_file_and_rebuilds(tmp_path: Path, monkeypatch) -> None:
+    context = _write_test_build_file(tmp_path)
+    calls = []
+
+    def fake_build(context: network_workbench.WorkbenchContext, include_prune: bool) -> None:
+        calls.append(('build', include_prune, context.recipe.demand.demand_vehicles_per_hour))
+
+    monkeypatch.setattr(network_workbench, '_build', fake_build)
+
+    updated_context = network_workbench._apply_demand_action(
+        context=context,
+        action=network_workbench.DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=2.0,
+            demand_scale=None,
+            demand_scale_multiplier=None,
+            rebuild=True,
+        ),
+    )
+
+    loaded = load_build_recipe(updated_context.paths.recipe_path)
+    assert updated_context.recipe.demand.demand_vehicles_per_hour == 1800.0
+    assert loaded.demand.demand_vehicles_per_hour == 1800.0
+    assert loaded.verification.demand_scale == 4.5
+    assert calls == [('build', False, 1800.0)]
+
+
+def test_parse_base_scale_demand_action() -> None:
+    action = network_workbench._parse_demand_action('base-scale 2')
+
+    assert action == network_workbench.DemandCalibrationAction(
+        base_demand_vehicles_per_hour=None,
+        base_demand_multiplier=2.0,
+        demand_scale=None,
+        demand_scale_multiplier=None,
+        rebuild=True,
+    )
+
+
+def _write_test_build_file(directory: Path) -> network_workbench.WorkbenchContext:
+    args = Namespace(
+        recipe=None,
+        name='test_city',
+        bbox='1,2,3,4',
+        out_dir=directory / 'test_city',
+        join_dist=35.0,
+        route_count=300,
+        demand_vehicles_per_hour=900.0,
+        demand_scale=4.5,
+    )
+    return network_workbench._context_from_args(args)

@@ -244,11 +244,15 @@ Subcommands:
 * `inspect`: run movement extraction inspection and save report.
 * `visualize`: generate movement graph and optional detection HTML.
 * `run-gui`: launch `scripts/run.py --gui` with saved demand settings.
+* `calibrate-demand`: launch SUMO-GUI, then prompt for demand adjustments.
+  Runtime scale changes update the saved build file and rerun GUI. Base demand
+  changes update `demand_vehicles_per_hour`, rebuild routes/config, and rerun
+  GUI.
 * `evaluate`: launch `scripts/eval_policy.py` for baseline seeds.
 * `all`: run the interactive workbench sequence: build current network, open
   prune UI and wait for Finish, rebuild from saved prune JSON, inspect, open
-  visualization reports, and launch SUMO-GUI by default. It should not run
-  evaluation.
+  visualization reports, and run demand calibration by default. It should not
+  run evaluation.
 
 The existing `scripts/build_network.py` can remain the low-level builder. The
 first orchestrator can call the existing scripts directly. A later cleanup can
@@ -283,12 +287,15 @@ Workflow:
 
 1. Build or rebuild the network.
 2. Run inspection and movement graph visualization.
-3. Launch GUI with a candidate `demand_scale`.
+3. Launch GUI with the saved `demand_scale`.
 4. Simulate roughly `1000..2000` steps.
-5. Record a simple verdict in the build summary:
-   `too_low`, `usable`, `too_high`, or `topology_problem`.
-6. Adjust `demand.demand_vehicles_per_hour` or verification
-   `demand_scale`, then rebuild or rerun as appropriate.
+5. Use the terminal prompt after SUMO-GUI exits:
+   * `scale <value>` sets runtime demand scaling and reruns GUI.
+   * `up` / `down` quickly changes runtime scale and reruns GUI.
+   * `base <vph>` changes base route-file demand, rebuilds, and reruns GUI.
+   * `base-scale <factor>` multiplies base route-file demand, rebuilds, and
+     reruns GUI.
+   * `finish` or Enter accepts the saved demand and ends calibration.
 
 Important distinction:
 

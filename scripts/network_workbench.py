@@ -36,6 +36,7 @@ class WorkbenchCommand(str, Enum):
     INSPECT = 'inspect'
     VISUALIZE = 'visualize'
     RUN_GUI = 'run-gui'
+    CALIBRATE_DEMAND = 'calibrate-demand'
     EVALUATE = 'evaluate'
     ALL = 'all'
 
@@ -186,6 +187,8 @@ def _run_workbench_command(
             _print_next_step(f'Review HTML reports in {context.paths.reports_directory}.')
         case WorkbenchCommand.RUN_GUI:
             _run_gui(context)
+        case WorkbenchCommand.CALIBRATE_DEMAND:
+            _calibrate_demand(context)
         case WorkbenchCommand.EVALUATE:
             _evaluate(context)
         case WorkbenchCommand.ALL:
@@ -230,7 +233,7 @@ def _run_interactive_pipeline(
         _visualize(context=context, open_browser=True)
     _write_build_summary(context)
     if context.recipe.verification.gui:
-        _run_gui(context)
+        _calibrate_demand(context)
     else:
         _print_next_step('Set verification.gui: true, or run run-gui manually, for SUMO-GUI demand calibration.')
 
@@ -385,6 +388,139 @@ def _run_gui(context: WorkbenchContext) -> CompletedWorkbenchCommand:
         str(context.recipe.verification.time_to_teleport),
     )
     return _run_checked_command(command=command, report_path=None)
+
+
+def _calibrate_demand(context: WorkbenchContext) -> WorkbenchContext:
+    current_context = context
+    while True:
+        print(
+            '[workbench] Demand calibration: '
+            f'base={current_context.recipe.demand.demand_vehicles_per_hour:g} vph, '
+            f'scale={current_context.recipe.verification.demand_scale:g}'
+        )
+        _run_gui(current_context)
+        action = _prompt_demand_action()
+        if action is None:
+            _print_next_step(
+                'Demand calibration finished. Commit the build YAML and prune JSON when the network is ready.'
+            )
+            return current_context
+        current_context = _apply_demand_action(context=current_context, action=action)
+
+
+@dataclass(frozen=True)
+class DemandCalibrationAction:
+    base_demand_vehicles_per_hour: float | None
+    base_demand_multiplier: float | None
+    demand_scale: float | None
+    demand_scale_multiplier: float | None
+    rebuild: bool
+
+
+def _prompt_demand_action() -> DemandCalibrationAction | None:
+    while True:
+        print('Demand calibration options:')
+        print('  Enter/finish        accept current demand and stop')
+        print('  scale <value>       set runtime demand scale, then rerun GUI')
+        print('  up                  increase runtime demand scale by 25%')
+        print('  down                decrease runtime demand scale by 20%')
+        print('  base <vph>          set base demand, rebuild routes/config, then rerun GUI')
+        print('  base-scale <factor> multiply base demand, rebuild routes/config, then rerun GUI')
+        raw_action = input('calibration> ').strip().lower()
+        if raw_action in {'', 'finish', 'done', 'accept', 'q', 'quit'}:
+            return None
+        try:
+            action = _parse_demand_action(raw_action)
+        except ValueError as exc:
+            print(exc)
+            continue
+        if action is not None:
+            return action
+        print(f'Unknown demand calibration action: {raw_action}')
+
+
+def _parse_demand_action(raw_action: str) -> DemandCalibrationAction | None:
+    parts = raw_action.split()
+    command = parts[0]
+    if command == 'scale' and len(parts) == 2:
+        return DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=None,
+            demand_scale=_positive_float(parts[1], 'demand scale'),
+            demand_scale_multiplier=None,
+            rebuild=False,
+        )
+    if command == 'up' and len(parts) == 1:
+        return DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=None,
+            demand_scale=None,
+            demand_scale_multiplier=1.25,
+            rebuild=False,
+        )
+    if command == 'down' and len(parts) == 1:
+        return DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=None,
+            demand_scale=None,
+            demand_scale_multiplier=0.8,
+            rebuild=False,
+        )
+    if command == 'base' and len(parts) == 2:
+        return DemandCalibrationAction(
+            base_demand_vehicles_per_hour=_positive_float(parts[1], 'base demand'),
+            base_demand_multiplier=None,
+            demand_scale=None,
+            demand_scale_multiplier=None,
+            rebuild=True,
+        )
+    if command == 'base-scale' and len(parts) == 2:
+        return DemandCalibrationAction(
+            base_demand_vehicles_per_hour=None,
+            base_demand_multiplier=_positive_float(parts[1], 'base demand multiplier'),
+            demand_scale=None,
+            demand_scale_multiplier=None,
+            rebuild=True,
+        )
+    return None
+
+
+def _positive_float(raw_value: str, label: str) -> float:
+    value = float(raw_value)
+    if value <= 0.0:
+        raise ValueError(f'{label} must be positive.')
+    return value
+
+
+def _apply_demand_action(context: WorkbenchContext, action: DemandCalibrationAction) -> WorkbenchContext:
+    demand = context.recipe.demand
+    verification = context.recipe.verification
+    if action.demand_scale is not None:
+        if action.rebuild:
+            raise ValueError('Demand scale actions must not request rebuild.')
+        verification = verification.model_copy(update={'demand_scale': action.demand_scale})
+    if action.demand_scale_multiplier is not None:
+        if action.rebuild:
+            raise ValueError('Demand scale multiplier actions must not request rebuild.')
+        verification = verification.model_copy(
+            update={'demand_scale': verification.demand_scale * action.demand_scale_multiplier}
+        )
+    if action.base_demand_vehicles_per_hour is not None:
+        demand = demand.model_copy(update={'demand_vehicles_per_hour': action.base_demand_vehicles_per_hour})
+    if action.base_demand_multiplier is not None:
+        demand = demand.model_copy(
+            update={'demand_vehicles_per_hour': demand.demand_vehicles_per_hour * action.base_demand_multiplier}
+        )
+    updated_recipe = context.recipe.model_copy(update={'demand': demand, 'verification': verification})
+    updated_context = WorkbenchContext(
+        recipe=updated_recipe,
+        paths=city_build_paths(recipe_path=context.paths.recipe_path, recipe=updated_recipe),
+    )
+    save_build_recipe(recipe_path=updated_context.paths.recipe_path, recipe=updated_recipe)
+    print(f'Wrote build file: {updated_context.paths.recipe_path}')
+    if action.rebuild:
+        _build(context=updated_context, include_prune=updated_context.paths.prune_path.exists())
+    return updated_context
 
 
 def _evaluate(context: WorkbenchContext) -> CompletedWorkbenchCommand:
