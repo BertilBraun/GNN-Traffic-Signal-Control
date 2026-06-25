@@ -331,6 +331,23 @@ def test_generate_prune_editor_preloads_existing_save_recipe(tmp_path: Path) -> 
     assert '"delete_edges":["N0_0_to_N0_1"]' in content
 
 
+def test_generate_prune_editor_accepts_missing_prune_recipe(tmp_path: Path) -> None:
+    output_path = tmp_path / 'prune.html'
+    missing_prune_path = tmp_path / 'new_city.prune.json'
+
+    visualize_network_prune.generate_prune_editor(
+        net_path=GRID_NET,
+        output_path=output_path,
+        prune_path=missing_prune_path,
+        save_prune_path=missing_prune_path,
+    )
+    content = output_path.read_text(encoding='utf-8')
+
+    assert '"delete_junctions":[]' in content
+    assert '"delete_edges":[]' in content
+    assert not missing_prune_path.exists()
+
+
 def test_prune_editor_config_reports_missing_osm_for_grid_fixture() -> None:
     save_path = visualize_network_prune._default_prune_path(GRID_NET)
     editor_config = visualize_network_prune.build_editor_config(

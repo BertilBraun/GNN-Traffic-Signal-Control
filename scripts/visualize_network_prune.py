@@ -185,7 +185,7 @@ def build_prune_visualization(net_path: Path, prune_recipe: PruneRecipe) -> Netw
 
 
 def _load_existing_prune_recipe(prune_path: Path | None) -> PruneRecipe:
-    if prune_path is None:
+    if prune_path is None or not prune_path.exists():
         return PruneRecipe(delete_junctions=(), delete_edges=(), keep_junctions=(), notes=())
     return PruneRecipe.model_validate_json(prune_path.read_text(encoding='utf-8-sig'))
 
