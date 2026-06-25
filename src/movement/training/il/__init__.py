@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from pydantic import BaseModel, ConfigDict
 from torch.utils.tensorboard import SummaryWriter
 
 from src.movement.dataset import MovementDatasetSample, StoredPhaseIncidence, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 from src.movement.training.il.checkpoint import movement_checkpoint_payload
+from src.movement.training.il.batching import MovementILBatchPlanner, RandomBatchPlanner
 from src.movement.training.il.tensors import edge_tensors_from_sample, tensors_from_sample
 from src.movement.training.il.types import (
     MovementILLoss,
@@ -27,6 +30,8 @@ def train_movement_il(
     samples: Sequence[MovementDatasetSample],
     config: MovementILTrainingConfig,
     observer: MovementILTrainingObserver | None,
+    batch_planner: MovementILBatchPlanner,
+    validation_samples: Sequence[MovementDatasetSample],
 ) -> MovementILTrainingResult:
     """Train a movement scorer on stored movement-score samples."""
     if not samples:
@@ -56,10 +61,10 @@ def train_movement_il(
         total_phase_loss_value = 0.0
         total_phase_matches = 0
         total_phase_decisions = 0
-        sample_indices = torch.randperm(len(samples)).tolist()
-        for batch_start in range(0, len(sample_indices), config.samples_per_batch):
+        total_trained_samples = 0
+        for sample_indices in batch_planner.epoch_batches(samples=samples, epoch=epoch):
             batch_losses = []
-            for sample_index in sample_indices[batch_start : batch_start + config.samples_per_batch]:
+            for sample_index in sample_indices:
                 sample = samples[sample_index]
                 x_lane, x_movement, target = tensors_from_sample(
                     sample=sample,
@@ -88,13 +93,14 @@ def train_movement_il(
                 )
                 total_phase_matches += matches
                 total_phase_decisions += decisions
+                total_trained_samples += 1
             loss = torch.stack(tuple(batch_losses)).mean()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        final_loss = total_loss_value / len(samples)
-        regression_loss_value = total_regression_loss_value / len(samples)
-        phase_loss_value = total_phase_loss_value / len(samples)
+        final_loss = total_loss_value / total_trained_samples
+        regression_loss_value = total_regression_loss_value / total_trained_samples
+        phase_loss_value = total_phase_loss_value / total_trained_samples
         phase_match_rate = total_phase_matches / max(1, total_phase_decisions)
         if final_loss < best_loss:
             best_loss = final_loss
@@ -110,6 +116,17 @@ def train_movement_il(
             writer.add_scalar('loss/regression', regression_loss_value, epoch + 1)
             writer.add_scalar('loss/phase', phase_loss_value, epoch + 1)
             writer.add_scalar('accuracy/phase_match', phase_match_rate, epoch + 1)
+            _write_validation_losses(
+                writer=writer,
+                epoch=epoch + 1,
+                validation_samples=validation_samples,
+                model=model,
+                lane_normalizer=lane_normalizer,
+                movement_normalizer=movement_normalizer,
+                device=device,
+                loss_name=config.loss,
+                phase_loss_coefficient=config.phase_loss_coefficient,
+            )
         if observer is not None:
             observer.on_epoch_completed(
                 MovementILTrainingSnapshot(
@@ -166,9 +183,18 @@ def train_movement_il_from_jsonl(
     dataset_path: Path | str,
     config: MovementILTrainingConfig,
     observer: MovementILTrainingObserver | None,
+    batch_planner: MovementILBatchPlanner,
+    validation_samples: Sequence[MovementDatasetSample],
 ) -> MovementILTrainingResult:
     """Load JSONL samples and train the movement scorer."""
-    return train_movement_il(load_jsonl_samples(dataset_path), config, observer)
+    return train_movement_il(load_jsonl_samples(dataset_path), config, observer, batch_planner, validation_samples)
+
+
+def random_batch_planner(config: MovementILTrainingConfig) -> RandomBatchPlanner:
+    return RandomBatchPlanner(
+        samples_per_batch=config.samples_per_batch,
+        seed=config.seed,
+    )
 
 
 def _fit_normalizer(
@@ -179,6 +205,94 @@ def _fit_normalizer(
         normalizer.update_rows(rows)
     normalizer.freeze()
     return normalizer
+
+
+def _write_validation_losses(
+    writer: SummaryWriter,
+    epoch: int,
+    validation_samples: Sequence[MovementDatasetSample],
+    model: MovementScorer,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    device: torch.device,
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+) -> None:
+    if not validation_samples:
+        return
+    losses_by_city = _validation_losses_by_city(
+        validation_samples=validation_samples,
+        model=model,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        device=device,
+        loss_name=loss_name,
+        phase_loss_coefficient=phase_loss_coefficient,
+    )
+    all_losses = tuple(loss for city_losses in losses_by_city for loss in city_losses.losses)
+    writer.add_scalar('validation/loss', sum(all_losses) / len(all_losses), epoch)
+    for city_losses in losses_by_city:
+        writer.add_scalar(
+            f'validation/{city_losses.city_name}/loss',
+            sum(city_losses.losses) / len(city_losses.losses),
+            epoch,
+        )
+
+
+@dataclass(frozen=True)
+class CityValidationLosses:
+    city_name: str
+    losses: tuple[float, ...]
+
+
+class ValidationSampleMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    city_name: str
+
+
+def _validation_losses_by_city(
+    validation_samples: Sequence[MovementDatasetSample],
+    model: MovementScorer,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    device: torch.device,
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+) -> tuple[CityValidationLosses, ...]:
+    city_names: list[str] = []
+    for sample in validation_samples:
+        city_name = ValidationSampleMetadata.model_validate(sample.metadata).city_name
+        if city_name not in city_names:
+            city_names.append(city_name)
+    losses_by_city: list[CityValidationLosses] = []
+    model.eval()
+    with torch.no_grad():
+        for city_name in city_names:
+            losses: list[float] = []
+            for sample in validation_samples:
+                if ValidationSampleMetadata.model_validate(sample.metadata).city_name != city_name:
+                    continue
+                x_lane, x_movement, target = tensors_from_sample(
+                    sample=sample,
+                    lane_normalizer=lane_normalizer,
+                    movement_normalizer=movement_normalizer,
+                    device=device,
+                )
+                prediction = model(
+                    x_lane=x_lane,
+                    x_movement=x_movement,
+                    edge_index_dict=edge_tensors_from_sample(sample, device=device),
+                )
+                regression_loss = _loss(prediction, target, loss_name)
+                phase_loss = _phase_classification_loss(
+                    sample=sample,
+                    movement_scores=prediction,
+                )
+                losses.append(float((regression_loss + phase_loss_coefficient * phase_loss).detach().cpu()))
+            losses_by_city.append(CityValidationLosses(city_name=city_name, losses=tuple(losses)))
+    model.train()
+    return tuple(losses_by_city)
 
 
 def _loss(

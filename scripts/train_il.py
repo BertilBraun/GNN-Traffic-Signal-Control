@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
-from src.movement.training.il import train_movement_il_from_jsonl  # noqa: E402
+from src.movement.training.il import random_batch_planner, train_movement_il, train_movement_il_from_jsonl  # noqa: E402
+from src.movement.training.il.batching import CityBalancedBatchPlanner, MovementILBatchPlanner  # noqa: E402
+from src.movement.training.il.batching import split_train_validation_by_city_seed  # noqa: E402
 from src.movement.training.il.checkpoint import save_movement_checkpoint  # noqa: E402
 from src.movement.training.il.types import (  # noqa: E402
     MovementILLoss,
@@ -39,6 +41,21 @@ from src.movement.evaluation import (  # noqa: E402
     write_aggregate_json,
     write_records_csv,
 )
+from src.movement.evaluation.multi_city import (  # noqa: E402
+    MultiCityEvaluationAggregate,
+    MultiCityEvaluationRecord,
+    MultiCityEvaluationResult,
+    aggregate_multi_city_records,
+    default_episode_runner,
+    run_multi_city_evaluation,
+    write_multi_city_csv,
+    write_multi_city_json,
+)
+from src.movement.experiment_config import (  # noqa: E402
+    CitySplit,
+    ExperimentConfiguration,
+    load_experiment_configuration,
+)
 from scripts.collect_il_data import collect_samples, verify_max_pressure_determinism  # noqa: E402
 
 
@@ -47,6 +64,7 @@ def parse_args() -> argparse.Namespace:
         description='Train movement-score imitation from collected JSONL data.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument('--experiment-config', type=Path, default=None, help='Multi-city experiment YAML path')
     parser.add_argument('--data', type=Path, default=None, help='Input JSONL dataset')
     parser.add_argument(
         '--cfg',
@@ -76,6 +94,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--lr', type=float, default=1e-3, help='Adam learning rate')
     parser.add_argument('--hidden-dim', type=int, default=64, help='MLP hidden dimension')
     parser.add_argument('--samples-per-batch', type=int, default=32, help='IL samples per optimizer update')
+    parser.add_argument(
+        '--validation-fraction',
+        type=float,
+        default=0.1,
+        help='City/seed validation fraction used with --experiment-config',
+    )
     parser.add_argument('--num-hops', type=int, default=1, help='LaneGroup/Movement macro-hops')
     parser.add_argument(
         '--loss',
@@ -302,15 +326,143 @@ class TrainingEvaluationObserver:
         writer.close()
 
 
+@dataclass
+class MultiCityTrainingEvaluationObserver:
+    experiment_configuration: ExperimentConfiguration
+    policies: tuple[EvaluationPolicy, ...]
+    seeds: tuple[int, ...]
+    steps: int
+    demand_scales: tuple[float, ...]
+    output_dir: Path
+    log_dir: Path
+    device: str
+    every_epochs: int
+    project_root: Path
+    baseline_records: tuple[MultiCityEvaluationRecord, ...] = field(default_factory=tuple, init=False)
+    best_held_out_learned_wait_density: float = field(default=float('inf'), init=False)
+
+    def on_epoch_completed(self, snapshot: MovementILTrainingSnapshot) -> None:
+        if not self._should_evaluate(snapshot):
+            return
+        epoch_dir = self.output_dir / f'epoch_{snapshot.epoch:04d}'
+        checkpoint_path = epoch_dir / 'movement_policy.pt'
+        save_movement_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=snapshot.model,
+            config=snapshot.config,
+            lane_feature_dim=snapshot.lane_feature_dim,
+            movement_feature_dim=snapshot.movement_feature_dim,
+            lane_normalizer=snapshot.lane_normalizer,
+            movement_normalizer=snapshot.movement_normalizer,
+            loss=snapshot.loss,
+        )
+        result = self._run_epoch_evaluation(checkpoint_path)
+        self.baseline_records = tuple(
+            record for record in result.records if record.policy != EvaluationPolicy.LEARNED.value
+        )
+        write_multi_city_json(epoch_dir / 'summary.json', result)
+        write_multi_city_csv(epoch_dir / 'summary.csv', result)
+        self._write_tensorboard(snapshot.epoch, result.aggregates)
+        learned_aggregate = self._held_out_learned_aggregate(result.aggregates)
+        if (
+            learned_aggregate is not None
+            and learned_aggregate.mean.average_wait_density_s_per_m < self.best_held_out_learned_wait_density
+        ):
+            self.best_held_out_learned_wait_density = learned_aggregate.mean.average_wait_density_s_per_m
+            save_movement_checkpoint(
+                checkpoint_path=self.output_dir.parent / 'movement_policy_eval_best.pt',
+                model=snapshot.model,
+                config=snapshot.config,
+                lane_feature_dim=snapshot.lane_feature_dim,
+                movement_feature_dim=snapshot.movement_feature_dim,
+                lane_normalizer=snapshot.lane_normalizer,
+                movement_normalizer=snapshot.movement_normalizer,
+                loss=snapshot.loss,
+            )
+            print(
+                '  new best held-out learned wait density='
+                f'{self.best_held_out_learned_wait_density:.4f} s/m at epoch {snapshot.epoch}'
+            )
+
+    def _should_evaluate(self, snapshot: MovementILTrainingSnapshot) -> bool:
+        return snapshot.epoch % self.every_epochs == 0 or snapshot.epoch == snapshot.epochs
+
+    def _run_epoch_evaluation(self, checkpoint_path: Path) -> MultiCityEvaluationResult:
+        learned_policy_config = LearnedPolicyConfig(
+            checkpoint_path=checkpoint_path,
+            device=self.device,
+        )
+        pending_policies = tuple(
+            policy for policy in self.policies if policy == EvaluationPolicy.LEARNED or not self.baseline_records
+        )
+        if not pending_policies:
+            return MultiCityEvaluationResult(
+                records=self.baseline_records,
+                aggregates=aggregate_multi_city_records(self.baseline_records),
+            )
+        pending_result = run_multi_city_evaluation(
+            configuration=self.experiment_configuration,
+            project_root=self.project_root,
+            policies=pending_policies,
+            seeds=self.seeds,
+            steps=self.steps,
+            demand_scales=self.demand_scales,
+            learned_policy_config=learned_policy_config if EvaluationPolicy.LEARNED in pending_policies else None,
+            episode_runner=default_episode_runner,
+        )
+        records = (*self.baseline_records, *pending_result.records)
+        return MultiCityEvaluationResult(
+            records=records,
+            aggregates=aggregate_multi_city_records(records),
+        )
+
+    def _write_tensorboard(
+        self,
+        epoch: int,
+        aggregates: Sequence[MultiCityEvaluationAggregate],
+    ) -> None:
+        writer = SummaryWriter(log_dir=str(self.log_dir))
+        for aggregate in aggregates:
+            demand_scale_tag = f'demand_{aggregate.demand_scale:.3f}'.replace('.', '_')
+            tag_prefix = (
+                f'eval/{aggregate.city_split.value}/{aggregate.city_name}/{aggregate.policy}/{demand_scale_tag}'
+            )
+            writer.add_scalar(
+                f'{tag_prefix}/average_wait_density_s_per_m',
+                aggregate.mean.average_wait_density_s_per_m,
+                epoch,
+            )
+            writer.add_scalar(f'{tag_prefix}/completion_rate', aggregate.mean.completion_rate, epoch)
+            writer.add_scalar(f'{tag_prefix}/throughput_per_hour', aggregate.mean.throughput_per_hour, epoch)
+        writer.close()
+
+    def _held_out_learned_aggregate(
+        self,
+        aggregates: Sequence[MultiCityEvaluationAggregate],
+    ) -> MultiCityEvaluationAggregate | None:
+        return next(
+            (
+                aggregate
+                for aggregate in aggregates
+                if aggregate.city_split == CitySplit.HELD_OUT and aggregate.policy == EvaluationPolicy.LEARNED.value
+            ),
+            None,
+        )
+
+
 def main() -> None:
     args = parse_args()
+    experiment_configuration = _experiment_configuration(args.experiment_config)
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'il' / stamp
     log_dir = args.log_dir or ROOT / 'runs' / 'il' / stamp
     if args.data is None and args.sumo_config_path is None:
         raise SystemExit('Either --data or --cfg is required.')
+    if experiment_configuration is not None and args.data is None:
+        raise SystemExit('--data is required when --experiment-config is provided.')
     observer = _training_evaluation_observer(
         args=args,
+        experiment_configuration=experiment_configuration,
         checkpoint_dir=checkpoint_dir,
         log_dir=log_dir,
     )
@@ -328,12 +480,32 @@ def main() -> None:
         samples_per_batch=args.samples_per_batch,
         log_dir=log_dir,
     )
+    batch_planner = _batch_planner(
+        config=config,
+        experiment_configuration=experiment_configuration,
+    )
     if args.data is not None:
-        result = train_movement_il_from_jsonl(
-            dataset_path=args.data,
-            config=config,
-            observer=observer,
-        )
+        if experiment_configuration is None:
+            result = train_movement_il_from_jsonl(
+                dataset_path=args.data,
+                config=config,
+                observer=observer,
+                batch_planner=batch_planner,
+                validation_samples=(),
+            )
+        else:
+            split_samples = split_train_validation_by_city_seed(
+                samples=load_jsonl_samples(args.data),
+                validation_fraction=args.validation_fraction,
+                seed=args.seed,
+            )
+            result = train_movement_il(
+                samples=split_samples.training_samples,
+                config=config,
+                observer=observer,
+                batch_planner=batch_planner,
+                validation_samples=split_samples.validation_samples,
+            )
     else:
         with tempfile.TemporaryDirectory(prefix='movement_il_') as temporary_directory:
             dataset_path = Path(temporary_directory) / 'samples.jsonl'
@@ -388,6 +560,8 @@ def main() -> None:
                 dataset_path=dataset_path,
                 config=config,
                 observer=observer,
+                batch_planner=batch_planner,
+                validation_samples=(),
             )
     print(
         f'Training complete: epochs={result.epochs} '
@@ -397,11 +571,25 @@ def main() -> None:
 
 def _training_evaluation_observer(
     args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
     checkpoint_dir: Path,
     log_dir: Path,
-) -> TrainingEvaluationObserver | None:
+) -> TrainingEvaluationObserver | MultiCityTrainingEvaluationObserver | None:
     if args.eval_cfg is None or args.eval_every_epochs <= 0:
         return None
+    if experiment_configuration is not None:
+        return MultiCityTrainingEvaluationObserver(
+            experiment_configuration=experiment_configuration,
+            policies=tuple(EvaluationPolicy(policy.value) for policy in experiment_configuration.evaluation.policies),
+            seeds=experiment_configuration.evaluation.seeds,
+            steps=args.eval_steps,
+            demand_scales=experiment_configuration.demand.evaluation_scales,
+            output_dir=args.eval_output_dir or checkpoint_dir / 'eval',
+            log_dir=log_dir,
+            device=args.device,
+            every_epochs=args.eval_every_epochs,
+            project_root=ROOT,
+        )
     return TrainingEvaluationObserver(
         cfg_path=args.eval_cfg,
         policies=tuple(EvaluationPolicy(policy) for policy in args.eval_policies),
@@ -418,6 +606,27 @@ def _training_evaluation_observer(
         log_dir=log_dir,
         device=args.device,
         every_epochs=args.eval_every_epochs,
+    )
+
+
+def _experiment_configuration(experiment_configuration_path: Path | None) -> ExperimentConfiguration | None:
+    if experiment_configuration_path is None:
+        return None
+    return load_experiment_configuration(
+        configuration_path=experiment_configuration_path,
+        project_root=ROOT,
+    )
+
+
+def _batch_planner(
+    config: MovementILTrainingConfig,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> MovementILBatchPlanner:
+    if experiment_configuration is None:
+        return random_batch_planner(config)
+    return CityBalancedBatchPlanner(
+        samples_per_batch=config.samples_per_batch,
+        seed=config.seed,
     )
 
 

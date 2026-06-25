@@ -6,6 +6,8 @@ sys.path.insert(0, str(ROOT))
 
 from scripts import train_il
 from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy
+from src.movement.training.il.batching import CityBalancedBatchPlanner, RandomBatchPlanner
+from src.movement.training.il.types import MovementILTrainingConfig
 
 
 def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
@@ -34,6 +36,27 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
     assert args.progress_every == 1
     assert args.num_hops == 1
     assert args.ckpt_dir == Path('checkpoints/il/unit')
+    assert args.experiment_config is None
+    assert args.validation_fraction == 0.1
+
+
+def test_train_il_cli_accepts_experiment_config(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_il.py',
+            '--experiment-config',
+            'configs/training/city_first_pass.yaml',
+            '--data',
+            'data/il/city_first_pass/combined.jsonl',
+        ],
+    )
+
+    args = train_il.parse_args()
+
+    assert args.experiment_config == Path('configs/training/city_first_pass.yaml')
+    assert args.data == Path('data/il/city_first_pass/combined.jsonl')
 
 
 def test_train_il_cli_accepts_collection_args(monkeypatch) -> None:
@@ -140,6 +163,29 @@ def test_training_evaluation_caches_deterministic_baseline(tmp_path: Path, monke
     assert calls.count((EvaluationPolicy.MAX_PRESSURE, 101)) == 1
     assert calls.count((EvaluationPolicy.LEARNED, 100)) == 2
     assert calls.count((EvaluationPolicy.LEARNED, 101)) == 2
+
+
+def test_train_il_batch_planner_uses_city_balance_only_for_experiment_config() -> None:
+    config = MovementILTrainingConfig(
+        epochs=1,
+        lr=0.01,
+        hidden_dim=8,
+        checkpoint_dir=Path('checkpoints/il/unit'),
+        seed=42,
+        num_hops=0,
+    )
+    experiment_configuration = train_il._experiment_configuration(
+        ROOT / 'configs' / 'training' / 'city_first_pass.yaml'
+    )
+
+    assert isinstance(
+        train_il._batch_planner(config=config, experiment_configuration=experiment_configuration),
+        CityBalancedBatchPlanner,
+    )
+    assert isinstance(
+        train_il._batch_planner(config=config, experiment_configuration=None),
+        RandomBatchPlanner,
+    )
 
 
 def _empty_metrics() -> EvaluationMetrics:

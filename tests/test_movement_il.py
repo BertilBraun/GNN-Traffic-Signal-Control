@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 import sys
 
 ROOT = Path(__file__).parent.parent
@@ -9,7 +10,7 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 
 from src.movement.dataset import MovementDatasetSample
 from src.movement.dataset import MovementEdgeIndices, StoredPhaseIncidence
-from src.movement.training.il import train_movement_il
+from src.movement.training.il import random_batch_planner, train_movement_il
 from src.movement.training.il.checkpoint import (
     load_movement_checkpoint,
     normalizer_from_state,
@@ -71,17 +72,20 @@ def test_local_model_scores_one_value_per_movement() -> None:
 
 def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) -> None:
     checkpoint_dir = tmp_path / 'ckpt'
+    config = MovementILTrainingConfig(
+        epochs=250,
+        lr=0.03,
+        hidden_dim=32,
+        checkpoint_dir=checkpoint_dir,
+        seed=7,
+        num_hops=0,
+    )
     result = train_movement_il(
         samples=[_sample()],
-        config=MovementILTrainingConfig(
-            epochs=250,
-            lr=0.03,
-            hidden_dim=32,
-            checkpoint_dir=checkpoint_dir,
-            seed=7,
-            num_hops=0,
-        ),
+        config=config,
         observer=None,
+        batch_planner=random_batch_planner(config),
+        validation_samples=(),
     )
 
     assert result.final_loss < 0.05
@@ -109,17 +113,20 @@ def test_movement_il_overfits_tiny_dataset_and_loads_checkpoint(tmp_path: Path) 
 
 
 def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
+    config = MovementILTrainingConfig(
+        epochs=10,
+        lr=0.01,
+        hidden_dim=16,
+        checkpoint_dir=tmp_path / 'ckpt',
+        seed=3,
+        num_hops=1,
+    )
     result = train_movement_il(
         samples=[_sample()],
-        config=MovementILTrainingConfig(
-            epochs=10,
-            lr=0.01,
-            hidden_dim=16,
-            checkpoint_dir=tmp_path / 'ckpt',
-            seed=3,
-            num_hops=1,
-        ),
+        config=config,
         observer=None,
+        batch_planner=random_batch_planner(config),
+        validation_samples=(),
     )
 
     _model, metadata = load_movement_checkpoint(result.checkpoint_path, device='cpu')
@@ -128,18 +135,21 @@ def test_one_hop_il_trains_and_saves_hop_metadata(tmp_path: Path) -> None:
 
 
 def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> None:
+    config = MovementILTrainingConfig(
+        epochs=3,
+        lr=0.01,
+        hidden_dim=8,
+        checkpoint_dir=tmp_path / 'ckpt',
+        progress_every=2,
+        seed=1,
+        num_hops=0,
+    )
     train_movement_il(
         samples=[_sample()],
-        config=MovementILTrainingConfig(
-            epochs=3,
-            lr=0.01,
-            hidden_dim=8,
-            checkpoint_dir=tmp_path / 'ckpt',
-            progress_every=2,
-            seed=1,
-            num_hops=0,
-        ),
+        config=config,
         observer=None,
+        batch_planner=random_batch_planner(config),
+        validation_samples=(),
     )
 
     output = capsys.readouterr().out
@@ -150,18 +160,21 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
 
 def test_movement_il_logs_each_epoch_to_tensorboard(tmp_path: Path) -> None:
     log_dir = tmp_path / 'runs'
+    config = MovementILTrainingConfig(
+        epochs=3,
+        lr=0.01,
+        hidden_dim=8,
+        checkpoint_dir=tmp_path / 'ckpt',
+        seed=1,
+        num_hops=0,
+        log_dir=log_dir,
+    )
     train_movement_il(
         samples=[_sample()],
-        config=MovementILTrainingConfig(
-            epochs=3,
-            lr=0.01,
-            hidden_dim=8,
-            checkpoint_dir=tmp_path / 'ckpt',
-            seed=1,
-            num_hops=0,
-            log_dir=log_dir,
-        ),
+        config=config,
         observer=None,
+        batch_planner=random_batch_planner(config),
+        validation_samples=(),
     )
 
     events = EventAccumulator(str(log_dir))
@@ -170,3 +183,32 @@ def test_movement_il_logs_each_epoch_to_tensorboard(tmp_path: Path) -> None:
     assert len(events.Scalars('loss/regression')) == 3
     assert len(events.Scalars('loss/phase')) == 3
     assert len(events.Scalars('accuracy/phase_match')) == 3
+
+
+def test_movement_il_logs_validation_loss_by_city(tmp_path: Path) -> None:
+    log_dir = tmp_path / 'runs'
+    config = MovementILTrainingConfig(
+        epochs=2,
+        lr=0.01,
+        hidden_dim=8,
+        checkpoint_dir=tmp_path / 'ckpt',
+        seed=1,
+        num_hops=0,
+        log_dir=log_dir,
+    )
+    training_sample = replace(_sample(), metadata={'city_name': 'karlsruhe_oststadt'})
+    validation_sample = replace(_sample(), metadata={'city_name': 'mannheim_innenstadt'})
+
+    train_movement_il(
+        samples=[training_sample],
+        config=config,
+        observer=None,
+        batch_planner=random_batch_planner(config),
+        validation_samples=(validation_sample,),
+    )
+
+    events = EventAccumulator(str(log_dir))
+    events.Reload()
+
+    assert len(events.Scalars('validation/loss')) == 2
+    assert len(events.Scalars('validation/mannheim_innenstadt/loss')) == 2
