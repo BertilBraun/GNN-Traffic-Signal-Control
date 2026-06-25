@@ -1,4 +1,5 @@
 from pathlib import Path
+from hashlib import sha256
 import sys
 
 ROOT = Path(__file__).parent.parent
@@ -197,3 +198,15 @@ def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
     )
     assert all(city.city_split == CitySplit.TRAIN for city in rollout_cities)
     assert tuple(city.rollout_workers for city in rollout_cities) == (2, 2, 2, 2)
+
+
+def test_train_rl_experiment_hash_uses_configuration_text(tmp_path: Path) -> None:
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_text = 'name: unit\n'
+    configuration_path.write_text(configuration_text, encoding='utf-8')
+
+    assert train_rl.experiment_configuration_text(configuration_path) == configuration_text
+    assert (
+        train_rl.experiment_configuration_sha256(configuration_path)
+        == sha256(configuration_text.encode('utf-8')).hexdigest()
+    )

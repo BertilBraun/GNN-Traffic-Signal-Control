@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 import sys
 
@@ -207,6 +208,9 @@ def main() -> None:
             resume_checkpoint_path=args.resume_checkpoint,
             rollout_cities=rollout_cities,
             experiment_configuration=experiment_configuration,
+            experiment_configuration_path=args.experiment_config,
+            experiment_configuration_text=experiment_configuration_text(args.experiment_config),
+            experiment_configuration_sha256=experiment_configuration_sha256(args.experiment_config),
             project_root=ROOT,
         )
     )
@@ -220,6 +224,19 @@ def experiment_config(experiment_configuration_path: Path | None) -> ExperimentC
         configuration_path=experiment_configuration_path,
         project_root=ROOT,
     )
+
+
+def experiment_configuration_text(experiment_configuration_path: Path | None) -> str | None:
+    if experiment_configuration_path is None:
+        return None
+    return experiment_configuration_path.read_text(encoding='utf-8-sig')
+
+
+def experiment_configuration_sha256(experiment_configuration_path: Path | None) -> str | None:
+    configuration_text = experiment_configuration_text(experiment_configuration_path)
+    if configuration_text is None:
+        return None
+    return sha256(configuration_text.encode('utf-8')).hexdigest()
 
 
 def demand_scale_bounds(

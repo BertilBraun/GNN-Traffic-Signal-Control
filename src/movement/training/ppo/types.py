@@ -75,6 +75,9 @@ class MovementPpoConfig:
     resume_checkpoint_path: Path | None
     rollout_cities: tuple[RolloutCity, ...]
     experiment_configuration: ExperimentConfiguration | None
+    experiment_configuration_path: Path | None
+    experiment_configuration_text: str | None
+    experiment_configuration_sha256: str | None
     project_root: Path
 
 
@@ -97,6 +100,8 @@ class MovementPpoCheckpoint:
     il_config: MovementILTrainingConfig
     iteration: int
     best_checkpoint_score: float
+    experiment_configuration_sha256: str | None
+    experiment_configuration_text: str | None
     torch_random_state: torch.Tensor
     cuda_random_states: tuple[torch.Tensor, ...]
 

@@ -117,6 +117,8 @@ def test_ppo_checkpoint_restores_model_optimizer_and_training_state(tmp_path: Pa
         metadata=metadata,
         iteration=17,
         best_checkpoint_score=42.5,
+        experiment_configuration_sha256='abc123',
+        experiment_configuration_text='name: unit\n',
     )
     checkpoint = load_ppo_checkpoint_payload(checkpoint_path=checkpoint_path, device='cpu')
     restored_model, restored_metadata = model_and_metadata_from_ppo_checkpoint(
@@ -126,6 +128,8 @@ def test_ppo_checkpoint_restores_model_optimizer_and_training_state(tmp_path: Pa
 
     assert checkpoint.iteration == 17
     assert checkpoint.best_checkpoint_score == 42.5
+    assert checkpoint.experiment_configuration_sha256 == 'abc123'
+    assert checkpoint.experiment_configuration_text == 'name: unit\n'
     assert checkpoint.optimizer_state['state']
     assert restored_metadata.hidden_dim == 8
     for name, parameter in model.state_dict().items():

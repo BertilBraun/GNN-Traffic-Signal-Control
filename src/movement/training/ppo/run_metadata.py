@@ -1,0 +1,96 @@
+"""Machine-readable PPO run metadata."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
+
+from src.movement.training.ppo.types import MovementPpoConfig, RolloutCity
+
+
+class PpoRunCityMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    city_name: str
+    city_split: str
+    sumo_config_path: str
+    rollout_workers: int
+
+
+class PpoRunMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    created_at_utc: str
+    experiment_name: str | None
+    experiment_configuration_path: str | None
+    experiment_configuration_sha256: str | None
+    resume_checkpoint_path: str | None
+    checkpoint_dir: str
+    log_dir: str
+    iterations: int
+    completed_iteration_at_start: int
+    rollouts_per_update: int
+    rollout_workers: int
+    steps_per_rollout: int
+    demand_scale_min: float
+    demand_scale_max: float
+    evaluation_every_iterations: int
+    evaluation_steps: int
+    evaluation_seeds: tuple[int, ...]
+    evaluation_demand_scales: tuple[float, ...]
+    evaluation_policies: tuple[str, ...]
+    rollout_cities: tuple[PpoRunCityMetadata, ...]
+
+
+def build_run_metadata(
+    config: MovementPpoConfig,
+    completed_iteration_at_start: int,
+) -> PpoRunMetadata:
+    return PpoRunMetadata(
+        created_at_utc=datetime.now(timezone.utc).isoformat(),
+        experiment_name=config.experiment_configuration.name if config.experiment_configuration is not None else None,
+        experiment_configuration_path=(
+            str(config.experiment_configuration_path) if config.experiment_configuration_path is not None else None
+        ),
+        experiment_configuration_sha256=config.experiment_configuration_sha256,
+        resume_checkpoint_path=str(config.resume_checkpoint_path)
+        if config.resume_checkpoint_path is not None
+        else None,
+        checkpoint_dir=str(config.checkpoint_dir),
+        log_dir=str(config.log_dir),
+        iterations=config.iterations,
+        completed_iteration_at_start=completed_iteration_at_start,
+        rollouts_per_update=config.rollouts_per_update,
+        rollout_workers=config.num_workers,
+        steps_per_rollout=config.steps_per_rollout,
+        demand_scale_min=config.demand_scale_min,
+        demand_scale_max=config.demand_scale_max,
+        evaluation_every_iterations=config.eval_every,
+        evaluation_steps=config.eval_steps,
+        evaluation_seeds=config.eval_seeds,
+        evaluation_demand_scales=config.eval_demand_scales,
+        evaluation_policies=tuple(policy.value for policy in config.eval_policies),
+        rollout_cities=tuple(city_metadata(city=city) for city in config.rollout_cities),
+    )
+
+
+def city_metadata(city: RolloutCity) -> PpoRunCityMetadata:
+    return PpoRunCityMetadata(
+        city_name=city.city_name,
+        city_split=city.city_split.value,
+        sumo_config_path=str(city.sumo_config_path),
+        rollout_workers=city.rollout_workers,
+    )
+
+
+def write_run_metadata(
+    checkpoint_dir: Path,
+    log_dir: Path,
+    metadata: PpoRunMetadata,
+) -> None:
+    payload = metadata.model_dump_json(indent=2)
+    for directory in (checkpoint_dir, log_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / 'run_metadata.json').write_text(payload, encoding='utf-8')

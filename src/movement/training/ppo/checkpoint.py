@@ -70,6 +70,8 @@ def save_ppo_checkpoint(
     metadata: MovementCheckpointMetadata,
     iteration: int,
     best_checkpoint_score: float,
+    experiment_configuration_sha256: str | None,
+    experiment_configuration_text: str | None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint = MovementPpoCheckpoint(
@@ -84,6 +86,8 @@ def save_ppo_checkpoint(
         il_config=metadata.config,
         iteration=iteration,
         best_checkpoint_score=best_checkpoint_score,
+        experiment_configuration_sha256=experiment_configuration_sha256,
+        experiment_configuration_text=experiment_configuration_text,
         torch_random_state=torch.get_rng_state(),
         cuda_random_states=tuple(torch.cuda.get_rng_state_all()) if torch.cuda.is_available() else (),
     )

@@ -16,7 +16,7 @@ from src.movement.training.ppo.checkpoint import (
     model_and_metadata_from_ppo_checkpoint,
     zero_value_output,
 )
-from src.movement.training.ppo.types import MovementPpoConfig
+from src.movement.training.ppo.types import MovementPpoCheckpoint, MovementPpoConfig
 
 
 @dataclass
@@ -45,6 +45,7 @@ def initialize_training_state(config: MovementPpoConfig) -> PpoTrainingState:
             checkpoint_path=config.resume_checkpoint_path,
             device=config.device,
         )
+        validate_resume_experiment_configuration(config=config, checkpoint=resume_checkpoint)
         optimizer.load_state_dict(resume_checkpoint.optimizer_state)
     return PpoTrainingState(
         model=model,
@@ -75,6 +76,7 @@ def initialize_from_ppo_checkpoint(
         checkpoint_path=config.resume_checkpoint_path,
         device=config.device,
     )
+    validate_resume_experiment_configuration(config=config, checkpoint=resume_checkpoint)
     model, metadata = model_and_metadata_from_ppo_checkpoint(
         checkpoint=resume_checkpoint,
         device=config.device,
@@ -83,6 +85,24 @@ def initialize_from_ppo_checkpoint(
     if torch.cuda.is_available() and resume_checkpoint.cuda_random_states:
         torch.cuda.set_rng_state_all(list(resume_checkpoint.cuda_random_states))
     return model, metadata, resume_checkpoint.iteration, resume_checkpoint.best_checkpoint_score
+
+
+def validate_resume_experiment_configuration(
+    config: MovementPpoConfig,
+    checkpoint: MovementPpoCheckpoint,
+) -> None:
+    expected_sha256 = config.experiment_configuration_sha256
+    checkpoint_sha256 = checkpoint.experiment_configuration_sha256
+    if checkpoint_sha256 is None and expected_sha256 is None:
+        return
+    if checkpoint_sha256 is None:
+        raise ValueError('resume checkpoint does not contain experiment configuration metadata')
+    if expected_sha256 is None:
+        raise ValueError('resume checkpoint requires the original experiment configuration')
+    if checkpoint_sha256 != expected_sha256:
+        raise ValueError(
+            f'resume experiment configuration hash mismatch: checkpoint={checkpoint_sha256} current={expected_sha256}'
+        )
 
 
 def create_rollout_pool(config: MovementPpoConfig) -> ProcessPoolExecutor | None:

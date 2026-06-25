@@ -24,6 +24,7 @@ from src.movement.training.ppo.rollout import (
     RolloutCollectionRequest,
     collect_computed_rollouts,
 )
+from src.movement.training.ppo.run_metadata import build_run_metadata, write_run_metadata
 from src.movement.training.ppo.stats import combine_rollout_stats, training_diagnostics
 from src.movement.training.ppo.state import PpoTrainingState, create_rollout_pool, initialize_training_state
 from src.movement.training.ppo.types import (
@@ -64,6 +65,14 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     state = initialize_training_state(config)
+    write_run_metadata(
+        checkpoint_dir=config.checkpoint_dir,
+        log_dir=config.log_dir,
+        metadata=build_run_metadata(
+            config=config,
+            completed_iteration_at_start=state.completed_iteration,
+        ),
+    )
     writer = SummaryWriter(log_dir=str(config.log_dir))
     config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     pool = create_rollout_pool(config)
@@ -341,6 +350,7 @@ def write_city_rollout_scalars(
         writer.add_scalar(f'{tag_prefix}/policy_decision_fraction', stats.policy_decision_fraction, iteration)
         writer.add_scalar(f'{tag_prefix}/teleport_count', stats.teleport_count, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_local_delay_density', stats.mean_local_delay_density, iteration)
+        writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', stats.mean_local_delay_density, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_demand_scale', stats.mean_demand_scale, iteration)
 
 
@@ -419,6 +429,8 @@ def save_best_outputs(config: MovementPpoConfig, state: PpoTrainingState, iterat
         metadata=state.metadata,
         iteration=iteration,
         best_checkpoint_score=state.best_checkpoint_score,
+        experiment_configuration_sha256=config.experiment_configuration_sha256,
+        experiment_configuration_text=config.experiment_configuration_text,
     )
     save_actor_checkpoint(
         path=config.checkpoint_dir / 'movement_policy_best.pt',
@@ -438,6 +450,8 @@ def maybe_save_numbered_checkpoint(config: MovementPpoConfig, state: PpoTraining
         metadata=state.metadata,
         iteration=iteration,
         best_checkpoint_score=state.best_checkpoint_score,
+        experiment_configuration_sha256=config.experiment_configuration_sha256,
+        experiment_configuration_text=config.experiment_configuration_text,
     )
 
 
@@ -453,6 +467,8 @@ def save_latest_outputs(
         metadata=state.metadata,
         iteration=state.completed_iteration,
         best_checkpoint_score=state.best_checkpoint_score,
+        experiment_configuration_sha256=config.experiment_configuration_sha256,
+        experiment_configuration_text=config.experiment_configuration_text,
     )
     save_actor_checkpoint(
         path=config.checkpoint_dir / 'movement_policy_latest.pt',

@@ -23,6 +23,8 @@ from src.movement.evaluation import (
 )
 from src.movement.evaluation.multi_city import (
     MultiCityEvaluationAggregate,
+    MultiCityEvaluationResult,
+    aggregate_multi_city_records,
     default_episode_runner,
     print_multi_city_summary,
     run_multi_city_evaluation,
@@ -79,6 +81,11 @@ def write_training_scalars(
     writer.add_scalar('diagnostics/value_head_gradient_norm', update_stats.value_head_gradient_norm, iteration)
     writer.add_scalar('diagnostics/kl_early_stop', float(update_stats.early_stopped), iteration)
     writer.add_scalar('timing/rollout_seconds', rollout_stats.simulation_elapsed_s, iteration)
+    writer.add_scalar('train/policy_loss', update_stats.policy_loss, iteration)
+    writer.add_scalar('train/value_loss', update_stats.value_loss, iteration)
+    writer.add_scalar('train/entropy', update_stats.entropy, iteration)
+    writer.add_scalar('train/loss', update_stats.total_loss, iteration)
+    writer.add_scalar('train/approx_kl', update_stats.approximate_kl, iteration)
     writer.add_scalar('loss/policy', update_stats.policy_loss, iteration)
     writer.add_scalar('loss/value', update_stats.value_loss, iteration)
     writer.add_scalar('loss/entropy', update_stats.entropy, iteration)
@@ -169,6 +176,7 @@ def run_multi_city_training_evaluation(
     output_dir = config.checkpoint_dir / 'eval' / f'iter_{iteration:04d}'
     write_multi_city_json(output_dir / 'summary.json', result)
     write_multi_city_csv(output_dir / 'summary.csv', result)
+    write_separated_multi_city_evaluation_outputs(output_dir=output_dir, result=result)
     print_multi_city_summary(result.aggregates)
     return TrainingEvaluationResult(
         learned_checkpoint_score=held_out_learned_checkpoint_score(
@@ -237,6 +245,82 @@ def write_multi_city_evaluation_scalars(
             ),
             iteration,
         )
+    for aggregate in split_policy_aggregates(aggregates=aggregates):
+        demand_tag = f'demand_{aggregate.demand_scale:.3f}'.replace('.', '_')
+        tag_prefix = f'eval/aggregate/{aggregate.city_split.value}/{aggregate.policy}/{demand_tag}'
+        metrics = aggregate.mean
+        writer.add_scalar(f'{tag_prefix}/throughput_per_hour', metrics.throughput_per_hour, iteration)
+        writer.add_scalar(f'{tag_prefix}/completion_rate', metrics.completion_rate, iteration)
+        writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', metrics.average_wait_density_s_per_m, iteration)
+        writer.add_scalar(f'{tag_prefix}/average_time_loss_s', metrics.average_time_loss_s, iteration)
+        writer.add_scalar(f'{tag_prefix}/teleport_count', metrics.teleport_count, iteration)
+
+
+def write_separated_multi_city_evaluation_outputs(
+    output_dir: Path,
+    result: MultiCityEvaluationResult,
+) -> None:
+    learned_result = filtered_multi_city_result(
+        result=result,
+        policies=(EvaluationPolicy.LEARNED.value,),
+    )
+    baseline_result = filtered_multi_city_result(
+        result=result,
+        policies=tuple(policy.value for policy in EvaluationPolicy if policy != EvaluationPolicy.LEARNED),
+    )
+    if learned_result.records:
+        write_multi_city_json(output_dir / 'learned_summary.json', learned_result)
+        write_multi_city_csv(output_dir / 'learned_summary.csv', learned_result)
+    if baseline_result.records:
+        write_multi_city_json(output_dir / 'baseline_summary.json', baseline_result)
+        write_multi_city_csv(output_dir / 'baseline_summary.csv', baseline_result)
+
+
+def filtered_multi_city_result(
+    result: MultiCityEvaluationResult,
+    policies: tuple[str, ...],
+) -> MultiCityEvaluationResult:
+    records = tuple(record for record in result.records if record.policy in policies)
+    return MultiCityEvaluationResult(
+        records=records,
+        aggregates=aggregate_multi_city_records(records),
+    )
+
+
+def split_policy_aggregates(
+    aggregates: Sequence[MultiCityEvaluationAggregate],
+) -> tuple[MultiCityEvaluationAggregate, ...]:
+    grouping_keys: list[tuple[CitySplit, str, float]] = []
+    for aggregate in aggregates:
+        grouping_key = (aggregate.city_split, aggregate.policy, aggregate.demand_scale)
+        if grouping_key not in grouping_keys:
+            grouping_keys.append(grouping_key)
+    split_aggregates: list[MultiCityEvaluationAggregate] = []
+    for city_split, policy, demand_scale in grouping_keys:
+        group = tuple(
+            aggregate
+            for aggregate in aggregates
+            if aggregate.city_split == city_split
+            and aggregate.policy == policy
+            and aggregate.demand_scale == demand_scale
+        )
+        records = tuple(
+            EvaluationRecord(policy=aggregate.policy, seed=city_index, metrics=aggregate.mean)
+            for city_index, aggregate in enumerate(group)
+        )
+        aggregate_record = aggregate_records(records)[0]
+        split_aggregates.append(
+            MultiCityEvaluationAggregate(
+                city_name='aggregate',
+                city_split=city_split,
+                policy=policy,
+                demand_scale=demand_scale,
+                seeds=tuple(seed for aggregate in group for seed in aggregate.seeds),
+                mean=aggregate_record.mean,
+                standard_deviation=aggregate_record.standard_deviation,
+            )
+        )
+    return tuple(split_aggregates)
 
 
 def held_out_learned_checkpoint_score(

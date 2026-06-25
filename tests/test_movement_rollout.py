@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -9,9 +10,12 @@ sys.path.insert(0, str(ROOT))
 
 from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy
+from src.movement.evaluation.multi_city import MultiCityEvaluationAggregate
 from src.movement.experiment_config import CitySplit
+from src.movement.training.il.checkpoint import NormalizerState
+from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.ppo import validate_config
-from src.movement.training.ppo.evaluation import checkpoint_selection_score
+from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
     SpeedChangeTracker,
     clip_reward,
@@ -25,7 +29,9 @@ from src.movement.training.ppo.rollout import (
     rollout_seed,
     sample_demand_scale,
 )
-from src.movement.training.ppo.types import MovementPpoConfig, RolloutCity
+from src.movement.training.ppo.run_metadata import build_run_metadata, write_run_metadata
+from src.movement.training.ppo.state import validate_resume_experiment_configuration
+from src.movement.training.ppo.types import MovementPpoCheckpoint, MovementPpoConfig, RolloutCity
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.rollout import MovementRolloutBuffer
@@ -174,6 +180,60 @@ def test_validate_config_rejects_held_out_rollout_city() -> None:
 
     with pytest.raises(ValueError, match='rollout_cities must not include held-out cities'):
         validate_config(config)
+
+
+def test_resume_validation_rejects_experiment_hash_mismatch() -> None:
+    config = replace(_ppo_config(rollouts_per_update=1, rollout_cities=()), experiment_configuration_sha256='current')
+    checkpoint = _ppo_checkpoint(experiment_configuration_sha256='checkpoint')
+
+    with pytest.raises(ValueError, match='resume experiment configuration hash mismatch'):
+        validate_resume_experiment_configuration(config=config, checkpoint=checkpoint)
+
+
+def test_held_out_learned_score_ignores_train_city_aggregates() -> None:
+    train_metrics = _evaluation_metrics(completed_vehicles=10, departed_vehicles=10, average_time_loss_s=5.0)
+    held_out_metrics = _evaluation_metrics(completed_vehicles=8, departed_vehicles=10, average_time_loss_s=40.0)
+
+    score = held_out_learned_checkpoint_score(
+        aggregates=(
+            _evaluation_aggregate(
+                city_name='karlsruhe_oststadt',
+                city_split=CitySplit.TRAIN,
+                policy=EvaluationPolicy.LEARNED.value,
+                metrics=train_metrics,
+            ),
+            _evaluation_aggregate(
+                city_name='freiburg_altstadt',
+                city_split=CitySplit.HELD_OUT,
+                policy=EvaluationPolicy.LEARNED.value,
+                metrics=held_out_metrics,
+            ),
+        ),
+        evaluation_steps=600,
+    )
+
+    assert score == pytest.approx(checkpoint_selection_score(metrics=held_out_metrics, evaluation_steps=600))
+
+
+def test_run_metadata_writes_checkpoint_and_log_records(tmp_path: Path) -> None:
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        checkpoint_dir=tmp_path / 'checkpoints',
+        log_dir=tmp_path / 'runs',
+        experiment_configuration_sha256='unit-sha',
+    )
+    metadata = build_run_metadata(config=config, completed_iteration_at_start=4)
+
+    write_run_metadata(
+        checkpoint_dir=config.checkpoint_dir,
+        log_dir=config.log_dir,
+        metadata=metadata,
+    )
+
+    assert (config.checkpoint_dir / 'run_metadata.json').read_text(encoding='utf-8')
+    assert (config.log_dir / 'run_metadata.json').read_text(encoding='utf-8')
+    assert metadata.completed_iteration_at_start == 4
+    assert metadata.experiment_configuration_sha256 == 'unit-sha'
 
 
 def test_effective_rollout_cities_keeps_single_city_default() -> None:
@@ -522,5 +582,85 @@ def _ppo_config(
         resume_checkpoint_path=None,
         rollout_cities=rollout_cities,
         experiment_configuration=None,
+        experiment_configuration_path=None,
+        experiment_configuration_text=None,
+        experiment_configuration_sha256=None,
         project_root=ROOT,
+    )
+
+
+def _ppo_checkpoint(experiment_configuration_sha256: str | None) -> MovementPpoCheckpoint:
+    normalizer = NormalizerState(
+        count=1,
+        mean=(0.0,),
+        squared_differences=(0.0,),
+        frozen=True,
+        epsilon=1e-8,
+    )
+    return MovementPpoCheckpoint(
+        model_state={},
+        optimizer_state={},
+        lane_feature_dim=1,
+        movement_feature_dim=1,
+        hidden_dim=1,
+        num_hops=0,
+        lane_normalizer=normalizer,
+        movement_normalizer=normalizer,
+        il_config=MovementILTrainingConfig(),
+        iteration=1,
+        best_checkpoint_score=1.0,
+        experiment_configuration_sha256=experiment_configuration_sha256,
+        experiment_configuration_text='name: checkpoint\n',
+        torch_random_state=torch.get_rng_state(),
+        cuda_random_states=(),
+    )
+
+
+def _evaluation_aggregate(
+    city_name: str,
+    city_split: CitySplit,
+    policy: str,
+    metrics: EvaluationMetrics,
+) -> MultiCityEvaluationAggregate:
+    return MultiCityEvaluationAggregate(
+        city_name=city_name,
+        city_split=city_split,
+        policy=policy,
+        demand_scale=1.0,
+        seeds=(100,),
+        mean=metrics,
+        standard_deviation=_evaluation_metrics(
+            completed_vehicles=0,
+            departed_vehicles=0,
+            average_time_loss_s=0.0,
+        ),
+    )
+
+
+def _evaluation_metrics(
+    completed_vehicles: int,
+    departed_vehicles: int,
+    average_time_loss_s: float,
+) -> EvaluationMetrics:
+    return EvaluationMetrics(
+        departed_vehicles=departed_vehicles,
+        completed_vehicles=completed_vehicles,
+        vehicles_remaining=departed_vehicles - completed_vehicles,
+        completion_rate=completed_vehicles / departed_vehicles if departed_vehicles > 0 else 0.0,
+        teleport_count=0,
+        throughput_per_hour=float(completed_vehicles),
+        average_waiting_time_s=1.0,
+        average_travel_time_s=2.0,
+        average_time_loss_s=average_time_loss_s,
+        average_queue_length_vehicles=4.0,
+        max_queue_length_vehicles=5.0,
+        average_wait_density_s_per_m=6.0,
+        phase_switch_frequency_per_junction_per_minute=7.0,
+        average_tls_passes_per_vehicle=8.0,
+        average_stops_before_tls_per_vehicle=9.0,
+        nonstop_tls_pass_rate=0.5,
+        average_best_nonstop_tls_streak=10.0,
+        per_junction_wait_density_s_per_m={},
+        per_junction_max_queue_length_vehicles={},
+        per_junction_phase_counts={},
     )
