@@ -1,20 +1,20 @@
-name: karlsruhe_oststadt
+name: mannheim_innenstadt
 source:
-  bbox: 49.0000,8.4050,49.0230,8.4520
+  bbox: 49.4780,8.4550,49.4980,8.4930
   cache_policy: reuse
 netconvert:
-  join_dist: 35.0
+  join_dist: 40.0
   promote_all_junctions_to_tl: false
 demand:
   route_count: 300
-  demand_vehicles_per_hour: 1000.0
+  demand_vehicles_per_hour: 2500.0
 verification:
   inspect: true
   movement_graph_html: true
   detection_html: false
   gui: true
   gui_steps: 1800
-  demand_scale: 4.5
+  demand_scale: 1.0
   time_to_teleport: -1
   detection_steps: 120
   detection_sample_every: 1
