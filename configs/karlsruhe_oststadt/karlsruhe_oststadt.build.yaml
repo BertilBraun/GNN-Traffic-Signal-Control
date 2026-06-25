@@ -1,0 +1,27 @@
+name: karlsruhe_oststadt
+source:
+  bbox: 49.0000,8.4050,49.0230,8.4520
+  cache_policy: reuse
+netconvert:
+  join_dist: 35
+  promote_all_junctions_to_tl: false
+demand:
+  route_count: 300
+  demand_vehicles_per_hour: 900.0
+verification:
+  inspect: true
+  movement_graph_html: true
+  detection_html: false
+  gui: true
+  gui_steps: 1800
+  demand_scale: 4.5
+  time_to_teleport: -1
+  detection_steps: 120
+  detection_sample_every: 1
+evaluation:
+  policies:
+  - max-pressure
+  - queue
+  seeds:
+  - 42
+  steps: 1800

@@ -300,6 +300,7 @@ def test_generate_prune_editor_writes_html(tmp_path: Path) -> None:
     assert 'N0_0_to_N0_1' in content
     assert 'delete_junctions' in content
     assert 'id="undo-last"' in content
+    assert 'id="finish-pruning"' in content
     assert 'id="mode-keep"' not in content
 
 

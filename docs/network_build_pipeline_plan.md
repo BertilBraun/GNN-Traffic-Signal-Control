@@ -3,7 +3,7 @@
 This plan turns the current city/OSM scripts into one repeatable workflow:
 
 ```text
-OSM source -> cached raw OSM -> initial SUMO network -> manual prune recipe
+OSM source -> cached raw OSM -> initial SUMO network -> manual prune JSON
 -> rebuilt SUMO network -> movement traffic-light programs -> routes/config
 -> inspection reports -> HTML visualization -> optional SUMO-GUI demand check
 ```
@@ -23,6 +23,10 @@ Existing tools already cover most of the low-level work:
 * `scripts/build_network.py` downloads or loads OSM, runs `netconvert`, cleans
   topology, writes movement-safe `.tll.xml`, writes city routes, and writes
   `.sumocfg`.
+* `scripts/visualize_network_prune.py` provides the interactive served prune
+  editor. In served mode it saves the prune JSON, rebuilds after each click
+  or box edit, and reloads the regenerated network. This behavior is now part
+  of the expected workflow and should be preserved.
 * `scripts/inspect_movement_city.py` starts the movement runtime, extracts
   selectable programs, builds the movement graph, and prints graph health.
 * `scripts/visualize_movement_graph.py` writes an interactive HTML movement
@@ -43,7 +47,7 @@ Each city build should have a stable working directory:
 
 ```text
 configs/<city>/
-  <city>.build.yaml              # replayable build recipe
+  <city>.build.yaml              # saved build inputs for reruns
   <city>.osm                     # cached raw OSM source
   <city>.prune.json              # manual topology edits
   <city>.net.xml                 # final SUMO network
@@ -59,11 +63,21 @@ configs/<city>/
 ```
 
 Generated files may stay ignored by Git. The important hand-authored artifacts
-are the build recipe and prune recipe.
+are the saved build inputs and prune JSON.
 
-## Build Recipe
+## Build Inputs
 
-`<city>.build.yaml` should be the canonical input to the future orchestrator.
+The normal first-run input should be just a city name and bounding box:
+
+```powershell
+python scripts\network_workbench.py `
+  --name karlsruhe_oststadt `
+  --bbox "49.0000,8.4050,49.0230,8.4520" `
+  all
+```
+
+The command writes `configs/<city>/<city>.build.yaml` so the same build can be
+rerun later without retyping the coordinates or demand settings.
 
 Suggested fields:
 
@@ -82,13 +96,13 @@ verification:
   inspect: true
   movement_graph_html: true
   detection_html: false
-  gui: false
+  gui: true
   gui_steps: 1800
   demand_scale: 4.5
 ```
 
-The recipe should let the same command rebuild the same network after topology
-pruning or demand adjustment.
+The saved build file should let the same command rebuild the same network after
+topology pruning or demand adjustment.
 
 ## OSM Cache
 
@@ -114,10 +128,10 @@ Acceptance:
 
 ## Manual Prune Model
 
-Manual editing should produce a declarative prune recipe instead of directly
+Manual editing should produce a declarative prune JSON file instead of directly
 mutating only the final `.net.xml`.
 
-Initial prune operations:
+Initial prune file operations:
 
 ```json
 {
@@ -144,23 +158,24 @@ Semantics:
 * If a traffic light loses enough arms to become a pass-through or unsupported
   node, the inspection report should expose that explicitly.
 
-This recipe should be applied before final movement TLL generation and route
+This prune file should be applied before final movement TLL generation and route
 generation, otherwise old routes and traffic-light programs can reference
 deleted topology.
 
 Acceptance:
 
-* A recipe can delete a residential side component and produce a valid
+* A prune file can delete a residential side component and produce a valid
   `.net.xml`, `.tll.xml`, `.rou.xml`, and `.sumocfg`.
 * `inspect_movement_city.py` still runs after pruning.
 * Deleting incoming roads changes the affected junction program or demotes it
   through the existing inspection path.
-* Re-running the build with the same recipe produces the same network.
+* Re-running the build with the same build file and prune JSON produces the same
+  network.
 
 ## Prune UI
 
-The first implementation should be an HTML workbench because the repository
-already has self-contained graph visualizations.
+The first implementation is an HTML workbench because the repository already
+has self-contained graph visualizations.
 
 Suggested command:
 
@@ -179,34 +194,32 @@ UI behavior:
   rectangle; edges are selected by midpoint to avoid grabbing long roads that
   merely cross the box.
 * In served mode, save, rebuild, and reload automatically after each click or
-  box edit.
+  box edit. This is the primary editing mode.
 * Provide undo for the last click or box edit within the current editor session;
-  undo saves the reverted recipe and rebuilds again.
+  undo saves the reverted prune JSON and rebuilds again.
 * Show selected object metadata: id, type, incoming/outgoing edge count,
   signalized status, movement count if available, and connected component.
 * Provide explicit actions: mark selected junctions and edges for deletion,
   undo the last edit, and rebuild manually when needed.
 * In served mode, rebuild directly from the editor; rebuild saves the current
-  recipe first and reloads the regenerated network on success.
+  prune JSON first and reloads the regenerated network on success.
 * Visually distinguish signalized junctions, unsignalized junctions, deleted
   objects, and protected objects.
-* Never delete immediately from the browser-only view without writing a recipe.
+* Never delete immediately from the browser-only view without writing the prune
+  JSON.
 
-Implementation options:
+Implementation notes:
 
-* Preferred path: run a tiny local Python HTTP server that serves the view,
-  accepts `POST /prune` to write the recipe directly into the config directory,
-  and accepts an explicit rebuild action that runs `scripts/build_network.py`
-  with the saved recipe.
-* Fallback path: generate static HTML plus embedded JSON and let the browser
-  download an updated `*.prune.json`.
+* The served editor runs a tiny local Python HTTP server, accepts `POST /prune`
+  to write the prune JSON directly into the config directory, and runs
+  `scripts/build_network.py` with that prune JSON.
 
 Acceptance:
 
 * The user can select a visible side area, save deletions, rebuild, and reopen
   the updated view.
 * The UI does not expose internal SUMO edges as primary editable objects.
-* The saved recipe is human-readable and reviewable.
+* The saved prune JSON is human-readable and reviewable.
 
 ## Orchestrated Command
 
@@ -214,25 +227,33 @@ Add one high-level script after caching and pruning exist:
 
 ```powershell
 python scripts\network_workbench.py `
-  --recipe configs\karlsruhe_oststadt\karlsruhe_oststadt.build.yaml `
-  build
+  --name karlsruhe_oststadt `
+  --bbox "49.0000,8.4050,49.0230,8.4520" `
+  all
 ```
 
 Subcommands:
 
 * `fetch`: resolve OSM source and cache it.
 * `build-initial`: run OSM import/netconvert cleanup without manual prune.
-* `prune`: open or write the prune UI.
-* `rebuild`: apply prune recipe and regenerate final network artifacts.
+* `prune`: open the served prune UI by default, preserving the existing
+  auto-save/auto-rebuild/reload loop. The served UI has a finish action that
+  saves the prune JSON and lets the workbench continue.
+* `rebuild`: non-interactively apply prune JSON and regenerate final network
+  artifacts.
 * `inspect`: run movement extraction inspection and save report.
 * `visualize`: generate movement graph and optional detection HTML.
-* `run-gui`: launch `scripts/run.py --gui` with recipe demand settings.
+* `run-gui`: launch `scripts/run.py --gui` with saved demand settings.
 * `evaluate`: launch `scripts/eval_policy.py` for baseline seeds.
-* `all`: run the non-interactive sequence through inspection/visualization.
+* `all`: run the interactive workbench sequence: build current network, open
+  prune UI and wait for Finish, rebuild from saved prune JSON, inspect, open
+  visualization reports, and launch SUMO-GUI by default. It should not run
+  evaluation.
 
 The existing `scripts/build_network.py` can remain the low-level builder. The
-new script should call into extracted functions from `build_network.py`, or
-`build_network.py` should be split into a small library module plus a thin CLI.
+first orchestrator can call the existing scripts directly. A later cleanup can
+split `build_network.py` into a small library module plus a thin CLI once the
+workflow shape has stabilized.
 
 Recommended module split:
 
@@ -247,8 +268,10 @@ scripts/network_workbench.py
 
 Acceptance:
 
-* `network_workbench.py all` produces the same core files as
-  `build_network.py` plus reports.
+* `network_workbench.py rebuild` produces the same core files as
+  `build_network.py`.
+* `network_workbench.py all` opens the prune UI checkpoint and then produces
+  reports and starts SUMO-GUI after the user finishes pruning.
 * Each subcommand can be run independently during manual iteration.
 * The command prints the next useful manual step when it stops.
 
@@ -277,20 +300,20 @@ the city has a plausible stable range.
 
 Acceptance:
 
-* A city recipe records the calibrated demand value used for later IL/PPO data
-  collection.
+* A city's saved build file records the calibrated demand value used for later
+  IL/PPO data collection.
 * Demand is not increased to hide a broken topology issue; degenerate corridors
   are fixed by pruning, bbox adjustment, or exclusion.
 
 ## Implementation Order
 
 1. Add OSM cache support to the existing build path.
-2. Extract city-build functions from `scripts/build_network.py` into a reusable
+2. Add prune JSON application on plain XML or pre-final `net.xml`.
+3. Add the first prune visualization/editor with served auto-rebuild editing.
+4. Add saved build-file read/write support.
+5. Add `scripts/network_workbench.py` subcommands around existing tools.
+6. Extract city-build functions from `scripts/build_network.py` into a reusable
    module while preserving the current CLI behavior.
-3. Add build recipe read/write support.
-4. Add prune recipe application on plain XML or pre-final `net.xml`.
-5. Add the first prune visualization/editor.
-6. Add `scripts/network_workbench.py` subcommands around existing tools.
 7. Add saved reports and build summary JSON.
 8. Add documentation examples for the five current city candidates.
 
@@ -299,7 +322,7 @@ Acceptance:
 For each edited city network:
 
 ```powershell
-python scripts\network_workbench.py --recipe configs\<city>\<city>.build.yaml all
+python scripts\network_workbench.py --build-file configs\<city>\<city>.build.yaml all
 
 python scripts\inspect_movement_city.py `
   --cfg configs\<city>\<city>.sumocfg `

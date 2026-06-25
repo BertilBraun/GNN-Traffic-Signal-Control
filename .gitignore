@@ -16,6 +16,19 @@ test/
 detector_out.xml
 tripinfo_*.xml
 
+# Generated city network build outputs
+configs/*/*.osm
+configs/*/*.net.xml
+configs/*/*.tll.xml
+configs/*/*.rou.xml
+configs/*/*.add.xml
+configs/*/*.sumocfg
+configs/*/*.rou.alt.xml
+configs/*/*.repaired.rou.alt.xml
+configs/*/reports/
+!configs/*/*.build.yaml
+!configs/*/*.prune.json
+
 # TensorBoard / W&B logs
 runs/
 runs_old/

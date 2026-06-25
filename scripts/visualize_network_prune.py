@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from urllib.parse import urlparse
 import webbrowser
 
@@ -61,6 +62,7 @@ class PruneEditorConfig(BaseModel):
 
     save_url: str | None
     rebuild_url: str | None
+    finish_url: str | None
     save_path: str
     rebuild_command: str
 
@@ -126,11 +128,13 @@ def build_editor_config(
     save_prune_path: Path,
     save_url: str | None,
     rebuild_url: str | None = None,
+    finish_url: str | None = None,
 ) -> PruneEditorConfig:
     rebuild_command = _rebuild_command(net_path=net_path, prune_path=save_prune_path)
     return PruneEditorConfig(
         save_url=save_url,
         rebuild_url=rebuild_url,
+        finish_url=finish_url,
         save_path=_display_path(save_prune_path),
         rebuild_command=rebuild_command.display,
     )
@@ -267,6 +271,7 @@ def _serve_prune_editor(
         save_prune_path=save_path,
         save_url='/prune',
         rebuild_url='/rebuild',
+        finish_url='/finish',
     )
     rebuild_command = _rebuild_command(net_path=net_path, prune_path=save_path)
     html_document = _html_document(
@@ -318,12 +323,15 @@ def _handler_class(context: PruneEditorServerContext) -> type[BaseHTTPRequestHan
 
         def do_POST(self) -> None:
             parsed_url = urlparse(self.path)
-            if parsed_url.path not in {'/prune', '/rebuild'}:
+            if parsed_url.path not in {'/prune', '/rebuild', '/finish'}:
                 self.send_error(404)
                 return
             self._save_recipe_body()
             if parsed_url.path == '/rebuild':
                 response_payload = self._run_rebuild()
+            elif parsed_url.path == '/finish':
+                response_payload = {'saved_path': _display_path(context.save_path), 'finished': True}
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
             else:
                 response_payload = {'saved_path': _display_path(context.save_path)}
             response = json.dumps(response_payload).encode('utf-8')
@@ -481,6 +489,9 @@ textarea {{
         <button id="undo-last" disabled>Undo</button>
         <button id="rebuild-network">Rebuild Network</button>
       </div>
+      <div class="button-row">
+        <button id="finish-pruning">Finish Pruning</button>
+      </div>
       <div class="details" id="apply-details"></div>
       <textarea id="recipe-text" spellcheck="false"></textarea>
     </div>
@@ -572,6 +583,8 @@ function updateUndoButton() {{
   const button = document.getElementById('undo-last');
   if (!button) return;
   button.disabled = undoStack.length === 0 || isRebuilding;
+  const finishButton = document.getElementById('finish-pruning');
+  if (finishButton) finishButton.disabled = isRebuilding;
 }}
 function undoLast() {{
   if (isRebuilding) return;
@@ -866,6 +879,36 @@ async function rebuildNetwork(message = 'Rebuild running...') {{
   }}
 }}
 document.getElementById('rebuild-network').onclick = () => rebuildNetwork();
+async function finishPruning() {{
+  if (!editorConfig.finish_url) {{
+    updateApplyDetails('Finish is only available in --serve mode.');
+    return;
+  }}
+  if (isRebuilding) return;
+  isRebuilding = true;
+  updateUndoButton();
+  document.getElementById('rebuild-network').disabled = true;
+  updateApplyDetails('Saving prune JSON and finishing...');
+  try {{
+    const response = await fetch(editorConfig.finish_url, {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify(recipe())
+    }});
+    if (!response.ok) {{
+      updateApplyDetails(`Finish request failed: ${{response.status}}`);
+      return;
+    }}
+    const payload = await response.json();
+    updateApplyDetails(`Prune JSON saved to ${{payload.saved_path}}. You can close this tab.`);
+    document.getElementById('details').textContent = 'Finished pruning. The workbench will continue in the terminal.';
+  }} finally {{
+    isRebuilding = false;
+    document.getElementById('rebuild-network').disabled = false;
+    updateUndoButton();
+  }}
+}}
+document.getElementById('finish-pruning').onclick = () => finishPruning();
 document.getElementById('zoom-in').onclick = () => zoomAtCenter(1.25);
 document.getElementById('zoom-out').onclick = () => zoomAtCenter(.8);
 document.getElementById('reset-view').onclick = () => {{ zoom = 1; panX = 0; panY = 0; render(); }};
