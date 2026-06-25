@@ -5,6 +5,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts import train_rl
+from src.movement.experiment_config import CitySplit
 
 
 def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
@@ -142,7 +143,7 @@ def test_train_rl_cli_maps_fixed_demand_to_min_max(monkeypatch) -> None:
         ],
     )
 
-    assert train_rl.demand_scale_bounds(train_rl.parse_args()) == (0.65, 0.65)
+    assert train_rl.demand_scale_bounds(train_rl.parse_args(), None) == (0.65, 0.65)
 
 
 def test_train_rl_cli_allows_demand_scale_range(monkeypatch) -> None:
@@ -162,4 +163,37 @@ def test_train_rl_cli_allows_demand_scale_range(monkeypatch) -> None:
         ],
     )
 
-    assert train_rl.demand_scale_bounds(train_rl.parse_args()) == (0.4, 0.85)
+    assert train_rl.demand_scale_bounds(train_rl.parse_args(), None) == (0.4, 0.85)
+
+
+def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--experiment-config',
+            'configs/training/city_first_pass.yaml',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    experiment_configuration = train_rl.experiment_config(args.experiment_config)
+    assert experiment_configuration is not None
+
+    rollout_cities = train_rl.experiment_rollout_cities(experiment_configuration)
+
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 8
+    assert train_rl.num_workers(args, experiment_configuration) == 8
+    assert train_rl.demand_scale_bounds(args, experiment_configuration) == (0.8, 1.2)
+    assert train_rl.evaluation_demand_scales(args, experiment_configuration) == (0.8, 1.0, 1.2)
+    assert tuple(city.city_name for city in rollout_cities) == (
+        'karlsruhe_oststadt',
+        'mannheim_innenstadt',
+        'stuttgart_mitte',
+        'heidelberg_bergheim',
+    )
+    assert all(city.city_split == CitySplit.TRAIN for city in rollout_cities)
+    assert tuple(city.rollout_workers for city in rollout_cities) == (2, 2, 2, 2)

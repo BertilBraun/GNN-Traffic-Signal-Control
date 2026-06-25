@@ -11,9 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.movement.evaluation import EvaluationPolicy
+from src.movement.experiment_config import (
+    ExperimentConfiguration,
+    load_experiment_configuration,
+    resolve_experiment_path,
+)
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
+from src.movement.training.ppo.types import RolloutCity
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
+DEFAULT_ROLLOUTS_PER_UPDATE = 3
+DEFAULT_NUM_WORKERS = 3
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,11 +36,19 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help='PPO checkpoint whose model, optimizer, RNG, and iteration state will be resumed',
     )
+    parser.add_argument('--experiment-config', type=Path, default=None, help='Multi-city experiment YAML path')
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
     parser.add_argument('--iterations', type=int, default=300, help='Final target PPO iteration')
     parser.add_argument('--steps-per-rollout', type=int, default=360, help='Decision steps collected per iteration')
-    parser.add_argument('--rollouts-per-update', type=int, default=3, help='Independent rollouts collected per PPO update')
-    parser.add_argument('--num-workers', type=int, default=3, help='Parallel SUMO rollout worker processes')
+    parser.add_argument(
+        '--rollouts-per-update',
+        type=int,
+        default=DEFAULT_ROLLOUTS_PER_UPDATE,
+        help='Independent rollouts collected per PPO update',
+    )
+    parser.add_argument(
+        '--num-workers', type=int, default=DEFAULT_NUM_WORKERS, help='Parallel SUMO rollout worker processes'
+    )
     parser.add_argument('--decision-interval', type=int, default=10, help='Simulation seconds per decision')
     parser.add_argument('--lr', type=float, default=2e-4, help='Adam learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
@@ -132,19 +148,23 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    demand_scale_min, demand_scale_max = demand_scale_bounds(args)
+    experiment_configuration = experiment_config(args.experiment_config)
+    demand_scale_min, demand_scale_max = demand_scale_bounds(args, experiment_configuration)
     stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     run_name = args.resume_checkpoint.parent.name if args.resume_checkpoint is not None else stamp
     checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / run_name
     log_dir = args.log_dir or ROOT / 'runs' / 'rl' / run_name
+    rollout_cities = experiment_rollout_cities(experiment_configuration)
+    rollout_count = rollouts_per_update(args, experiment_configuration)
+    worker_count = num_workers(args, experiment_configuration)
     result = train_movement_ppo(
         MovementPpoConfig(
-            cfg_path=args.cfg,
+            cfg_path=cfg_path(args, experiment_configuration),
             il_checkpoint_path=args.il_checkpoint,
             iterations=args.iterations,
             steps_per_rollout=args.steps_per_rollout,
-            rollouts_per_update=args.rollouts_per_update,
-            num_workers=args.num_workers,
+            rollouts_per_update=rollout_count,
+            num_workers=worker_count,
             decision_interval=args.decision_interval,
             learning_rate=args.lr,
             gamma=args.gamma,
@@ -176,6 +196,7 @@ def main() -> None:
             eval_seeds=tuple(args.eval_seeds),
             eval_policies=tuple(EvaluationPolicy(policy) for policy in args.eval_policies),
             eval_demand_scale=args.eval_demand_scale,
+            eval_demand_scales=evaluation_demand_scales(args, experiment_configuration),
             save_every=args.save_every,
             print_every=args.print_every,
             checkpoint_dir=checkpoint_dir,
@@ -184,16 +205,93 @@ def main() -> None:
             seed=args.seed,
             fixed_rollout_seed=args.fixed_rollout_seed,
             resume_checkpoint_path=args.resume_checkpoint,
+            rollout_cities=rollout_cities,
+            experiment_configuration=experiment_configuration,
+            project_root=ROOT,
         )
     )
     print(f'PPO training complete: iterations={result.iterations} checkpoint={result.checkpoint_path}')
 
 
-def demand_scale_bounds(args: argparse.Namespace) -> tuple[float, float]:
+def experiment_config(experiment_configuration_path: Path | None) -> ExperimentConfiguration | None:
+    if experiment_configuration_path is None:
+        return None
+    return load_experiment_configuration(
+        configuration_path=experiment_configuration_path,
+        project_root=ROOT,
+    )
+
+
+def demand_scale_bounds(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> tuple[float, float]:
+    if (
+        experiment_configuration is not None
+        and args.demand_scale == 1.0
+        and args.demand_scale_min is None
+        and args.demand_scale_max is None
+    ):
+        return (
+            experiment_configuration.demand.minimum_train_scale,
+            experiment_configuration.demand.maximum_train_scale,
+        )
     return (
         args.demand_scale_min if args.demand_scale_min is not None else args.demand_scale,
         args.demand_scale_max if args.demand_scale_max is not None else args.demand_scale,
     )
+
+
+def cfg_path(args: argparse.Namespace, experiment_configuration: ExperimentConfiguration | None) -> Path:
+    if experiment_configuration is None:
+        return args.cfg
+    return resolve_experiment_path(
+        path=experiment_configuration.train_cities[0].sumo_config,
+        project_root=ROOT,
+    )
+
+
+def experiment_rollout_cities(
+    experiment_configuration: ExperimentConfiguration | None,
+) -> tuple[RolloutCity, ...]:
+    if experiment_configuration is None:
+        return ()
+    return tuple(
+        RolloutCity(
+            city_name=city.name,
+            city_split=city.split,
+            sumo_config_path=resolve_experiment_path(path=city.sumo_config, project_root=ROOT),
+            rollout_workers=city.rollout_workers,
+        )
+        for city in experiment_configuration.train_cities
+    )
+
+
+def rollouts_per_update(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if experiment_configuration is not None and args.rollouts_per_update == DEFAULT_ROLLOUTS_PER_UPDATE:
+        return experiment_configuration.proximal_policy_optimization.rollouts_per_update
+    return args.rollouts_per_update
+
+
+def num_workers(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if experiment_configuration is not None and args.num_workers == DEFAULT_NUM_WORKERS:
+        return experiment_configuration.proximal_policy_optimization.rollout_workers
+    return args.num_workers
+
+
+def evaluation_demand_scales(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> tuple[float, ...]:
+    if experiment_configuration is not None and args.eval_demand_scale == 1.0:
+        return experiment_configuration.demand.evaluation_scales
+    return (args.eval_demand_scale,)
 
 
 if __name__ == '__main__':

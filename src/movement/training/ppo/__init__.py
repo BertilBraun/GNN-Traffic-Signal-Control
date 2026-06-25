@@ -10,6 +10,7 @@ from time import perf_counter
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from src.movement.experiment_config import CitySplit
 from src.movement.training.ppo.checkpoint import (
     load_movement_ppo_checkpoint,
     save_actor_checkpoint,
@@ -26,6 +27,8 @@ from src.movement.training.ppo.rollout import (
 from src.movement.training.ppo.stats import combine_rollout_stats, training_diagnostics
 from src.movement.training.ppo.state import PpoTrainingState, create_rollout_pool, initialize_training_state
 from src.movement.training.ppo.types import (
+    CityRolloutStats,
+    CollectedRollout,
     MovementPpoConfig,
     MovementPpoTrainingResult,
     RolloutStats,
@@ -107,8 +110,22 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('rollouts_per_update must be positive.')
     if config.num_workers <= 0:
         raise ValueError('num_workers must be positive.')
+    if not config.eval_demand_scales:
+        raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:
         raise ValueError('SUMO-GUI rollout collection is only supported with one worker.')
+    if config.rollout_cities:
+        rollout_worker_count = sum(city.rollout_workers for city in config.rollout_cities)
+        if rollout_worker_count != config.rollouts_per_update:
+            raise ValueError(
+                'rollout city worker counts must equal rollouts_per_update: '
+                f'{rollout_worker_count} != {config.rollouts_per_update}'
+            )
+        held_out_city_names = tuple(
+            city.city_name for city in config.rollout_cities if city.city_split != CitySplit.TRAIN
+        )
+        if held_out_city_names:
+            raise ValueError(f'rollout_cities must not include held-out cities: {", ".join(held_out_city_names)}')
 
 
 def run_training_iterations(
@@ -158,7 +175,7 @@ def run_training_iteration(
     warming_up = iteration <= config.value_warmup_iterations
     set_actor_grad(state.model, requires_grad=not warming_up)
     set_value_grad(state.model, requires_grad=True)
-    buffer, rollout_stats = collect_iteration_rollouts(
+    buffer, rollout_stats, city_rollout_stats = collect_iteration_rollouts(
         config=config,
         state=state,
         device=device,
@@ -188,6 +205,7 @@ def run_training_iteration(
         writer=writer,
         iteration=iteration,
         rollout_stats=rollout_stats,
+        city_rollout_stats=city_rollout_stats,
         diagnostics=diagnostics,
         update_stats=update_stats,
         update_skipped=update_skipped,
@@ -212,7 +230,7 @@ def collect_iteration_rollouts(
     iteration: int,
     warming_up: bool,
     pool: ProcessPoolExecutor | None,
-) -> tuple[MovementRolloutBuffer, RolloutStats]:
+) -> tuple[MovementRolloutBuffer, RolloutStats, tuple[CityRolloutStats, ...]]:
     collected_rollouts = collect_computed_rollouts(
         RolloutCollectionRequest(
             config=config,
@@ -228,7 +246,27 @@ def collect_iteration_rollouts(
     )
     buffer = MovementRolloutBuffer.concatenate_computed(tuple(collected.buffer for collected in collected_rollouts))
     rollout_stats = combine_rollout_stats(tuple(collected.stats for collected in collected_rollouts))
-    return buffer, rollout_stats
+    city_rollout_stats = combine_city_rollout_stats(collected_rollouts)
+    return buffer, rollout_stats, city_rollout_stats
+
+
+def combine_city_rollout_stats(collected_rollouts: tuple[CollectedRollout, ...]) -> tuple[CityRolloutStats, ...]:
+    city_names: list[str] = []
+    for collected in collected_rollouts:
+        if collected.city_name not in city_names:
+            city_names.append(collected.city_name)
+    city_stats: list[CityRolloutStats] = []
+    for city_name in city_names:
+        city_rollouts = tuple(collected for collected in collected_rollouts if collected.city_name == city_name)
+        city_stats.append(
+            CityRolloutStats(
+                city_name=city_name,
+                city_split=city_rollouts[0].city_split,
+                rollout_count=len(city_rollouts),
+                stats=combine_rollout_stats(tuple(collected.stats for collected in city_rollouts)),
+            )
+        )
+    return tuple(city_stats)
 
 
 def update_iteration_model(
@@ -258,6 +296,7 @@ def write_iteration_outputs(
     writer: SummaryWriter,
     iteration: int,
     rollout_stats: RolloutStats,
+    city_rollout_stats: tuple[CityRolloutStats, ...],
     diagnostics: TrainingDiagnostics,
     update_stats: PpoUpdateStats,
     update_skipped: bool,
@@ -272,6 +311,7 @@ def write_iteration_outputs(
         diagnostics=diagnostics,
         update_stats=update_stats,
     )
+    write_city_rollout_scalars(writer=writer, iteration=iteration, city_rollout_stats=city_rollout_stats)
     writer.add_scalar('diagnostics/update_skipped', float(update_skipped), iteration)
     writer.add_scalar('timing/update_seconds', timing.update_finished - timing.rollout_finished, iteration)
     writer.add_scalar('timing/iteration_seconds', timing.update_finished - timing.iteration_started, iteration)
@@ -287,6 +327,21 @@ def write_iteration_outputs(
             timing=timing,
             started=started,
         )
+
+
+def write_city_rollout_scalars(
+    writer: SummaryWriter,
+    iteration: int,
+    city_rollout_stats: tuple[CityRolloutStats, ...],
+) -> None:
+    for city_stats in city_rollout_stats:
+        tag_prefix = f'rollout/{city_stats.city_name}'
+        stats = city_stats.stats
+        writer.add_scalar(f'{tag_prefix}/reward_mean', stats.mean_reward, iteration)
+        writer.add_scalar(f'{tag_prefix}/policy_decision_fraction', stats.policy_decision_fraction, iteration)
+        writer.add_scalar(f'{tag_prefix}/teleport_count', stats.teleport_count, iteration)
+        writer.add_scalar(f'{tag_prefix}/mean_local_delay_density', stats.mean_local_delay_density, iteration)
+        writer.add_scalar(f'{tag_prefix}/mean_demand_scale', stats.mean_demand_scale, iteration)
 
 
 def print_iteration_summary(

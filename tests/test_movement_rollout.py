@@ -8,7 +8,9 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
-from src.movement.evaluation import EvaluationMetrics
+from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy
+from src.movement.experiment_config import CitySplit
+from src.movement.training.ppo import validate_config
 from src.movement.training.ppo.evaluation import checkpoint_selection_score
 from src.movement.training.ppo.reward import (
     SpeedChangeTracker,
@@ -17,7 +19,13 @@ from src.movement.training.ppo.reward import (
     speed_change_density,
     speed_deficit_density,
 )
-from src.movement.training.ppo.rollout import rollout_seed, sample_demand_scale
+from src.movement.training.ppo.rollout import (
+    effective_rollout_cities,
+    rollout_schedule,
+    rollout_seed,
+    sample_demand_scale,
+)
+from src.movement.training.ppo.types import MovementPpoConfig, RolloutCity
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.rollout import MovementRolloutBuffer
@@ -102,6 +110,83 @@ def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
         )
         == 45
     )
+
+
+def test_rollout_schedule_uses_configured_train_cities_evenly() -> None:
+    config = _ppo_config(
+        rollouts_per_update=4,
+        rollout_cities=(
+            RolloutCity(
+                city_name='karlsruhe_oststadt',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('karlsruhe.sumocfg'),
+                rollout_workers=2,
+            ),
+            RolloutCity(
+                city_name='mannheim_innenstadt',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('mannheim.sumocfg'),
+                rollout_workers=2,
+            ),
+        ),
+    )
+
+    schedule = rollout_schedule(config=config, iteration=1)
+
+    assert tuple(rollout.rollout_city.city_name for rollout in schedule) == (
+        'karlsruhe_oststadt',
+        'karlsruhe_oststadt',
+        'mannheim_innenstadt',
+        'mannheim_innenstadt',
+    )
+    assert tuple(rollout.rollout_seed for rollout in schedule) == (46, 47, 48, 49)
+
+
+def test_rollout_schedule_rejects_worker_count_mismatch() -> None:
+    config = _ppo_config(
+        rollouts_per_update=3,
+        rollout_cities=(
+            RolloutCity(
+                city_name='karlsruhe_oststadt',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('karlsruhe.sumocfg'),
+                rollout_workers=2,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='rollout city worker counts must equal rollouts_per_update'):
+        rollout_schedule(config=config, iteration=1)
+
+
+def test_validate_config_rejects_held_out_rollout_city() -> None:
+    config = _ppo_config(
+        rollouts_per_update=1,
+        rollout_cities=(
+            RolloutCity(
+                city_name='freiburg_altstadt',
+                city_split=CitySplit.HELD_OUT,
+                sumo_config_path=Path('freiburg.sumocfg'),
+                rollout_workers=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='rollout_cities must not include held-out cities'):
+        validate_config(config)
+
+
+def test_effective_rollout_cities_keeps_single_city_default() -> None:
+    config = _ppo_config(rollouts_per_update=3, rollout_cities=())
+
+    rollout_cities = effective_rollout_cities(config)
+
+    assert len(rollout_cities) == 1
+    assert rollout_cities[0].sumo_config_path == config.cfg_path
+    assert rollout_cities[0].rollout_workers == 3
+
+
+def test_rollout_seed_uses_iteration_and_rollout_index() -> None:
     assert (
         rollout_seed(
             training_seed=42,
@@ -382,3 +467,60 @@ def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bo
     assert combined.advantages is not None
     assert tuple(float(value) for value in combined.returns[:, 0]) == (3.0, 7.0)
     assert tuple(float(value) for value in combined.advantages[:, 0]) == (3.0, 7.0)
+
+
+def _ppo_config(
+    rollouts_per_update: int,
+    rollout_cities: tuple[RolloutCity, ...],
+) -> MovementPpoConfig:
+    return MovementPpoConfig(
+        cfg_path=Path('grid.sumocfg'),
+        il_checkpoint_path=Path('movement_policy.pt'),
+        iterations=2,
+        steps_per_rollout=3,
+        rollouts_per_update=rollouts_per_update,
+        num_workers=1,
+        decision_interval=10,
+        learning_rate=2e-4,
+        gamma=0.99,
+        lam=0.95,
+        clip_epsilon=0.1,
+        update_epochs=4,
+        value_warmup_iterations=1,
+        warmup_epochs=8,
+        value_coefficient=0.5,
+        entropy_coefficient=0.01,
+        max_grad_norm=0.5,
+        transitions_per_batch=32,
+        yellow_duration=3,
+        min_green_steps=2,
+        demand_scale_min=0.8,
+        demand_scale_max=1.2,
+        global_reward_weight=0.1,
+        speed_change_weight=0.02,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        max_teleports_per_rollout=999,
+        time_to_teleport=-1,
+        target_kl=0.03,
+        gui=False,
+        initial_occupancy_min=0.05,
+        initial_occupancy_max=0.08,
+        eval_every=10,
+        eval_steps=600,
+        eval_seeds=(42,),
+        eval_policies=(EvaluationPolicy.MAX_PRESSURE,),
+        eval_demand_scale=1.0,
+        eval_demand_scales=(1.0,),
+        save_every=10,
+        print_every=1,
+        checkpoint_dir=Path('checkpoints/rl/unit'),
+        log_dir=Path('runs/rl/unit'),
+        device='cpu',
+        seed=42,
+        fixed_rollout_seed=None,
+        resume_checkpoint_path=None,
+        rollout_cities=rollout_cities,
+        experiment_configuration=None,
+        project_root=ROOT,
+    )

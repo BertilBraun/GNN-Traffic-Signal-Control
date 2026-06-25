@@ -9,11 +9,20 @@ import torch
 from torch.optim.optimizer import StateDict
 
 from src.movement.evaluation import EvaluationPolicy
+from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.features import LaneGroupGeometry
 from src.movement.graph_schema import MovementGraph
 from src.movement.training.il.checkpoint import NormalizerState
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.rollout import MovementRolloutBuffer
+
+
+@dataclass(frozen=True)
+class RolloutCity:
+    city_name: str
+    city_split: CitySplit
+    sumo_config_path: Path
+    rollout_workers: int
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,7 @@ class MovementPpoConfig:
     eval_seeds: tuple[int, ...]
     eval_policies: tuple[EvaluationPolicy, ...]
     eval_demand_scale: float
+    eval_demand_scales: tuple[float, ...]
     save_every: int
     print_every: int
     checkpoint_dir: Path
@@ -63,6 +73,9 @@ class MovementPpoConfig:
     seed: int
     fixed_rollout_seed: int | None
     resume_checkpoint_path: Path | None
+    rollout_cities: tuple[RolloutCity, ...]
+    experiment_configuration: ExperimentConfiguration | None
+    project_root: Path
 
 
 @dataclass(frozen=True)
@@ -136,6 +149,16 @@ class CollectedRollout:
     buffer: MovementRolloutBuffer
     stats: RolloutStats
     seed: int
+    city_name: str
+    city_split: CitySplit
+
+
+@dataclass(frozen=True)
+class CityRolloutStats:
+    city_name: str
+    city_split: CitySplit
+    rollout_count: int
+    stats: RolloutStats
 
 
 @dataclass(frozen=True)

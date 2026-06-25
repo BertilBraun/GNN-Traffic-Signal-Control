@@ -14,6 +14,7 @@ import traci
 
 from scripts.collect_il_data import resolve_sumocfg_net_path
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
+from src.movement.experiment_config import CitySplit
 from src.movement.features import (
     LaneGroupFlowTracker,
     MovementControlState,
@@ -44,6 +45,7 @@ from src.movement.training.ppo.types import (
     CollectedRollout,
     MovementPpoConfig,
     RolloutContext,
+    RolloutCity,
     RolloutStats,
 )
 from src.movement.training.rollout import MovementRolloutBuffer
@@ -73,7 +75,9 @@ class RolloutWorkerRequest:
     num_hops: int
     lane_normalizer: NormalizerState
     movement_normalizer: NormalizerState
+    rollout_index: int
     rollout_seed: int
+    rollout_city: RolloutCity
     warming_up: bool
 
 
@@ -85,15 +89,9 @@ class RolloutRunResult:
 
 
 def collect_computed_rollouts(request: RolloutCollectionRequest) -> tuple[CollectedRollout, ...]:
-    seeds = tuple(
-        rollout_seed(
-            training_seed=request.config.seed,
-            iteration=request.iteration,
-            rollout_index=rollout_index,
-            rollouts_per_update=request.config.rollouts_per_update,
-            fixed_rollout_seed=request.config.fixed_rollout_seed,
-        )
-        for rollout_index in range(request.config.rollouts_per_update)
+    assignments = rollout_schedule(
+        config=request.config,
+        iteration=request.iteration,
     )
     if request.pool is None:
         return tuple(
@@ -103,14 +101,71 @@ def collect_computed_rollouts(request: RolloutCollectionRequest) -> tuple[Collec
                 lane_normalizer=request.lane_normalizer,
                 movement_normalizer=request.movement_normalizer,
                 device=request.device,
-                rollout_seed=seed,
+                rollout_seed=assignment.rollout_seed,
+                rollout_city=assignment.rollout_city,
                 warming_up=request.warming_up,
             )
-            for seed in seeds
+            for assignment in assignments
         )
-    worker_requests = tuple(worker_request(request=request, rollout_seed=seed) for seed in seeds)
-    futures = tuple(request.pool.submit(collect_computed_rollout_worker, worker) for worker in worker_requests)
-    return tuple(future.result() for future in as_completed(futures))
+    worker_requests = tuple(worker_request(request=request, assignment=assignment) for assignment in assignments)
+    futures = {request.pool.submit(collect_computed_rollout_worker, worker): worker for worker in worker_requests}
+    collected_rollouts: dict[int, CollectedRollout] = {}
+    for future in as_completed(futures):
+        worker = futures[future]
+        try:
+            collected_rollouts[worker.rollout_index] = future.result()
+        except Exception as exc:
+            raise RuntimeError(
+                f'PPO rollout failed for city={worker.rollout_city.city_name} seed={worker.rollout_seed}'
+            ) from exc
+    return tuple(collected_rollouts[rollout_index] for rollout_index in range(len(worker_requests)))
+
+
+@dataclass(frozen=True)
+class ScheduledRollout:
+    rollout_index: int
+    rollout_seed: int
+    rollout_city: RolloutCity
+
+
+def rollout_schedule(
+    config: MovementPpoConfig,
+    iteration: int,
+) -> tuple[ScheduledRollout, ...]:
+    rollout_cities = effective_rollout_cities(config)
+    expanded_cities = tuple(city for city in rollout_cities for _worker_index in range(city.rollout_workers))
+    if len(expanded_cities) != config.rollouts_per_update:
+        raise ValueError(
+            'rollout city worker counts must equal rollouts_per_update: '
+            f'{len(expanded_cities)} != {config.rollouts_per_update}'
+        )
+    return tuple(
+        ScheduledRollout(
+            rollout_index=rollout_index,
+            rollout_seed=rollout_seed(
+                training_seed=config.seed,
+                iteration=iteration,
+                rollout_index=rollout_index,
+                rollouts_per_update=config.rollouts_per_update,
+                fixed_rollout_seed=config.fixed_rollout_seed,
+            ),
+            rollout_city=expanded_cities[rollout_index],
+        )
+        for rollout_index in range(config.rollouts_per_update)
+    )
+
+
+def effective_rollout_cities(config: MovementPpoConfig) -> tuple[RolloutCity, ...]:
+    if config.rollout_cities:
+        return config.rollout_cities
+    return (
+        RolloutCity(
+            city_name=config.cfg_path.stem,
+            city_split=CitySplit.TRAIN,
+            sumo_config_path=config.cfg_path,
+            rollout_workers=config.rollouts_per_update,
+        ),
+    )
 
 
 def rollout_seed(
@@ -140,6 +195,7 @@ def collect_computed_rollout_worker(request: RolloutWorkerRequest) -> CollectedR
         movement_normalizer=normalizer_from_state(request.movement_normalizer),
         device=torch.device('cpu'),
         rollout_seed=request.rollout_seed,
+        rollout_city=request.rollout_city,
         warming_up=request.warming_up,
     )
 
@@ -151,6 +207,7 @@ def collect_computed_rollout(
     movement_normalizer: RunningNormalizer,
     device: torch.device,
     rollout_seed: int,
+    rollout_city: RolloutCity,
     warming_up: bool,
 ) -> CollectedRollout:
     rollout = collect_rollout(
@@ -160,6 +217,7 @@ def collect_computed_rollout(
         movement_normalizer=movement_normalizer,
         device=device,
         rollout_seed=rollout_seed,
+        rollout_city=rollout_city,
     )
     rollout.buffer.compute_returns_and_advantages(
         use_discounted_return_targets=warming_up,
@@ -169,6 +227,8 @@ def collect_computed_rollout(
         buffer=rollout.buffer,
         stats=rollout.stats,
         seed=rollout_seed,
+        city_name=rollout_city.city_name,
+        city_split=rollout_city.city_split,
     )
 
 
@@ -179,15 +239,16 @@ def collect_rollout(
     movement_normalizer: RunningNormalizer,
     device: torch.device,
     rollout_seed: int,
+    rollout_city: RolloutCity,
 ) -> RolloutRunResult:
-    net_path = resolve_sumocfg_net_path(config.cfg_path)
+    net_path = resolve_sumocfg_net_path(rollout_city.sumo_config_path)
     demand_scale = sample_demand_scale(
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
         seed=rollout_seed,
     )
     demand_route_files = route_files_for_demand_scale(
-        cfg_path=config.cfg_path,
+        cfg_path=rollout_city.sumo_config_path,
         demand_scale=demand_scale,
     )
     target_occupancy = sample_target_occupancy(
@@ -196,13 +257,13 @@ def collect_rollout(
         seed=rollout_seed,
     )
     initial_population = generate_initial_traffic_population(
-        cfg_path=config.cfg_path,
+        cfg_path=rollout_city.sumo_config_path,
         net_path=net_path,
         target_occupancy=target_occupancy,
         seed=rollout_seed,
     )
     runtime = MovementControlRuntime(
-        cfg_path=config.cfg_path,
+        cfg_path=rollout_city.sumo_config_path,
         gui=config.gui,
         seed=rollout_seed,
         yellow_duration=config.yellow_duration,
@@ -215,11 +276,12 @@ def collect_rollout(
         runtime.start()
         runtime.step()
         context = rollout_context(
-            cfg_path=config.cfg_path,
+            cfg_path=rollout_city.sumo_config_path,
             programs=runtime.programs,
         )
         print_initial_population(
             rollout_seed=rollout_seed,
+            city_name=rollout_city.city_name,
             initial_population=initial_population,
             demand_scale=demand_scale,
         )
@@ -439,7 +501,7 @@ def bootstrap_values(
     return tuple(float(value) for value in values.detach().cpu())
 
 
-def worker_request(request: RolloutCollectionRequest, rollout_seed: int) -> RolloutWorkerRequest:
+def worker_request(request: RolloutCollectionRequest, assignment: ScheduledRollout) -> RolloutWorkerRequest:
     return RolloutWorkerRequest(
         config=request.config,
         model_state={key: value.detach().cpu() for key, value in request.model.state_dict().items()},
@@ -449,7 +511,9 @@ def worker_request(request: RolloutCollectionRequest, rollout_seed: int) -> Roll
         num_hops=request.metadata.num_hops,
         lane_normalizer=request.metadata.lane_normalizer,
         movement_normalizer=request.metadata.movement_normalizer,
-        rollout_seed=rollout_seed,
+        rollout_index=assignment.rollout_index,
+        rollout_seed=assignment.rollout_seed,
+        rollout_city=assignment.rollout_city,
         warming_up=request.warming_up,
     )
 
@@ -462,11 +526,12 @@ def sample_demand_scale(demand_scale_min: float, demand_scale_max: float, seed: 
 
 def print_initial_population(
     rollout_seed: int,
+    city_name: str,
     initial_population: InitialTrafficPopulation,
     demand_scale: float,
 ) -> None:
     print(
-        f'  rollout seed={rollout_seed} '
+        f'  rollout city={city_name} seed={rollout_seed} '
         f'demand_scale={demand_scale:.3f} '
         f'initial_occupancy={initial_population.target_occupancy:.3f} '
         f'initial_vehicles={initial_population.generated_vehicle_count}/'

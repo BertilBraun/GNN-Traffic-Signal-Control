@@ -21,6 +21,15 @@ from src.movement.evaluation import (
     write_aggregate_json,
     write_records_csv,
 )
+from src.movement.evaluation.multi_city import (
+    MultiCityEvaluationAggregate,
+    default_episode_runner,
+    print_multi_city_summary,
+    run_multi_city_evaluation,
+    write_multi_city_csv,
+    write_multi_city_json,
+)
+from src.movement.experiment_config import CitySplit
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.training.il.checkpoint import MovementCheckpointMetadata
 from src.movement.training.ppo.checkpoint import save_actor_checkpoint
@@ -95,6 +104,13 @@ def run_training_evaluation(
             checkpoint_path=checkpoint_path,
             device=config.device,
         )
+        if config.experiment_configuration is not None:
+            return run_multi_city_training_evaluation(
+                config=config,
+                learned_policy_config=learned_policy_config,
+                iteration=iteration,
+                writer=writer,
+            )
         records = _evaluation_records(
             config=config,
             learned_policy_config=learned_policy_config,
@@ -124,6 +140,42 @@ def run_training_evaluation(
                 else None
             ),
         )
+
+
+def run_multi_city_training_evaluation(
+    config: MovementPpoConfig,
+    learned_policy_config: LearnedPolicyConfig,
+    iteration: int,
+    writer: SummaryWriter,
+) -> TrainingEvaluationResult:
+    if config.experiment_configuration is None:
+        raise ValueError('experiment_configuration is required for multi-city PPO evaluation')
+    result = run_multi_city_evaluation(
+        configuration=config.experiment_configuration,
+        project_root=config.project_root,
+        policies=config.eval_policies,
+        seeds=config.eval_seeds,
+        steps=config.eval_steps,
+        demand_scales=config.eval_demand_scales,
+        learned_policy_config=learned_policy_config,
+        episode_runner=default_episode_runner,
+    )
+    write_multi_city_evaluation_scalars(
+        writer=writer,
+        iteration=iteration,
+        evaluation_steps=config.eval_steps,
+        aggregates=result.aggregates,
+    )
+    output_dir = config.checkpoint_dir / 'eval' / f'iter_{iteration:04d}'
+    write_multi_city_json(output_dir / 'summary.json', result)
+    write_multi_city_csv(output_dir / 'summary.csv', result)
+    print_multi_city_summary(result.aggregates)
+    return TrainingEvaluationResult(
+        learned_checkpoint_score=held_out_learned_checkpoint_score(
+            aggregates=result.aggregates,
+            evaluation_steps=config.eval_steps,
+        )
+    )
 
 
 def write_evaluation_scalars(
@@ -160,6 +212,52 @@ def write_evaluation_scalars(
             iteration,
         )
         writer.add_scalar(f'eval/{policy}/nonstop_tls_pass_rate', metrics.nonstop_tls_pass_rate, iteration)
+
+
+def write_multi_city_evaluation_scalars(
+    writer: SummaryWriter,
+    iteration: int,
+    evaluation_steps: int,
+    aggregates: Sequence[MultiCityEvaluationAggregate],
+) -> None:
+    for aggregate in aggregates:
+        demand_tag = f'demand_{aggregate.demand_scale:.3f}'.replace('.', '_')
+        tag_prefix = f'eval/{aggregate.city_split.value}/{aggregate.city_name}/{aggregate.policy}/{demand_tag}'
+        metrics = aggregate.mean
+        writer.add_scalar(f'{tag_prefix}/throughput_per_hour', metrics.throughput_per_hour, iteration)
+        writer.add_scalar(f'{tag_prefix}/completion_rate', metrics.completion_rate, iteration)
+        writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', metrics.average_wait_density_s_per_m, iteration)
+        writer.add_scalar(f'{tag_prefix}/average_time_loss_s', metrics.average_time_loss_s, iteration)
+        writer.add_scalar(f'{tag_prefix}/teleport_count', metrics.teleport_count, iteration)
+        writer.add_scalar(
+            f'{tag_prefix}/checkpoint_selection_score',
+            checkpoint_selection_score(
+                metrics=metrics,
+                evaluation_steps=evaluation_steps,
+            ),
+            iteration,
+        )
+
+
+def held_out_learned_checkpoint_score(
+    aggregates: Sequence[MultiCityEvaluationAggregate],
+    evaluation_steps: int,
+) -> float | None:
+    learned_held_out_aggregates = tuple(
+        aggregate
+        for aggregate in aggregates
+        if aggregate.policy == EvaluationPolicy.LEARNED.value and aggregate.city_split == CitySplit.HELD_OUT
+    )
+    if not learned_held_out_aggregates:
+        return None
+    scores = tuple(
+        checkpoint_selection_score(
+            metrics=aggregate.mean,
+            evaluation_steps=evaluation_steps,
+        )
+        for aggregate in learned_held_out_aggregates
+    )
+    return sum(scores) / len(scores)
 
 
 def checkpoint_selection_score(
