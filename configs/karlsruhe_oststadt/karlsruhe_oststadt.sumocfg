@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <input>
+        <net-file value="karlsruhe_oststadt.net.xml"/>
+        <route-files value="karlsruhe_oststadt.rou.xml"/>
+        <additional-files value="karlsruhe_oststadt.tll.xml,karlsruhe_oststadt.add.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+        <step-length value="1.0"/>
+    </time>
+    <report>
+        <no-step-log value="true"/>
+    </report>
+</configuration>

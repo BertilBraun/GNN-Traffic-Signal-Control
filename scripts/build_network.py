@@ -46,6 +46,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.dom import minidom
 
+from pydantic import BaseModel, ConfigDict
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -85,6 +87,30 @@ class OsmSource:
     path: Path
     kind: OsmSourceKind
     cache_path: Path | None
+
+
+@dataclass(frozen=True)
+class PruneApplicationReport:
+    deleted_junction_count: int
+    deleted_edge_count: int
+    missing_junctions: tuple[str, ...]
+    missing_edges: tuple[str, ...]
+
+
+class PruneNote(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_id: str
+    text: str
+
+
+class PruneRecipe(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    delete_junctions: tuple[str, ...]
+    delete_edges: tuple[str, ...]
+    keep_junctions: tuple[str, ...]
+    notes: tuple[PruneNote, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +159,13 @@ def _parse_args() -> argparse.Namespace:
         help='Launch SUMO-GUI with movement max-pressure after build',
     )
     p.add_argument(
+        '--prune',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='JSON prune recipe with junctions and edges to delete before final rebuild',
+    )
+    p.add_argument(
         '--osm-cache-dir',
         type=Path,
         default=DEFAULT_OSM_CACHE_DIR,
@@ -164,6 +197,10 @@ def _parse_args() -> argparse.Namespace:
         help='Total background demand distributed across generated city O-D routes',
     )
     return p.parse_args()
+
+
+def _load_prune_recipe(path: Path) -> PruneRecipe:
+    return PruneRecipe.model_validate_json(path.read_text(encoding='utf-8-sig'))
 
 
 # ---------------------------------------------------------------------------
@@ -239,14 +276,15 @@ def _run_netconvert(
     net_path: Path,
     join_dist: float,
     promote_all_junctions_to_tl: bool,
+    prune_recipe: PruneRecipe | None,
 ) -> None:
     netconvert = os.path.join(SUMO_HOME, 'bin', 'netconvert')
     _netconvert_from_osm(osm_path, net_path, join_dist, netconvert)
-    _plain_xml_cleanup(net_path, join_dist, netconvert)
+    _plain_xml_cleanup(net_path, join_dist, netconvert, prune_recipe)
     if promote_all_junctions_to_tl:
         _promote_junctions_to_tl(net_path, netconvert, join_dist)
         # TL promotion + tls.join in the rebuild may surface new phantom TLs and pass-throughs.
-        _plain_xml_cleanup(net_path, join_dist, netconvert)
+        _plain_xml_cleanup(net_path, join_dist, netconvert, None)
     _final_phantom_tl_demote(net_path)
     print(f'  Wrote {net_path}')
 
@@ -286,7 +324,7 @@ def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netco
         raise RuntimeError(f'netconvert OSM import failed (exit {result.returncode})')
 
 
-def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str) -> None:
+def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str, prune_recipe: PruneRecipe | None) -> None:
     """Round-trip through plain XML to forcibly merge pass-through nodes.
 
     netconvert's --geometry.remove preserves nodes when adjacent edges have
@@ -315,6 +353,24 @@ def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str) -> Non
         for f in (con_file, tll_file):
             if f.exists():
                 f.unlink()
+
+        if prune_recipe is not None:
+            prune_report = _apply_prune_recipe_to_plain(
+                nod_file=nod_file,
+                edg_file=edg_file,
+                prune_recipe=prune_recipe,
+            )
+            print(
+                '  Applied prune recipe: '
+                f'{prune_report.deleted_junction_count} junctions, '
+                f'{prune_report.deleted_edge_count} edges'
+            )
+            if prune_report.missing_junctions or prune_report.missing_edges:
+                print(
+                    '  Prune skipped unknown ids after netconvert import: '
+                    f'{len(prune_report.missing_junctions)} junctions, '
+                    f'{len(prune_report.missing_edges)} edges'
+                )
 
         stripped = _strip_tl_join_metadata_in_plain(nod_file)
         if stripped:
@@ -414,6 +470,78 @@ def _remove_roundabouts_in_plain(edg_file: Path) -> int:
     if removed:
         edges_tree.write(str(edg_file), encoding='utf-8', xml_declaration=True)
     return removed
+
+
+def _apply_prune_recipe_to_plain(
+    nod_file: Path,
+    edg_file: Path,
+    prune_recipe: PruneRecipe,
+) -> PruneApplicationReport:
+    delete_junctions = set(prune_recipe.delete_junctions)
+    delete_edges = set(prune_recipe.delete_edges)
+    keep_junctions = set(prune_recipe.keep_junctions)
+    protected_deletions = delete_junctions & keep_junctions
+    if protected_deletions:
+        raise ValueError(f'Prune recipe deletes kept junctions: {sorted(protected_deletions)}')
+
+    nodes_tree = ET.parse(str(nod_file))
+    edges_tree = ET.parse(str(edg_file))
+    nodes_root = nodes_tree.getroot()
+    edges_root = edges_tree.getroot()
+    nodes_by_id = {node.get('id'): node for node in nodes_root.findall('node') if node.get('id')}
+    edges_by_id = {edge.get('id'): edge for edge in edges_root.findall('edge') if edge.get('id')}
+    missing_junctions = tuple(sorted(delete_junctions - set(nodes_by_id)))
+    missing_edges = tuple(sorted(delete_edges - set(edges_by_id)))
+    delete_junctions &= set(nodes_by_id)
+    delete_edges &= set(edges_by_id)
+
+    incident_edge_ids = {
+        edge.get('id')
+        for edge in edges_root.findall('edge')
+        if edge.get('from') in delete_junctions or edge.get('to') in delete_junctions
+    }
+    deleted_edge_pairs = {
+        frozenset((str(edges_by_id[edge_id].get('from')), str(edges_by_id[edge_id].get('to'))))
+        for edge_id in delete_edges
+        if edges_by_id[edge_id].get('from') is not None and edges_by_id[edge_id].get('to') is not None
+    }
+    paired_edge_ids = {
+        edge_id
+        for edge_id, edge in edges_by_id.items()
+        if edge.get('from') is not None
+        and edge.get('to') is not None
+        and frozenset((str(edge.get('from')), str(edge.get('to')))) in deleted_edge_pairs
+    }
+    edge_ids_to_delete = delete_edges | paired_edge_ids | incident_edge_ids
+    deleted_edge_count = 0
+    for edge in list(edges_root.findall('edge')):
+        if edge.get('id') not in edge_ids_to_delete:
+            continue
+        edges_root.remove(edge)
+        deleted_edge_count += 1
+
+    deleted_junction_count = 0
+    for node_id in sorted(delete_junctions):
+        nodes_root.remove(nodes_by_id[node_id])
+        deleted_junction_count += 1
+
+    remaining_node_refs = {
+        node_id for edge in edges_root.findall('edge') for node_id in (edge.get('from'), edge.get('to')) if node_id
+    }
+    isolated_node_ids = sorted(set(nodes_by_id) - delete_junctions - remaining_node_refs)
+    for node_id in isolated_node_ids:
+        nodes_root.remove(nodes_by_id[node_id])
+        deleted_junction_count += 1
+
+    if deleted_junction_count or deleted_edge_count:
+        nodes_tree.write(str(nod_file), encoding='utf-8', xml_declaration=True)
+        edges_tree.write(str(edg_file), encoding='utf-8', xml_declaration=True)
+    return PruneApplicationReport(
+        deleted_junction_count=deleted_junction_count,
+        deleted_edge_count=deleted_edge_count,
+        missing_junctions=missing_junctions,
+        missing_edges=missing_edges,
+    )
 
 
 def _strip_tl_join_metadata_in_plain(nod_file: Path) -> int:
@@ -1162,10 +1290,13 @@ def main() -> None:
     add_path = out_dir / f'{name}.add.xml'
     cfg_path = out_dir / f'{name}.sumocfg'
     rou_path = out_dir / f'{name}.rou.xml'
+    prune_recipe = _load_prune_recipe(args.prune) if args.prune is not None else None
 
     print(f'\n{"=" * 62}')
     print(f'  Network : {name}')
     print(f'  Out dir : {out_dir}')
+    if args.prune is not None:
+        print(f'  Prune   : {args.prune}')
     print(f'{"=" * 62}\n')
 
     print('[1/7] OSM')
@@ -1189,6 +1320,7 @@ def main() -> None:
         net_path=net_path,
         join_dist=args.join_dist,
         promote_all_junctions_to_tl=args.promote_all_junctions_to_tl,
+        prune_recipe=prune_recipe,
     )
 
     print('\n[3/7] Audit')

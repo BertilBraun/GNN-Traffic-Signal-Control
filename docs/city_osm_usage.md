@@ -4,6 +4,10 @@ The OSM build path now targets the movement-based controller, not the legacy
 fixed-intersection pipeline. It writes movement-safe traffic-light programs,
 city O-D flows, an empty additional file, and a SUMO config.
 
+The planned next step is a replayable network workbench that wraps OSM caching,
+manual topology pruning, inspection, visualization, and GUI demand calibration.
+See `docs/network_build_pipeline_plan.md` for the detailed implementation plan.
+
 By default, the builder controls only traffic lights imported or guessed from
 OSM/netconvert. It does not turn every 3+-arm city junction into a signal. Use
 `--promote-all-junctions-to-tl` only for experiments where you intentionally
@@ -149,6 +153,72 @@ python scripts\build_network.py `
   --name munich_small
 ```
 
+Using a manual prune recipe:
+
+First build an initial network, then open the prune editor on the generated
+`.net.xml`. For quick iteration, use `--serve`; the browser can then save the
+recipe directly into the config directory instead of downloading it:
+
+```powershell
+python scripts\visualize_network_prune.py `
+  --net configs\karlsruhe_oststadt\karlsruhe_oststadt.net.xml `
+  --serve `
+  --open
+```
+
+By default this saves to:
+
+```text
+configs\karlsruhe_oststadt\karlsruhe_oststadt.prune.json
+```
+
+In `--serve` mode, selecting a junction or road segment saves the current
+recipe, runs the rebuild from the local Python server process, and reloads the
+map after a successful build. `Undo` restores the previous edit and rebuilds
+again. It uses the sibling OSM file when present. The equivalent command is:
+
+```powershell
+python scripts\build_network.py `
+  --osm configs\karlsruhe_oststadt\karlsruhe_oststadt.osm `
+  --out-dir configs\karlsruhe_oststadt `
+  --name karlsruhe_oststadt `
+  --prune configs\karlsruhe_oststadt\karlsruhe_oststadt.prune.json
+```
+
+The first prune recipe format is intentionally replayable JSON:
+
+```json
+{
+  "delete_junctions": ["junction_id"],
+  "delete_edges": ["edge_id"],
+  "keep_junctions": [],
+  "notes": [
+    {
+      "target_id": "junction_id",
+      "text": "residential side area outside the control target"
+    }
+  ]
+}
+```
+
+Deleting a junction also deletes all incident normal edges. The builder applies
+the recipe before regenerating connections, movement traffic-light programs,
+routes, and the final SUMO config.
+
+Deleting an edge removes the whole road segment between the two endpoints. If
+SUMO imported the street as a pair of directed edges, the reverse edge is
+removed with it so netconvert does not rebuild one-sided road geometry.
+
+For larger edits, drag a rectangle over the residential side area or dead-end
+branch to mark junctions inside the box and road segments whose midpoints are
+inside the box. Use the middle mouse button to pan the map. `Undo` reverts the
+last click or box edit in the current browser session and rebuilds the network
+again.
+
+Be careful with junction deletion: deleting a junction also deletes every
+normal road segment incident to that junction. If you only want one road gone,
+click that specific edge instead of selecting the junction.
+
 Outputs:
 
 ```text
@@ -171,10 +241,15 @@ few shortest corridors.
 
 ## Movement Graph Design
 
-City movement graphs no longer depend on broad unsignalized corridor
-contraction. With a SUMO network file, each `LaneGroup` is a directed normal
-SUMO edge. Controlled multi-phase traffic lights create `Movement` nodes, and
-movement scores remain the learned policy output.
+City movement graphs use directed lane groups backed by one or more normal SUMO
+edges. Most unambiguous roads remain one edge per `LaneGroup`, but short
+controlled approaches may extend upstream across the immediately preceding
+signalized node so detector-like observations are not trapped on OSM/SUMO
+turn stubs. True tiny controlled turn stubs that share the same upstream
+approach are merged into a shared lane group. This intentionally allows some
+detector windows to see farther upstream than the current signal, because
+otherwise max-pressure and learned policies can be blind to the queue that is
+actually feeding the junction.
 
 One `num_hops` macro-hop means one junction transition:
 
@@ -231,11 +306,11 @@ python scripts\visualize_movement_graph.py `
   --open
 ```
 
-Use the SUMO map layout first to check whether one-edge LaneGroups and green
-unsignalized connector edges follow the SUMO road topology. Use the relaxed
-layout for dense city centers where labels overlap. Clicking a LaneGroup shows
-incoming/outgoing connector metadata, including via junction, freeflow time, and
-distance context.
+Use the SUMO map layout first to check whether LaneGroups, detector windows, and
+green unsignalized connector edges follow the SUMO road topology. Use the
+relaxed layout for dense city centers where labels overlap. Clicking a LaneGroup
+shows incoming/outgoing connector metadata, including via junction, freeflow
+time, and distance context.
 
 After architecture changes, old learned checkpoints and saved IL/PPO datasets
 may be incompatible or may not generalize. Regenerate datasets and checkpoints
@@ -248,7 +323,7 @@ python scripts\run.py `
   --cfg configs\munich_small\munich_small.sumocfg `
   --method max-pressure `
   --gui `
-  --demand-scale 0.65 `
+  --demand-scale 4.5 `
   --time-to-teleport -1
 ```
 
@@ -269,9 +344,12 @@ python scripts\eval_policy.py `
   --policies max-pressure queue `
   --seeds 100 101 102 `
   --steps 1200 `
-  --demand-scale 0.65 `
+  --demand-scale 4.5 `
   --time-to-teleport -1
 ```
 
-For first city checks, keep demand simple. Try fixed values around `0.4`,
-`0.65`, and `0.85`, then inspect SUMO-GUI behavior before city PPO training.
+For the first Mannheim-style city checks, demand scale around `4.5` produced
+plausible visible flow after detector fixes. Use `3.5..5.0` as the initial
+multi-city training range, then inspect SUMO-GUI behavior before city PPO
+training. Do not keep increasing demand just to compensate for one degenerate
+approach; fix or exclude that topology issue first.

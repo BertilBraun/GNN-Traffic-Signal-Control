@@ -33,6 +33,3 @@ wandb/
 
 checkpoints/
 reports/
-
-# Generated/local SUMO configs. Existing tracked fixtures remain tracked.
-configs/

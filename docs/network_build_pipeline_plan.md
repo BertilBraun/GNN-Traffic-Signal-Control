@@ -124,16 +124,20 @@ Initial prune operations:
   "delete_junctions": ["nodeA", "nodeB"],
   "delete_edges": ["edgeC"],
   "keep_junctions": [],
-  "notes": {
-    "nodeA": "residential cul-de-sac, no useful signalized path"
-  }
+  "notes": [
+    {
+      "target_id": "nodeA",
+      "text": "residential cul-de-sac, no useful signalized path"
+    }
+  ]
 }
 ```
 
 Semantics:
 
 * Deleting a junction deletes all incident normal edges.
-* Deleting an edge removes that directed road segment.
+* Deleting an edge removes the road segment between its endpoints, including
+  the reverse SUMO edge when the street is represented as two directed edges.
 * Internal SUMO edges are never user-selected directly.
 * After edits, rebuild connections, traffic-light programs, movement graph, and
   routes from the edited topology.
@@ -161,33 +165,41 @@ already has self-contained graph visualizations.
 Suggested command:
 
 ```powershell
-python scripts\network_workbench.py `
-  --recipe configs\karlsruhe_oststadt\karlsruhe_oststadt.build.yaml `
-  prune --open
+python scripts\visualize_network_prune.py `
+  --net configs\karlsruhe_oststadt\karlsruhe_oststadt.net.xml `
+  --serve `
+  --open
 ```
 
 UI behavior:
 
 * Render SUMO junctions and normal edges over the current map layout.
 * Use click selection for junctions and edges.
+* Use box selection for bulk deletion of all junctions and edges under a map
+  rectangle; edges are selected by midpoint to avoid grabbing long roads that
+  merely cross the box.
+* In served mode, save, rebuild, and reload automatically after each click or
+  box edit.
+* Provide undo for the last click or box edit within the current editor session;
+  undo saves the reverted recipe and rebuilds again.
 * Show selected object metadata: id, type, incoming/outgoing edge count,
   signalized status, movement count if available, and connected component.
-* Provide explicit actions: mark selected junctions for deletion, mark selected
-  edges for deletion, clear selection, save prune recipe.
+* Provide explicit actions: mark selected junctions and edges for deletion,
+  undo the last edit, and rebuild manually when needed.
+* In served mode, rebuild directly from the editor; rebuild saves the current
+  recipe first and reloads the regenerated network on success.
 * Visually distinguish signalized junctions, unsignalized junctions, deleted
   objects, and protected objects.
 * Never delete immediately from the browser-only view without writing a recipe.
 
 Implementation options:
 
-* Fastest path: generate static HTML plus embedded JSON and let the browser
-  download an updated `*.prune.json`; then the user places it in the config
-  directory.
-* Better local path: run a tiny local Python HTTP server that serves the view
-  and accepts `POST /prune` to write the recipe directly.
-
-Prefer the local server once editing starts to feel frequent. Static HTML is
-acceptable for the first proof of concept.
+* Preferred path: run a tiny local Python HTTP server that serves the view,
+  accepts `POST /prune` to write the recipe directly into the config directory,
+  and accepts an explicit rebuild action that runs `scripts/build_network.py`
+  with the saved recipe.
+* Fallback path: generate static HTML plus embedded JSON and let the browser
+  download an updated `*.prune.json`.
 
 Acceptance:
 
