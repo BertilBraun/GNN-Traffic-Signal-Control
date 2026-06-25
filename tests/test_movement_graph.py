@@ -5,7 +5,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.extraction import extract_traffic_light_program
-from src.movement.graph import _resolve_overlapping_corridors, _select_continuation, build_movement_graph
+from src.movement.graph import (
+    _merge_tiny_controlled_edge_corridors,
+    _resolve_overlapping_corridors,
+    _select_continuation,
+    build_movement_graph,
+)
 from src.movement.runtime import MovementControlRuntime
 
 
@@ -176,6 +181,14 @@ def test_corridor_branch_requires_one_unique_straight_continuation() -> None:
     )
 
 
+class EdgeStub:
+    def __init__(self, length: float) -> None:
+        self.length = length
+
+    def getLength(self) -> float:
+        return self.length
+
+
 def test_overlapping_corridors_fall_back_to_controlled_edges() -> None:
     resolved = _resolve_overlapping_corridors(
         {
@@ -189,4 +202,33 @@ def test_overlapping_corridors_fall_back_to_controlled_edges() -> None:
         'a_in': ('a_in',),
         'b_in': ('b_in',),
         'clear_in': ('clear_in', 'clear_out'),
+    }
+
+
+def test_tiny_controlled_edges_keep_shared_upstream_corridor() -> None:
+    raw = {
+        'turn_left_stub': ('shared_upstream', 'turn_left_stub'),
+        'turn_right_stub': ('shared_upstream', 'turn_right_stub'),
+        'normal_in': ('normal_in', 'signal_out'),
+    }
+    resolved = {
+        'turn_left_stub': ('turn_left_stub',),
+        'turn_right_stub': ('turn_right_stub',),
+        'normal_in': ('normal_in', 'signal_out'),
+    }
+
+    merged = _merge_tiny_controlled_edge_corridors(
+        corridor_by_controlled_edge=raw,
+        resolved_corridors=resolved,
+        edges_by_id={
+            'turn_left_stub': EdgeStub(0.2),
+            'turn_right_stub': EdgeStub(0.2),
+            'normal_in': EdgeStub(80.0),
+        },
+    )
+
+    assert merged == {
+        'turn_left_stub': ('shared_upstream', 'turn_left_stub', 'turn_right_stub'),
+        'turn_right_stub': ('shared_upstream', 'turn_left_stub', 'turn_right_stub'),
+        'normal_in': ('normal_in', 'signal_out'),
     }

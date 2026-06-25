@@ -18,7 +18,6 @@ from src.movement.demand import route_file_sumo_args, route_files_for_demand_sca
 from src.movement.evaluation.metrics import EvaluationMetrics, parse_tripinfo_metrics
 from src.movement.evaluation.progression import GreenWaveTracker
 from src.movement.features import (
-    LaneFeatureApi,
     LaneGroupFlowTracker,
     LaneGroupGeometry,
     MovementControlState,
@@ -31,8 +30,8 @@ from src.movement.graph_schema import MovementGraph
 from src.movement.initial_traffic import generate_initial_traffic_population, sample_target_occupancy
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
-from src.movement.phase_selection import select_highest_scoring_phase
-from src.movement.policies import MovementScoringMethod, compute_movement_scores
+from src.movement.policies import MovementScoringMethod
+from src.movement.policies.graph_scores import compute_graph_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il.checkpoint import (
@@ -68,6 +67,14 @@ class LearnedPolicyContext:
     vehicle_snapshot_collector: VehicleSnapshotCollector
     lane_flow_tracker: LaneGroupFlowTracker
     device: str
+
+
+@dataclass(frozen=True)
+class BaselinePolicyContext:
+    graph: MovementGraph
+    lane_ids_by_edge: dict[str, tuple[str, ...]]
+    lane_geometries: dict[str, LaneGroupGeometry]
+    vehicle_snapshot_collector: VehicleSnapshotCollector
 
 
 def run_evaluation_episode(
@@ -173,12 +180,19 @@ def run_evaluation_episode(
             decision_interval=decision_interval,
             net_path=net_path,
         )
+        baseline_context = _baseline_context(
+            policy=policy,
+            programs=runtime.programs,
+            lane_ids_by_edge=lane_ids_by_edge,
+            lane_geometries=lane_geometries,
+            net_path=net_path,
+        )
         for step in range(1, steps):
             if (step - 1) % decision_interval == 0:
                 desired_states = _desired_states(
                     policy=policy,
                     programs=runtime.programs,
-                    lane_api=runtime.lane_api,
+                    baseline_context=baseline_context,
                     learned_context=learned_context,
                     accepted_targets=accepted_targets,
                 )
@@ -290,15 +304,15 @@ def lane_inputs_from_net(
 def _desired_states(
     policy: EvaluationPolicy,
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneFeatureApi,
+    baseline_context: BaselinePolicyContext | None,
     learned_context: LearnedPolicyContext | None,
     accepted_targets: Mapping[str, str],
 ) -> dict[str, str]:
     match policy:
         case EvaluationPolicy.MAX_PRESSURE:
-            return _baseline_states(programs, lane_api, MovementScoringMethod.MAX_PRESSURE)
+            return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.MAX_PRESSURE)
         case EvaluationPolicy.QUEUE:
-            return _baseline_states(programs, lane_api, MovementScoringMethod.QUEUE)
+            return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.QUEUE)
         case EvaluationPolicy.LEARNED:
             if learned_context is None:
                 raise ValueError('learned_policy_config is required for learned evaluation.')
@@ -316,15 +330,68 @@ def _desired_states(
 
 def _baseline_states(
     programs: Mapping[str, TrafficLightProgram],
-    lane_api: LaneFeatureApi,
+    baseline_context: BaselinePolicyContext | None,
+    accepted_targets: Mapping[str, str],
     method: MovementScoringMethod,
 ) -> dict[str, str]:
+    if baseline_context is None:
+        raise ValueError('baseline_context is required for baseline evaluation.')
+    control_state = movement_control_state_from_targets(
+        graph=baseline_context.graph,
+        programs=programs,
+        target_states=accepted_targets,
+    )
+    vehicles = baseline_context.vehicle_snapshot_collector.capture()
+    feature_frame = build_feature_frame(
+        graph=baseline_context.graph,
+        lane_ids_by_edge=baseline_context.lane_ids_by_edge,
+        lane_geometries=baseline_context.lane_geometries,
+        control_state=control_state,
+        vehicles=vehicles,
+    )
+    graph_movement_scores = compute_graph_movement_scores(
+        graph=baseline_context.graph,
+        feature_frame=feature_frame,
+        method=method,
+    )
     states: dict[str, str] = {}
     for traffic_light_id, program in programs.items():
-        movement_scores = compute_movement_scores(program, lane_api, method)
-        selection = select_highest_scoring_phase(program, movement_scores)
-        states[traffic_light_id] = program.selectable_phases[selection.local_phase_index].state
+        incidence = baseline_context.graph.phase_incidences[program.traffic_light_id]
+        movement_ids = tuple(int(value) for value in incidence.movement_ids)
+        best_local_idx = 0
+        best_score = _phase_score(incidence.rows[0], movement_ids, graph_movement_scores)
+        for local_idx, row in enumerate(incidence.rows[1:], start=1):
+            score = _phase_score(row, movement_ids, graph_movement_scores)
+            if score > best_score:
+                best_local_idx = local_idx
+                best_score = score
+        states[traffic_light_id] = program.selectable_phases[best_local_idx].state
     return states
+
+
+def _phase_score(
+    row: tuple[int, ...],
+    movement_ids: tuple[int, ...],
+    graph_movement_scores: tuple[float, ...],
+) -> float:
+    return sum(graph_movement_scores[movement_id] for enabled, movement_id in zip(row, movement_ids) if enabled)
+
+
+def _baseline_context(
+    policy: EvaluationPolicy,
+    programs: Mapping[str, TrafficLightProgram],
+    lane_ids_by_edge: dict[str, tuple[str, ...]],
+    lane_geometries: dict[str, LaneGroupGeometry],
+    net_path: Path,
+) -> BaselinePolicyContext | None:
+    if policy == EvaluationPolicy.LEARNED:
+        return None
+    return BaselinePolicyContext(
+        graph=build_movement_graph(programs, net_path=net_path),
+        lane_ids_by_edge=lane_ids_by_edge,
+        lane_geometries=lane_geometries,
+        vehicle_snapshot_collector=VehicleSnapshotCollector(traci.vehicle),
+    )
 
 
 def _learned_context(

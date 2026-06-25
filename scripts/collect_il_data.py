@@ -28,6 +28,8 @@ from src.movement.features import (  # noqa: E402
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
 from src.movement.initial_traffic import generate_initial_traffic_population  # noqa: E402
+from src.movement.policies import MovementScoringMethod  # noqa: E402
+from src.movement.policies.graph_scores import compute_graph_movement_scores  # noqa: E402
 from src.movement.runtime import MovementControlRuntime  # noqa: E402
 
 
@@ -44,6 +46,18 @@ class VehicleTrajectoryState:
 class DecisionTrajectoryState:
     vehicles: tuple[VehicleTrajectoryState, ...]
     target_states: tuple[tuple[str, str], ...]
+
+
+def graph_max_pressure_scores_from_features(
+    graph: MovementGraph,
+    feature_frame: MovementFeatureFrame,
+) -> tuple[float, ...]:
+    """Compute graph-level max-pressure scores from visible LaneGroup features."""
+    return compute_graph_movement_scores(
+        graph=graph,
+        feature_frame=feature_frame,
+        method=MovementScoringMethod.MAX_PRESSURE,
+    )
 
 
 def resolve_sumocfg_net_path(cfg_path: str | Path) -> Path:
@@ -78,22 +92,6 @@ def lane_inputs_from_net(
             speed_limit_mps=float(edge.getSpeed()),
         )
     return lane_ids_by_edge, lane_geometries
-
-
-def graph_max_pressure_scores_from_features(
-    graph: MovementGraph,
-    feature_frame: MovementFeatureFrame,
-) -> tuple[float, ...]:
-    """Compute graph-level max-pressure scores from visible LaneGroup features."""
-    halting_by_lane_group = {
-        row.lane_group_id: row.dynamic.halting_count_detector for row in feature_frame.lane_group_rows
-    }
-    return tuple(
-        float(
-            halting_by_lane_group[movement.input_lane_group_id] - halting_by_lane_group[movement.output_lane_group_id]
-        )
-        for movement in graph.movements
-    )
 
 
 def collect_samples(
@@ -163,9 +161,10 @@ def collect_samples(
                     feature_frame=feature_frame,
                     programs=runtime.programs,
                     teacher_controlled_scores={tls_id: {} for tls_id in runtime.programs},
-                    teacher_graph_scores=graph_max_pressure_scores_from_features(
-                        graph,
-                        feature_frame,
+                    teacher_graph_scores=compute_graph_movement_scores(
+                        graph=graph,
+                        feature_frame=feature_frame,
+                        method=MovementScoringMethod.MAX_PRESSURE,
                     ),
                     metadata={
                         'cfg_path': str(cfg_path),

@@ -20,6 +20,9 @@ from .graph_schema import (
 )
 from .schema import EdgeId, LaneId, MovementIndex, TrafficLightId, TrafficLightProgram
 
+TINY_CONTROLLED_EDGE_THRESHOLD_M = 5.0
+SHORT_CONTROLLED_APPROACH_THRESHOLD_M = 50.0
+
 
 def build_movement_graph(
     programs: Mapping[str | TrafficLightId, TrafficLightProgram],
@@ -36,14 +39,19 @@ def build_movement_graph(
     )
     controlled_edges = _collect_lane_group_edges(controllable_programs)
     network = sumolib.net.readNet(str(net_path), withConnections=True) if net_path is not None else None
-    lane_group_edge_ids = (
-        _collect_network_lane_group_edges(network=network, controlled_edges=controlled_edges)
-        if network is not None
-        else controlled_edges
+    lane_group_edge_sets = (
+        _collect_network_lane_group_edge_sets(
+            network=network,
+            controlled_edges=controlled_edges,
+            programs=controllable_programs,
+            net_path=net_path,
+        )
+        if network is not None and net_path is not None
+        else tuple((edge_id,) for edge_id in controlled_edges)
     )
     lane_groups = tuple(
-        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_ids=(edge_id,))
-        for index, edge_id in enumerate(lane_group_edge_ids)
+        LaneGroupNode(lane_group_id=LaneGroupId(index), edge_ids=edge_ids)
+        for index, edge_ids in enumerate(lane_group_edge_sets)
     )
     lane_group_id_by_edge = {
         edge_id: lane_group.lane_group_id for lane_group in lane_groups for edge_id in lane_group.edge_ids
@@ -103,13 +111,22 @@ def _controllable_programs(
     }
 
 
-def _collect_network_lane_group_edges(
+def _collect_network_lane_group_edge_sets(
     network: object,
     controlled_edges: tuple[EdgeId, ...],
-) -> tuple[EdgeId, ...]:
-    edge_ids = {EdgeId(str(edge.getID())) for edge in network.getEdges() if not str(edge.getID()).startswith(':')}
-    edge_ids.update(controlled_edges)
-    return tuple(sorted(edge_ids, key=str))
+    programs: Mapping[str | TrafficLightId, TrafficLightProgram],
+    net_path: str | Path,
+) -> tuple[tuple[EdgeId, ...], ...]:
+    all_edge_ids = {EdgeId(str(edge.getID())) for edge in network.getEdges() if not str(edge.getID()).startswith(':')}
+    all_edge_ids.update(controlled_edges)
+    corridors = _collect_corridors(
+        controlled_edges=controlled_edges,
+        programs=programs,
+        net_path=net_path,
+    )
+    grouped_edge_ids = {edge_id for corridor in corridors for edge_id in corridor}
+    singletons = tuple((edge_id,) for edge_id in sorted(all_edge_ids - grouped_edge_ids, key=str))
+    return tuple(sorted((*corridors, *singletons), key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids)))
 
 
 def _build_lane_lane_connectors(
@@ -131,6 +148,8 @@ def _build_lane_lane_connectors(
                 continue
             source_lane_group_id = lane_group_id_by_edge[source_edge_id]
             target_lane_group_id = lane_group_id_by_edge[target_edge_id]
+            if source_lane_group_id == target_lane_group_id:
+                continue
             target_edge = network_edges[target_edge_id]
             key = (source_lane_group_id, target_lane_group_id, via_junction_id)
             connectors[key] = _connector_edge(
@@ -233,7 +252,11 @@ def _collect_corridors(
             signalized_ids=signalized_ids,
         )
         corridor_by_controlled_edge[edge_id] = tuple(EdgeId(str(edge.getID())) for edge in corridor)
-    resolved_corridors = _resolve_overlapping_corridors(corridor_by_controlled_edge)
+    resolved_corridors = _merge_tiny_controlled_edge_corridors(
+        corridor_by_controlled_edge=corridor_by_controlled_edge,
+        resolved_corridors=_resolve_overlapping_corridors(corridor_by_controlled_edge),
+        edges_by_id=edges_by_id,
+    )
     return tuple(
         sorted(
             set(resolved_corridors.values()),
@@ -272,8 +295,85 @@ def _resolve_overlapping_corridors(
         resolved = next_resolved
 
 
+def _merge_tiny_controlled_edge_corridors(
+    corridor_by_controlled_edge: Mapping[EdgeId, tuple[EdgeId, ...]],
+    resolved_corridors: Mapping[EdgeId, tuple[EdgeId, ...]],
+    edges_by_id: Mapping[EdgeId, object],
+    tiny_edge_threshold_m: float = TINY_CONTROLLED_EDGE_THRESHOLD_M,
+) -> dict[EdgeId, tuple[EdgeId, ...]]:
+    tiny_raw_corridors = {
+        controlled_edge_id: corridor
+        for controlled_edge_id, corridor in corridor_by_controlled_edge.items()
+        if _edge_length_m(edges_by_id, controlled_edge_id) <= tiny_edge_threshold_m
+        and corridor != (controlled_edge_id,)
+    }
+    if not tiny_raw_corridors:
+        return dict(resolved_corridors)
+
+    components = _overlapping_corridor_components(tuple(tiny_raw_corridors.values()))
+    merged_by_corridor = {
+        corridor: _merge_corridor_component(component)
+        for component in components
+        for corridor in component
+    }
+    merged = dict(resolved_corridors)
+    for controlled_edge_id, raw_corridor in tiny_raw_corridors.items():
+        merged[controlled_edge_id] = merged_by_corridor[raw_corridor]
+    return merged
+
+
+def _edge_length_m(edges_by_id: Mapping[EdgeId, object], edge_id: EdgeId) -> float:
+    edge = edges_by_id.get(edge_id)
+    return 0.0 if edge is None else float(edge.getLength())
+
+
+def _overlapping_corridor_components(
+    corridors: tuple[tuple[EdgeId, ...], ...],
+) -> tuple[tuple[tuple[EdgeId, ...], ...], ...]:
+    unique_corridors = tuple(sorted(set(corridors), key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids)))
+    remaining = set(unique_corridors)
+    components: list[tuple[tuple[EdgeId, ...], ...]] = []
+    while remaining:
+        start = min(remaining, key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids))
+        pending = [start]
+        remaining.remove(start)
+        component = [start]
+        component_edges = set(start)
+        while pending:
+            _current = pending.pop()
+            overlaps = tuple(corridor for corridor in remaining if component_edges.intersection(corridor))
+            for corridor in overlaps:
+                remaining.remove(corridor)
+                pending.append(corridor)
+                component.append(corridor)
+                component_edges.update(corridor)
+        components.append(tuple(sorted(component, key=lambda edge_ids: tuple(str(edge_id) for edge_id in edge_ids))))
+    return tuple(components)
+
+
+def _merge_corridor_component(
+    corridors: tuple[tuple[EdgeId, ...], ...],
+) -> tuple[EdgeId, ...]:
+    if len(corridors) == 1:
+        return corridors[0]
+    merged: list[EdgeId] = []
+    seen: set[EdgeId] = set()
+    for corridor in sorted(corridors, key=lambda edge_ids: (-len(edge_ids), tuple(str(edge_id) for edge_id in edge_ids))):
+        for edge_id in corridor:
+            if edge_id in seen:
+                continue
+            seen.add(edge_id)
+            merged.append(edge_id)
+    return tuple(merged)
+
+
 def _corridor_for_edge(edge: object, signalized_ids: set[str]) -> tuple[object, ...]:
-    upstream = _trace_corridor(edge, signalized_ids, downstream=False)
+    upstream = _trace_corridor(
+        edge,
+        signalized_ids,
+        downstream=False,
+        ignore_start_signalized_junction=float(edge.getLength()) <= SHORT_CONTROLLED_APPROACH_THRESHOLD_M,
+    )
     downstream = _trace_corridor(edge, signalized_ids, downstream=True)
     return tuple((*reversed(upstream), edge, *downstream))
 
@@ -282,13 +382,14 @@ def _trace_corridor(
     start_edge: object,
     signalized_ids: set[str],
     downstream: bool,
+    ignore_start_signalized_junction: bool = False,
 ) -> tuple[object, ...]:
     path: list[object] = []
     visited = {str(start_edge.getID())}
     current = start_edge
     while True:
         junction = current.getToNode() if downstream else current.getFromNode()
-        if str(junction.getID()) in signalized_ids:
+        if str(junction.getID()) in signalized_ids and not (ignore_start_signalized_junction and not path):
             break
         candidates = _viable_continuations(
             current=current,
@@ -326,7 +427,7 @@ def _viable_continuations(
         candidate_id = str(candidate.getID())
         if candidate_id.startswith(':') or candidate_id in visited:
             continue
-        if not _reaches_signal(
+        if downstream and not _reaches_signal(
             edge=candidate,
             signalized_ids=signalized_ids,
             downstream=downstream,

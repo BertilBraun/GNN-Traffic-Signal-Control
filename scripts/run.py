@@ -34,6 +34,7 @@ from src.movement.models.bipartite_gnn import MovementScorer  # noqa: E402
 from src.movement.normalization import RunningNormalizer  # noqa: E402
 from src.movement.phase_selection import select_highest_scoring_phase
 from src.movement.policies import MovementScoringMethod, compute_movement_scores
+from src.movement.policies.graph_scores import compute_graph_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il.checkpoint import (  # noqa: E402
@@ -85,6 +86,24 @@ def select_graph_score_control_states(
                 best_score = score
         states[tls_id] = program.selectable_phases[best_local_idx].state
     return states
+
+
+def select_graph_baseline_control_states(
+    programs: Mapping[str, TrafficLightProgram],
+    graph: MovementGraph,
+    feature_frame,
+    method: MovementScoringMethod,
+) -> dict[str, str]:
+    """Select phase states from detector-aware graph baseline scores."""
+    return select_graph_score_control_states(
+        programs=programs,
+        graph=graph,
+        graph_movement_scores=compute_graph_movement_scores(
+            graph=graph,
+            feature_frame=feature_frame,
+            method=method,
+        ),
+    )
 
 
 def select_learned_control_states(
@@ -223,13 +242,14 @@ def main() -> None:
         runtime.start()
         print(f'Loaded {len(runtime.programs)} movement-aware traffic-light programs.')
         learned_context = None
+        net_path = resolve_sumocfg_net_path(args.sumo_config_path)
+        graph = build_movement_graph(runtime.programs, net_path=net_path)
+        lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
         vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
         accepted_states: dict[str, str] = {}
+        control_state = MovementControlState()
         if learned_policy:
             model, metadata = load_movement_checkpoint(args.checkpoint, device=args.device)
-            net_path = resolve_sumocfg_net_path(args.sumo_config_path)
-            graph = build_movement_graph(runtime.programs, net_path=net_path)
-            lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
             learned_context = (
                 model,
                 graph,
@@ -275,12 +295,26 @@ def main() -> None:
                         device=args.device,
                     )
                 else:
-                    desired_states = select_control_states(
-                        runtime.programs,
-                        runtime.lane_api,
+                    vehicles = vehicle_snapshot_collector.capture()
+                    feature_frame = build_feature_frame(
+                        graph=graph,
+                        lane_ids_by_edge=lane_ids_by_edge,
+                        lane_geometries=lane_geometries,
+                        control_state=control_state,
+                        vehicles=vehicles,
+                    )
+                    desired_states = select_graph_baseline_control_states(
+                        programs=runtime.programs,
+                        graph=graph,
+                        feature_frame=feature_frame,
                         method=scoring_method,
                     )
                 accepted_states = runtime.request_targets(desired_states)
+                control_state = movement_control_state_from_targets(
+                    graph=graph,
+                    programs=runtime.programs,
+                    target_states=accepted_states,
+                )
                 if args.verbose:
                     print(f't={step:5d}s method={args.method} desired={desired_states} accepted={accepted_states}')
 
