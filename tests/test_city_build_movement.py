@@ -95,6 +95,39 @@ def test_city_additional_file_matches_empty_grid_additional(tmp_path: Path) -> N
     assert 'laneAreaDetector' not in content
 
 
+def test_osm_cache_key_ignores_bbox_whitespace() -> None:
+    bbox = '49.0000,8.4050,49.0230,8.4520'
+    query = build_network._overpass_query(bbox)
+
+    clean_key = build_network._osm_cache_key(bbox=bbox, query=query)
+    spaced_key = build_network._osm_cache_key(
+        bbox='49.0000, 8.4050, 49.0230, 8.4520',
+        query=query,
+    )
+
+    assert clean_key == spaced_key
+
+
+def test_fetch_osm_for_bbox_reuses_existing_cache(tmp_path: Path) -> None:
+    bbox = '49.0000,8.4050,49.0230,8.4520'
+    query = build_network._overpass_query(bbox)
+    cache_path = tmp_path / 'cache' / f'{build_network._osm_cache_key(bbox=bbox, query=query)}.osm'
+    output_path = tmp_path / 'city.osm'
+    cache_path.parent.mkdir()
+    cache_path.write_text('<osm version="0.6"></osm>', encoding='utf-8')
+
+    source = build_network._fetch_osm_for_bbox(
+        bbox=bbox,
+        output_path=output_path,
+        cache_directory=cache_path.parent,
+        refresh_osm=False,
+    )
+
+    assert source.kind == build_network.OsmSourceKind.CACHE
+    assert source.cache_path == cache_path
+    assert output_path.read_text(encoding='utf-8') == '<osm version="0.6"></osm>'
+
+
 def test_inspection_suspicion_checks_accept_current_grid_graph() -> None:
     runtime = MovementControlRuntime(cfg_path=GRID_CFG, gui=False, seed=42)
     try:

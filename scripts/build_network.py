@@ -31,6 +31,9 @@ Usage
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from enum import Enum
+import hashlib
 import os
 import random
 import re
@@ -58,6 +61,8 @@ from src.movement.phase_synthesis import (  # noqa: E402
 from src.movement.schema import LaneId, TrafficLightId  # noqa: E402
 
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+OVERPASS_QUERY_VERSION = 'city-road-query-v1'
+DEFAULT_OSM_CACHE_DIR = ROOT / '.cache' / 'osm'
 
 YELLOW_DUR = 3
 ALLRED_DUR = 2
@@ -67,6 +72,20 @@ DEFAULT_DEMAND_VEHICLES_PER_HOUR = 900.0
 ROUTE_SAMPLE_ATTEMPTS_PER_REQUESTED_ROUTE = 30
 
 TL_TYPES = {'traffic_light', 'traffic_light_unregulated', 'traffic_light_right_on_red'}
+
+
+class OsmSourceKind(Enum):
+    CACHE = 'cache'
+    DOWNLOAD = 'download'
+    LOCAL_FILE = 'local_file'
+
+
+@dataclass(frozen=True)
+class OsmSource:
+    path: Path
+    kind: OsmSourceKind
+    cache_path: Path | None
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -114,6 +133,18 @@ def _parse_args() -> argparse.Namespace:
         help='Launch SUMO-GUI with movement max-pressure after build',
     )
     p.add_argument(
+        '--osm-cache-dir',
+        type=Path,
+        default=DEFAULT_OSM_CACHE_DIR,
+        metavar='DIR',
+        help='Directory for cached Overpass OSM responses',
+    )
+    p.add_argument(
+        '--refresh-osm',
+        action='store_true',
+        help='Re-download OSM for --bbox even when a matching cache file exists',
+    )
+    p.add_argument(
         '--promote-all-junctions-to-tl',
         action='store_true',
         help='Promote every 3+-arm road junction to traffic_light instead of using OSM/netconvert signals only',
@@ -140,9 +171,9 @@ def _parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def _download_osm(bbox: str, out_path: Path) -> None:
+def _overpass_query(bbox: str) -> str:
     south, west, north, east = bbox.split(',')
-    query = f"""
+    return f"""
 [out:xml][timeout:90];
 (
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)$"]({south},{west},{north},{east});
@@ -153,6 +184,14 @@ out body;
 out skel qt;
 """.strip()
 
+
+def _osm_cache_key(bbox: str, query: str) -> str:
+    normalized_bbox = ','.join(part.strip() for part in bbox.split(','))
+    payload = f'{OVERPASS_QUERY_VERSION}\n{normalized_bbox}\n{query}'.encode('utf-8')
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _download_osm_query(bbox: str, query: str, out_path: Path) -> None:
     print(f'  Querying Overpass API for bbox {bbox} ...')
     payload = urllib.parse.urlencode({'data': query}).encode('utf-8')
     req = urllib.request.Request(OVERPASS_URL, data=payload, method='POST')
@@ -162,6 +201,32 @@ out skel qt;
         content = resp.read()
     out_path.write_bytes(content)
     print(f'  Saved {out_path}  ({out_path.stat().st_size // 1024} kB)')
+
+
+def _download_osm(bbox: str, out_path: Path) -> None:
+    _download_osm_query(bbox=bbox, query=_overpass_query(bbox), out_path=out_path)
+
+
+def _fetch_osm_for_bbox(
+    bbox: str,
+    output_path: Path,
+    cache_directory: Path,
+    refresh_osm: bool,
+) -> OsmSource:
+    query = _overpass_query(bbox)
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_directory / f'{_osm_cache_key(bbox=bbox, query=query)}.osm'
+    if cache_path.exists() and not refresh_osm:
+        shutil.copy2(cache_path, output_path)
+        print(f'  Reused cached OSM {cache_path} -> {output_path}')
+        return OsmSource(path=output_path, kind=OsmSourceKind.CACHE, cache_path=cache_path)
+
+    temporary_cache_path = cache_path.with_suffix('.tmp')
+    _download_osm_query(bbox=bbox, query=query, out_path=temporary_cache_path)
+    temporary_cache_path.replace(cache_path)
+    shutil.copy2(cache_path, output_path)
+    print(f'  Cached OSM {cache_path} -> {output_path}')
+    return OsmSource(path=output_path, kind=OsmSourceKind.DOWNLOAD, cache_path=cache_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1105,10 +1170,18 @@ def main() -> None:
 
     print('[1/7] OSM')
     if args.bbox:
-        _download_osm(args.bbox, osm_path)
+        osm_source = _fetch_osm_for_bbox(
+            bbox=args.bbox,
+            output_path=osm_path,
+            cache_directory=args.osm_cache_dir,
+            refresh_osm=args.refresh_osm,
+        )
+        print(f'  OSM source: {osm_source.kind.value}')
     else:
         osm_path = Path(args.osm)
+        osm_source = OsmSource(path=osm_path, kind=OsmSourceKind.LOCAL_FILE, cache_path=None)
         print(f'  Using existing {osm_path}')
+        print(f'  OSM source: {osm_source.kind.value}')
 
     print('\n[2/7] netconvert')
     _run_netconvert(

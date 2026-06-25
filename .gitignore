@@ -29,6 +29,7 @@ wandb/
 .claude/
 
 .pytest_cache/
+.cache/
 
 checkpoints/
 reports/
