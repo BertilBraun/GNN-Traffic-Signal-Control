@@ -1,4 +1,5 @@
 """Normalization utilities for movement learning features."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -55,8 +56,7 @@ class RunningNormalizer:
         if self.count == 0:
             return tuple(0.0 for _ in values)
         return tuple(
-            round((value - mean) / max(std, self.epsilon), 6)
-            for value, mean, std in zip(values, self.mean, self.std)
+            round((value - mean) / max(std, self.epsilon), 6) for value, mean, std in zip(values, self.mean, self.std)
         )
 
     def freeze(self) -> None:
@@ -78,6 +78,4 @@ class RunningNormalizer:
             self._dimension = len(values)
             return
         if len(values) != self._dimension:
-            raise ValueError(
-                f"Expected {self._dimension} features, got {len(values)}."
-            )
+            raise ValueError(f'Expected {self._dimension} features, got {len(values)}.')

@@ -1,4 +1,5 @@
 """Extract movement-aware phase programs from SUMO-compatible data."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -15,8 +16,8 @@ from .schema import (
     TrafficLightProgram,
 )
 
-GREEN_CHARS = frozenset({"G", "g"})
-TRANSITION_CHARS = frozenset({"y", "Y"})
+GREEN_CHARS = frozenset({'G', 'g'})
+TRANSITION_CHARS = frozenset({'y', 'Y'})
 
 
 def is_selectable_green_state(state: str) -> bool:
@@ -68,8 +69,7 @@ def extract_traffic_light_program(
             outgoing_lane_id=LaneId(outgoing_lane),
             via_lane_id=LaneId(via_lane) if via_lane is not None else None,
         )
-        for movement_idx, (signal_idx, (incoming_lane, outgoing_lane, via_lane))
-        in enumerate(signal_links)
+        for movement_idx, (signal_idx, (incoming_lane, outgoing_lane, via_lane)) in enumerate(signal_links)
     )
 
     selectable_phases: list[SelectablePhase] = []
@@ -77,21 +77,15 @@ def extract_traffic_light_program(
     for phase_idx, state in enumerate(phase_states):
         if len(state) != n_signals:
             raise ValueError(
-                f"Phase {phase_idx} state length {len(state)} does not match "
-                f"{n_signals} controlled links for traffic light {tls_id}."
+                f'Phase {phase_idx} state length {len(state)} does not match '
+                f'{n_signals} controlled links for traffic light {tls_id}.'
             )
         if not is_selectable_green_state(state):
             continue
 
-        green_signal_indices = {
-            signal_idx
-            for signal_idx, char in enumerate(state)
-            if char in GREEN_CHARS
-        }
+        green_signal_indices = {signal_idx for signal_idx, char in enumerate(state) if char in GREEN_CHARS}
         enabled = tuple(
-            movement.movement_index
-            for movement in movements
-            if movement.signal_index in green_signal_indices
+            movement.movement_index for movement in movements if movement.signal_index in green_signal_indices
         )
         if enabled:
             selectable_phases.append(

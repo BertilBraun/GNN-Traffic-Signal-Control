@@ -19,6 +19,7 @@ Notes
   per node.  We set ``head_dim = hidden // heads`` so the output stays at
   ``hidden`` dimensions throughout, making residual addition trivially shaped.
 """
+
 from __future__ import annotations
 
 import torch
@@ -52,19 +53,17 @@ class GATPolicy(nn.Module):
 
     def __init__(
         self,
-        node_dim:  int = OBS_DIM,
-        hidden:    int = 128,
-        heads:     int = 4,
-        n_layers:  int = 3,
-        edge_dim:  int = 3,
+        node_dim: int = OBS_DIM,
+        hidden: int = 128,
+        heads: int = 4,
+        n_layers: int = 3,
+        edge_dim: int = 3,
         n_classes: int = NUM_PHASES,
     ) -> None:
         super().__init__()
 
         if hidden % heads != 0:
-            raise ValueError(
-                f"hidden ({hidden}) must be divisible by heads ({heads})."
-            )
+            raise ValueError(f'hidden ({hidden}) must be divisible by heads ({heads}).')
         head_dim = hidden // heads
 
         # ------------------------------------------------------------------
@@ -82,20 +81,20 @@ class GATPolicy(nn.Module):
         # ------------------------------------------------------------------
         # GATv2 message-passing layers
         # ------------------------------------------------------------------
-        self.convs = nn.ModuleList([
-            GATv2Conv(
-                in_channels    = hidden,
-                out_channels   = head_dim,   # per head; concat → hidden
-                heads          = heads,
-                edge_dim       = edge_dim,
-                add_self_loops = False,
-                concat         = True,
-            )
-            for _ in range(n_layers)
-        ])
-        self.norms = nn.ModuleList([
-            nn.LayerNorm(hidden) for _ in range(n_layers)
-        ])
+        self.convs = nn.ModuleList(
+            [
+                GATv2Conv(
+                    in_channels=hidden,
+                    out_channels=head_dim,  # per head; concat → hidden
+                    heads=heads,
+                    edge_dim=edge_dim,
+                    add_self_loops=False,
+                    concat=True,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.norms = nn.ModuleList([nn.LayerNorm(hidden) for _ in range(n_layers)])
 
         # ------------------------------------------------------------------
         # Classifier (actor) head: hidden → 64 → n_classes
@@ -125,9 +124,9 @@ class GATPolicy(nn.Module):
 
         Returns the per-node embedding of shape (N, hidden).
         """
-        x          = data.x
+        x = data.x
         edge_index = data.edge_index
-        edge_attr  = data.edge_attr
+        edge_attr = data.edge_attr
 
         x = self.encoder(x)
         for conv, norm in zip(self.convs, self.norms):
@@ -156,9 +155,7 @@ class GATPolicy(nn.Module):
         """
         return self.classifier(self._encode(data))
 
-    def forward_actor_critic(
-        self, data: Data
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward_actor_critic(self, data: Data) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward pass and return both actor logits and critic values.
 
         Parameters

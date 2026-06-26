@@ -312,9 +312,7 @@ def _merge_tiny_controlled_edge_corridors(
 
     components = _overlapping_corridor_components(tuple(tiny_raw_corridors.values()))
     merged_by_corridor = {
-        corridor: _merge_corridor_component(component)
-        for component in components
-        for corridor in component
+        corridor: _merge_corridor_component(component) for component in components for corridor in component
     }
     merged = dict(resolved_corridors)
     for controlled_edge_id, raw_corridor in tiny_raw_corridors.items():
@@ -358,7 +356,9 @@ def _merge_corridor_component(
         return corridors[0]
     merged: list[EdgeId] = []
     seen: set[EdgeId] = set()
-    for corridor in sorted(corridors, key=lambda edge_ids: (-len(edge_ids), tuple(str(edge_id) for edge_id in edge_ids))):
+    for corridor in sorted(
+        corridors, key=lambda edge_ids: (-len(edge_ids), tuple(str(edge_id) for edge_id in edge_ids))
+    ):
         for edge_id in corridor:
             if edge_id in seen:
                 continue

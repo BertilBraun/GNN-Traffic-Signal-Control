@@ -13,10 +13,10 @@ from src.movement.schema import MovementIndex
 
 class FakeLaneApi:
     queues = {
-        "north_0": 7,
-        "south_0": 2,
-        "east_0": 3,
-        "west_0": 8,
+        'north_0': 7,
+        'south_0': 2,
+        'east_0': 3,
+        'west_0': 8,
     }
 
     def getLastStepHaltingNumber(self, lane_id: str) -> int:
@@ -25,12 +25,12 @@ class FakeLaneApi:
 
 def test_compute_movement_scores_uses_incoming_minus_outgoing_for_max_pressure() -> None:
     program = extract_traffic_light_program(
-        tls_id="J0",
-        phase_states=["GGr", "rrG"],
+        tls_id='J0',
+        phase_states=['GGr', 'rrG'],
         controlled_links=[
-            ("north_0", "south_0", None),
-            ("north_0", "east_0", None),
-            ("east_0", "west_0", None),
+            ('north_0', 'south_0', None),
+            ('north_0', 'east_0', None),
+            ('east_0', 'west_0', None),
         ],
     )
 
@@ -49,12 +49,12 @@ def test_compute_movement_scores_uses_incoming_minus_outgoing_for_max_pressure()
 
 def test_compute_movement_scores_uses_incoming_queue_for_queue_method() -> None:
     program = extract_traffic_light_program(
-        tls_id="J0",
-        phase_states=["GGr", "rrG"],
+        tls_id='J0',
+        phase_states=['GGr', 'rrG'],
         controlled_links=[
-            ("north_0", "south_0", None),
-            ("north_0", "east_0", None),
-            ("east_0", "west_0", None),
+            ('north_0', 'south_0', None),
+            ('north_0', 'east_0', None),
+            ('east_0', 'west_0', None),
         ],
     )
 
@@ -73,53 +73,53 @@ def test_compute_movement_scores_uses_incoming_queue_for_queue_method() -> None:
 
 def test_select_control_states_picks_highest_scoring_phase_state() -> None:
     program = extract_traffic_light_program(
-        tls_id="J0",
-        phase_states=["Gr", "rG"],
+        tls_id='J0',
+        phase_states=['Gr', 'rG'],
         controlled_links=[
-            ("north_0", "west_0", None),
-            ("east_0", "west_0", None),
+            ('north_0', 'west_0', None),
+            ('east_0', 'west_0', None),
         ],
     )
 
     states = select_control_states(
-        {"J0": program},
+        {'J0': program},
         FakeLaneApi(),
         MovementScoringMethod.QUEUE,
     )
 
-    assert states == {"J0": "Gr"}
+    assert states == {'J0': 'Gr'}
 
 
 def test_select_control_states_rejects_unknown_method() -> None:
     program = extract_traffic_light_program(
-        tls_id="J0",
-        phase_states=["G"],
-        controlled_links=[("north_0", "south_0", None)],
+        tls_id='J0',
+        phase_states=['G'],
+        controlled_links=[('north_0', 'south_0', None)],
     )
 
     try:
-        select_control_states({"J0": program}, FakeLaneApi(), "unknown")
+        select_control_states({'J0': program}, FakeLaneApi(), 'unknown')
     except ValueError as exc:
-        assert "Unsupported control method" in str(exc)
+        assert 'Unsupported control method' in str(exc)
     else:
-        raise AssertionError("expected unknown method to raise ValueError")
+        raise AssertionError('expected unknown method to raise ValueError')
 
 
 def test_select_graph_score_control_states_uses_phase_incidence_once_per_graph_movement() -> None:
     program = extract_traffic_light_program(
-        tls_id="J0",
-        phase_states=["Gr", "rG"],
+        tls_id='J0',
+        phase_states=['Gr', 'rG'],
         controlled_links=[
-            [("north_in_0", "south_out_0", None), ("north_in_1", "south_out_1", None)],
-            [("east_in_0", "west_out_0", None)],
+            [('north_in_0', 'south_out_0', None), ('north_in_1', 'south_out_1', None)],
+            [('east_in_0', 'west_out_0', None)],
         ],
     )
-    graph = build_movement_graph({"J0": program})
+    graph = build_movement_graph({'J0': program})
 
     states = select_graph_score_control_states(
-        programs={"J0": program},
+        programs={'J0': program},
         graph=graph,
         graph_movement_scores=(4.0, 5.0),
     )
 
-    assert states == {"J0": "rG"}
+    assert states == {'J0': 'rG'}

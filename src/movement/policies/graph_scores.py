@@ -26,9 +26,6 @@ def compute_graph_movement_scores(
                 for movement in graph.movements
             )
         case MovementScoringMethod.QUEUE:
-            return tuple(
-                float(halting_by_lane_group[movement.input_lane_group_id])
-                for movement in graph.movements
-            )
+            return tuple(float(halting_by_lane_group[movement.input_lane_group_id]) for movement in graph.movements)
         case _:
             raise ValueError(f'Unsupported control method: {method}')

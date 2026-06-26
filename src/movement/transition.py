@@ -1,4 +1,5 @@
 """Signal-state transition helpers for movement-based controllers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,23 +7,23 @@ from dataclasses import dataclass, field
 
 def yellow_from_green_state(state: str) -> str:
     """Convert active green links in `state` to yellow, preserving red links."""
-    return "".join("y" if char in {"G", "g"} else char for char in state)
+    return ''.join('y' if char in {'G', 'g'} else char for char in state)
 
 
 def transition_yellow_state(current_state: str, target_state: str) -> str:
     """Yellow only green links that will not remain green in `target_state`."""
     if len(current_state) != len(target_state):
-        raise ValueError("Current and target signal states must have the same length.")
+        raise ValueError('Current and target signal states must have the same length.')
 
     chars: list[str] = []
     for current_char, target_char in zip(current_state, target_state):
-        current_green = current_char in {"G", "g"}
-        target_green = target_char in {"G", "g"}
+        current_green = current_char in {'G', 'g'}
+        target_green = target_char in {'G', 'g'}
         if current_green and not target_green:
-            chars.append("y")
+            chars.append('y')
         else:
             chars.append(current_char)
-    return "".join(chars)
+    return ''.join(chars)
 
 
 @dataclass

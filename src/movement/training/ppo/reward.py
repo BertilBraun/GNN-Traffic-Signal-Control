@@ -60,8 +60,7 @@ def advance_and_reward(
         local_delay_sums[traffic_light_id] / max(1, simulated_steps) for traffic_light_id in context.traffic_light_ids
     )
     speed_change_densities = tuple(
-        speed_change_sums[traffic_light_id] / max(1, simulated_steps)
-        for traffic_light_id in context.traffic_light_ids
+        speed_change_sums[traffic_light_id] / max(1, simulated_steps) for traffic_light_id in context.traffic_light_ids
     )
     global_delay_density = global_delay_sum / max(1, simulated_steps)
     raw_rewards = tuple(

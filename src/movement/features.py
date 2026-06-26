@@ -405,11 +405,7 @@ def _lane_group_row(
         positioned_detector_vehicles=positioned_detector_vehicles,
         queue_tail_position_m=queue_tail_position_m,
     )
-    fast_queue_tail_etas = tuple(
-        eta
-        for vehicle, eta in queue_tail_etas
-        if vehicle.speed_mps >= 0.5 * speed_limit_mps
-    )
+    fast_queue_tail_etas = tuple(eta for vehicle, eta in queue_tail_etas if vehicle.speed_mps >= 0.5 * speed_limit_mps)
     eta_values = tuple(eta for _vehicle, eta in queue_tail_etas)
     saturation = 1.0 if vehicle_count_norm >= 0.95 or queue_length_norm >= 0.95 else 0.0
     static = StaticLaneGroupFeatures(

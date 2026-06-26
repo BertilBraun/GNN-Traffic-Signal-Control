@@ -12,15 +12,15 @@ from src.training.imitation import load_checkpoint
 
 
 def test_load_checkpoint_accepts_rl_latest_checkpoint(tmp_path: Path) -> None:
-    torch.save(GATPolicy().state_dict(), tmp_path / "rl_policy_latest.pt")
+    torch.save(GATPolicy().state_dict(), tmp_path / 'rl_policy_latest.pt')
     np.savez(
-        tmp_path / "normalizer.npz",
+        tmp_path / 'normalizer.npz',
         n=np.array(3),
         mean=np.zeros(41, dtype=np.float32),
         M2=np.ones(41, dtype=np.float32),
     )
 
-    model, norm_state = load_checkpoint(str(tmp_path), device="cpu")
+    model, norm_state = load_checkpoint(str(tmp_path), device='cpu')
 
     assert isinstance(model, GATPolicy)
-    assert norm_state["n"] == 3
+    assert norm_state['n'] == 3

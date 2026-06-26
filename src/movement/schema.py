@@ -1,17 +1,18 @@
 """Data structures for movement-based traffic signal control."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import NewType
 
-TrafficLightId = NewType("TrafficLightId", str)
-LaneId = NewType("LaneId", str)
-EdgeId = NewType("EdgeId", str)
-MovementIndex = NewType("MovementIndex", int)
-SignalIndex = NewType("SignalIndex", int)
-SumoPhaseIndex = NewType("SumoPhaseIndex", int)
-LocalPhaseIndex = NewType("LocalPhaseIndex", int)
-PhaseState = NewType("PhaseState", str)
+TrafficLightId = NewType('TrafficLightId', str)
+LaneId = NewType('LaneId', str)
+EdgeId = NewType('EdgeId', str)
+MovementIndex = NewType('MovementIndex', int)
+SignalIndex = NewType('SignalIndex', int)
+SumoPhaseIndex = NewType('SumoPhaseIndex', int)
+LocalPhaseIndex = NewType('LocalPhaseIndex', int)
+PhaseState = NewType('PhaseState', str)
 
 
 @dataclass(frozen=True)

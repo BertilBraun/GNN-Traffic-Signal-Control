@@ -45,12 +45,12 @@ class DemandRandomizer:
 
     def __init__(
         self,
-        net,                                    # sumolib.net.Net
+        net,  # sumolib.net.Net
         flow_range: tuple[int, int] = (300, 1000),
         min_rate: float = 5.0,
     ) -> None:
         self._flow_range = flow_range
-        self._min_rate   = min_rate
+        self._min_rate = min_rate
         # Each entry: (from_edge_id, to_edge_id, space-separated edge-id string)
         self._od_routes: list[tuple[str, str, str]] = []
         self._build_od_table(net)
@@ -70,14 +70,8 @@ class DemandRandomizer:
         def is_tl(node) -> bool:
             return node.getType() in tl_types
 
-        entry_edges = [
-            e for e in net.getEdges()
-            if not is_tl(e.getFromNode()) and is_tl(e.getToNode())
-        ]
-        exit_edges = [
-            e for e in net.getEdges()
-            if is_tl(e.getFromNode()) and not is_tl(e.getToNode())
-        ]
+        entry_edges = [e for e in net.getEdges() if not is_tl(e.getFromNode()) and is_tl(e.getToNode())]
+        exit_edges = [e for e in net.getEdges() if is_tl(e.getFromNode()) and not is_tl(e.getToNode())]
 
         for src in entry_edges:
             for dst in exit_edges:
@@ -133,7 +127,7 @@ class DemandRandomizer:
         # Dirichlet-like: Exp(1) weights normalised to a uniform total.
         target_total = float(rng.uniform(self._flow_range[0], self._flow_range[1]))
         weights = rng.exponential(1.0, size=n)
-        rates   = weights / weights.sum() * target_total  # sums to target_total
+        rates = weights / weights.sum() * target_total  # sums to target_total
 
         fd, path = tempfile.mkstemp(suffix='.xml', prefix='demand_')
         with os.fdopen(fd, 'w', encoding='utf-8') as f:

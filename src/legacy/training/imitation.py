@@ -322,7 +322,9 @@ def train_il(
         if eval_every > 0 and (episode + 1) % eval_every == 0:
             model.eval()
             periodic_seeds = tuple(range(42, 42 + periodic_eval_seeds))
-            model_metrics = _run_and_log_eval(env, model, expert, builder, dev, writer, episode, eval_seeds=periodic_seeds)
+            model_metrics = _run_and_log_eval(
+                env, model, expert, builder, dev, writer, episode, eval_seeds=periodic_seeds
+            )
             if model_metrics.avg_wait_density < best_wait_density:
                 best_wait_density = model_metrics.avg_wait_density
                 _save_checkpoint(model, builder, checkpoint_dir, tag='best')

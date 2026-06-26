@@ -203,7 +203,6 @@ class RolloutBuffer:
 
         for start in range(0, T, n_graphs_per_batch):
             batch_idx = idx[start : start + n_graphs_per_batch]
-            B = len(batch_idx)
 
             # Batch the selected graphs into one PyG Batch object.
             batch_graph = Batch.from_data_list([self._graphs[i] for i in batch_idx]).to(dev)

@@ -1,4 +1,5 @@
 """Inspect SUMO movement conflicts and synthesized phase sets."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,12 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-if "SUMO_HOME" not in os.environ:
-    raise EnvironmentError(
-        "SUMO_HOME environment variable is not set. "
-        "Point it to your SUMO installation directory."
-    )
-sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+if 'SUMO_HOME' not in os.environ:
+    raise EnvironmentError('SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.')
+sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
 import sumolib  # noqa: E402
 
@@ -29,8 +27,8 @@ from src.movement.schema import LaneId  # noqa: E402
 
 
 class ConflictAnalysisMode(str, Enum):
-    SUMO_FOES = "sumo-foes"
-    CONFLICT_EDGE = "conflict-edge"
+    SUMO_FOES = 'sumo-foes'
+    CONFLICT_EDGE = 'conflict-edge'
 
 
 @dataclass(frozen=True)
@@ -55,16 +53,16 @@ class AnalyzedTrafficLightLink:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Print movement conflicts and generated phase states for one SUMO TLS node.",
+        description='Print movement conflicts and generated phase states for one SUMO TLS node.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--net", type=Path, required=True, help="Path to SUMO .net.xml")
-    parser.add_argument("--tls", required=True, help="Traffic-light node id")
+    parser.add_argument('--net', type=Path, required=True, help='Path to SUMO .net.xml')
+    parser.add_argument('--tls', required=True, help='Traffic-light node id')
     parser.add_argument(
-        "--mode",
+        '--mode',
         choices=tuple(mode.value for mode in ConflictAnalysisMode),
         default=ConflictAnalysisMode.CONFLICT_EDGE.value,
-        help="Conflict rule used for generated phase states",
+        help='Conflict rule used for generated phase states',
     )
     return parser.parse_args()
 
@@ -77,33 +75,27 @@ def main() -> None:
     links = _collect_tls_links(node, args.tls)
     number_of_links = max(link.traffic_light_link_index for link in links) + 1
 
-    print(f"TLS {args.tls}: {len(links)} controlled movements")
+    print(f'TLS {args.tls}: {len(links)} controlled movements')
     for link in sorted(links, key=lambda item: item.traffic_light_link_index):
         print(
-            f"{link.traffic_light_link_index:2d} request={link.request_index:2d} "
-            f"{link.approach:5s} {link.direction:1s} -> {link.outgoing_edge_id}"
+            f'{link.traffic_light_link_index:2d} request={link.request_index:2d} '
+            f'{link.approach:5s} {link.direction:1s} -> {link.outgoing_edge_id}'
         )
 
     if analysis_mode == ConflictAnalysisMode.SUMO_FOES:
-        phase_links = [
-            link.to_synthesis_spec(include_outgoing_edge=False)
-            for link in links
-        ]
+        phase_links = [link.to_synthesis_spec(include_outgoing_edge=False) for link in links]
     else:
-        phase_links = [
-            link.to_synthesis_spec(include_outgoing_edge=True)
-            for link in links
-        ]
+        phase_links = [link.to_synthesis_spec(include_outgoing_edge=True) for link in links]
 
     states = build_conflict_phase_states(
         phase_links,
         number_of_links=number_of_links,
         are_foes=node.areFoes,
     )
-    print(f"\n{analysis_mode.value} maximal phase states: {len(states)}")
+    print(f'\n{analysis_mode.value} maximal phase states: {len(states)}')
     for state in states:
-        enabled = [str(idx) for idx, char in enumerate(state) if char == "G"]
-        print(f"{state}  links={','.join(enabled)}")
+        enabled = [str(idx) for idx, char in enumerate(state) if char == 'G']
+        print(f'{state}  links={",".join(enabled)}')
 
 
 def _collect_tls_links(node, tls_id: str) -> list[AnalyzedTrafficLightLink]:
@@ -132,5 +124,5 @@ def _collect_tls_links(node, tls_id: str) -> list[AnalyzedTrafficLightLink]:
     return sorted(links, key=lambda link: link.traffic_light_link_index)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,4 +1,5 @@
 """Generic phase selection over extracted movement-aware phases."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,10 +28,7 @@ def score_phase(
     movement_scores: Mapping[MovementIndex, float],
 ) -> float:
     """Sum scores for all movements enabled by `phase`."""
-    return sum(
-        float(movement_scores.get(movement_idx, 0.0))
-        for movement_idx in phase.enabled_movement_indices
-    )
+    return sum(float(movement_scores.get(movement_idx, 0.0)) for movement_idx in phase.enabled_movement_indices)
 
 
 def score_program_phases(
@@ -38,10 +36,7 @@ def score_program_phases(
     movement_scores: Mapping[MovementIndex, float],
 ) -> dict[SumoPhaseIndex, float]:
     """Return `{sumo_phase_index: aggregate_score}` for selectable phases."""
-    return {
-        phase.sumo_phase_index: score_phase(phase, movement_scores)
-        for phase in program.selectable_phases
-    }
+    return {phase.sumo_phase_index: score_phase(phase, movement_scores) for phase in program.selectable_phases}
 
 
 def select_highest_scoring_phase(
@@ -50,9 +45,7 @@ def select_highest_scoring_phase(
 ) -> PhaseSelection:
     """Select the highest-scoring phase with stable program-order tie break."""
     if not program.selectable_phases:
-        raise ValueError(
-            f"Traffic light {program.traffic_light_id} has no selectable phases."
-        )
+        raise ValueError(f'Traffic light {program.traffic_light_id} has no selectable phases.')
 
     best_local_idx = LocalPhaseIndex(0)
     best_phase = program.selectable_phases[0]

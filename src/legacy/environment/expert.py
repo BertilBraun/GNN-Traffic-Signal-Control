@@ -14,20 +14,17 @@ Usage
     for jid in env.junction_ids:
         expert.notify_applied(jid, actions[jid])
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-from pathlib import Path
 
 # Make sure traci is importable.
-if "SUMO_HOME" not in os.environ:
-    raise EnvironmentError(
-        "SUMO_HOME environment variable is not set. "
-        "Point it to your SUMO installation directory."
-    )
-sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+if 'SUMO_HOME' not in os.environ:
+    raise EnvironmentError('SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.')
+sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
 import traci
 
@@ -38,13 +35,14 @@ from .phase_schema import NUM_PHASES, phase_indices
 # Timing constants
 # ---------------------------------------------------------------------------
 
-MIN_HOLD_INTERVALS = 3   # commit to each phase for at least 3 intervals (45 s)
-MAX_HOLD_INTERVALS = 9   # starvation cap: force switch after 9 intervals (135 s)
+MIN_HOLD_INTERVALS = 3  # commit to each phase for at least 3 intervals (45 s)
+MAX_HOLD_INTERVALS = 9  # starvation cap: force switch after 9 intervals (135 s)
 
 
 # ---------------------------------------------------------------------------
 # GreedyExpert
 # ---------------------------------------------------------------------------
+
 
 class GreedyExpert:
     """Per-junction greedy expert that scores phases by per-vehicle wait attribution.
@@ -62,9 +60,9 @@ class GreedyExpert:
     """
 
     def __init__(self, junction_infos: dict[str, JunctionInfo]) -> None:
-        self._junctions:      dict[str, JunctionInfo] = junction_infos
-        self._intervals_held: dict[str, int]           = {jid: 0 for jid in junction_infos}
-        self._current_phase:  dict[str, int]           = {jid: 0 for jid in junction_infos}
+        self._junctions: dict[str, JunctionInfo] = junction_infos
+        self._intervals_held: dict[str, int] = {jid: 0 for jid in junction_infos}
+        self._current_phase: dict[str, int] = {jid: 0 for jid in junction_infos}
 
     # ------------------------------------------------------------------
     # Public API
@@ -81,7 +79,7 @@ class GreedyExpert:
         counting stays in sync with the environment.
         """
         if applied_phase != self._current_phase[jid]:
-            self._current_phase[jid]  = applied_phase
+            self._current_phase[jid] = applied_phase
             self._intervals_held[jid] = 0
         else:
             self._intervals_held[jid] += 1
@@ -90,7 +88,7 @@ class GreedyExpert:
         """Reset internal counters (call when env.reset() is called)."""
         for jid in self._junctions:
             self._intervals_held[jid] = 0
-            self._current_phase[jid]  = 0
+            self._current_phase[jid] = 0
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -107,7 +105,7 @@ class GreedyExpert:
                 if wait <= 0.0:
                     continue
                 route: list = list(traci.vehicle.getRoute(vid))
-                ridx: int   = traci.vehicle.getRouteIndex(vid)
+                ridx: int = traci.vehicle.getRouteIndex(vid)
                 if ridx + 1 >= len(route):
                     continue
                 for phase in ji.conn_to_phases.get((route[ridx], route[ridx + 1]), []):
@@ -116,14 +114,11 @@ class GreedyExpert:
 
     def _served_lanes_clear(self, ji: JunctionInfo, phase: int) -> bool:
         """True when every protected-green lane for *phase* has no halting vehicles."""
-        return all(
-            traci.lane.getLastStepHaltingNumber(lid) == 0
-            for lid in ji.phase_served_lanes[phase]
-        )
+        return all(traci.lane.getLastStepHaltingNumber(lid) == 0 for lid in ji.phase_served_lanes[phase])
 
     def _decide(self, jid: str, ji: JunctionInfo) -> int:
         current = self._current_phase[jid]
-        held    = self._intervals_held[jid]
+        held = self._intervals_held[jid]
 
         # ---- Before minimum hold ----------------------------------------
         # Only leave early if the current phase's queue is completely clear.
@@ -133,8 +128,8 @@ class GreedyExpert:
                 ranked = sorted(phase_indices(), key=lambda p: scores[p], reverse=True)
                 best_other = next((p for p in ranked if p != current), current)
                 if scores[best_other] > 0:
-                    return best_other   # early switch to something with demand
-            return current              # stay committed
+                    return best_other  # early switch to something with demand
+            return current  # stay committed
 
         # ---- Starvation cap ----------------------------------------------
         if held >= MAX_HOLD_INTERVALS:
@@ -145,4 +140,4 @@ class GreedyExpert:
         # ---- Normal re-evaluation at / after MIN_HOLD --------------------
         scores = self._score_phases(ji)
         ranked = sorted(phase_indices(), key=lambda p: scores[p], reverse=True)
-        return ranked[0]   # may equal current → re-commit for another MIN_HOLD
+        return ranked[0]  # may equal current → re-commit for another MIN_HOLD

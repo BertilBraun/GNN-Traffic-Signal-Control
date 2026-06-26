@@ -26,6 +26,7 @@ env.reset() starts a clean SUMO process.
     )
     # env is now closed; next env.reset() starts fresh SUMO
 """
+
 from __future__ import annotations
 
 import os
@@ -45,12 +46,9 @@ if TYPE_CHECKING:
     from src.model.gat_policy import GATPolicy
     from src.utils.graph_builder import GraphBuilder
 
-if "SUMO_HOME" not in os.environ:
-    raise EnvironmentError(
-        "SUMO_HOME environment variable is not set. "
-        "Point it to your SUMO installation directory."
-    )
-sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+if 'SUMO_HOME' not in os.environ:
+    raise EnvironmentError('SUMO_HOME environment variable is not set. Point it to your SUMO installation directory.')
+sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 import traci
 
 from src.environment.phase_schema import phase_indices
@@ -58,6 +56,7 @@ from src.environment.phase_schema import phase_indices
 # ---------------------------------------------------------------------------
 # Green-wave tracker
 # ---------------------------------------------------------------------------
+
 
 class GreenWaveTracker:
     """Track whether vehicles pass signalized junctions without stopping.
@@ -102,7 +101,7 @@ class GreenWaveTracker:
                 self._stopped_on_approach[vid] = False
 
             if tls_id is not None and distance is not None:
-                speed = speed_by_vehicle.get(vid, float("inf"))
+                speed = speed_by_vehicle.get(vid, float('inf'))
                 if distance <= self.approach_distance_m and speed <= self.stop_speed_mps:
                     self._stopped_on_approach[vid] = True
 
@@ -117,10 +116,10 @@ class GreenWaveTracker:
         n_vehicles = len(vehicles)
         if n_vehicles == 0:
             return {
-                "avg_tls_passes_per_vehicle": 0.0,
-                "avg_stops_before_tls_per_vehicle": 0.0,
-                "nonstop_tls_pass_rate": 0.0,
-                "avg_best_nonstop_tls_streak": 0.0,
+                'avg_tls_passes_per_vehicle': 0.0,
+                'avg_stops_before_tls_per_vehicle': 0.0,
+                'nonstop_tls_pass_rate': 0.0,
+                'avg_best_nonstop_tls_streak': 0.0,
             }
 
         total_passes = sum(self._passes.get(vid, 0) for vid in vehicles)
@@ -129,10 +128,10 @@ class GreenWaveTracker:
         total_best_streak = sum(self._best_streak.get(vid, 0) for vid in vehicles)
 
         return {
-            "avg_tls_passes_per_vehicle": total_passes / n_vehicles,
-            "avg_stops_before_tls_per_vehicle": total_stops / n_vehicles,
-            "nonstop_tls_pass_rate": total_nonstop / total_passes if total_passes else 0.0,
-            "avg_best_nonstop_tls_streak": total_best_streak / n_vehicles,
+            'avg_tls_passes_per_vehicle': total_passes / n_vehicles,
+            'avg_stops_before_tls_per_vehicle': total_stops / n_vehicles,
+            'nonstop_tls_pass_rate': total_nonstop / total_passes if total_passes else 0.0,
+            'avg_best_nonstop_tls_streak': total_best_streak / n_vehicles,
         }
 
     @staticmethod
@@ -161,9 +160,11 @@ class GreenWaveTracker:
         self._current_tls.pop(vid, None)
         self._stopped_on_approach.pop(vid, None)
 
+
 # ---------------------------------------------------------------------------
 # EvalMetrics
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class EvalMetrics:
@@ -191,28 +192,30 @@ class EvalMetrics:
     per_junction_phase_counts  : dict[str, list[int]]  — phase-selection counts
                                                           [ph0, ..., ph7]
     """
+
     # Tripinfo
-    avg_waiting_time:    float
-    avg_travel_time:     float
+    avg_waiting_time: float
+    avg_travel_time: float
     throughput_per_hour: float
     # In-sim
-    max_queue_length:    float
-    phase_switch_freq:   float
-    avg_wait_density:    float
+    max_queue_length: float
+    phase_switch_freq: float
+    avg_wait_density: float
     # Per-junction
-    per_junction_wait_density:  dict[str, float]      = field(default_factory=dict)
-    per_junction_max_queue:     dict[str, int]        = field(default_factory=dict)
-    per_junction_phase_counts:  dict[str, list[int]]  = field(default_factory=dict)
+    per_junction_wait_density: dict[str, float] = field(default_factory=dict)
+    per_junction_max_queue: dict[str, int] = field(default_factory=dict)
+    per_junction_phase_counts: dict[str, list[int]] = field(default_factory=dict)
     # Green-wave / progression
-    avg_tls_passes_per_vehicle:       float = 0.0
+    avg_tls_passes_per_vehicle: float = 0.0
     avg_stops_before_tls_per_vehicle: float = 0.0
-    nonstop_tls_pass_rate:             float = 0.0
-    avg_best_nonstop_tls_streak:       float = 0.0
+    nonstop_tls_pass_rate: float = 0.0
+    avg_best_nonstop_tls_streak: float = 0.0
 
 
 # ---------------------------------------------------------------------------
 # Policy factories
 # ---------------------------------------------------------------------------
+
 
 def make_model_policy(
     model: GATPolicy,
@@ -227,7 +230,7 @@ def make_model_policy(
     junction_ids = builder.junction_ids
 
     def policy_fn(obs: dict[str, np.ndarray]) -> dict[str, int]:
-        graph  = builder.build(obs, update_normalizer=False).to(dev)
+        graph = builder.build(obs, update_normalizer=False).to(dev)
         phases = model.predict(graph).cpu().tolist()
         return {jid: phases[i] for i, jid in enumerate(junction_ids)}
 
@@ -243,6 +246,7 @@ def make_expert_policy(
     Remember to call expert.reset() before the episode and pass an on_step
     callback to run_eval_episode that calls expert.notify_applied().
     """
+
     def policy_fn(obs: dict[str, np.ndarray]) -> dict[str, int]:
         return expert.act()
 
@@ -252,6 +256,7 @@ def make_expert_policy(
 # ---------------------------------------------------------------------------
 # Core runner
 # ---------------------------------------------------------------------------
+
 
 def run_eval_episode(
     env: TrafficEnv,
@@ -276,31 +281,31 @@ def run_eval_episode(
     -------
     EvalMetrics with all traffic statistics for the episode.
     """
-    junction_ids   = env.junction_ids
+    junction_ids = env.junction_ids
     junction_infos = env.junction_infos
-    n_junctions    = len(junction_ids)
+    n_junctions = len(junction_ids)
 
     # ------------------------------------------------------------------
     # Temporary tripinfo file — SUMO writes it on close().
     # ------------------------------------------------------------------
-    fd, tripinfo_path = tempfile.mkstemp(suffix=".xml", prefix="tripinfo_eval_")
-    os.close(fd)   # SUMO will open/overwrite it; we just needed a safe path
+    fd, tripinfo_path = tempfile.mkstemp(suffix='.xml', prefix='tripinfo_eval_')
+    os.close(fd)  # SUMO will open/overwrite it; we just needed a safe path
 
     env.tripinfo_output = tripinfo_path
-    obs  = env.reset()
+    obs = env.reset()
     done = False
 
     # ------------------------------------------------------------------
     # In-sim accumulators
     # ------------------------------------------------------------------
     total_wait_density = 0.0
-    total_switches     = 0
-    max_queue_ever     = 0
-    n_steps            = 0
+    total_switches = 0
+    max_queue_ever = 0
+    n_steps = 0
 
     # Per-junction
-    junc_wait_acc   = {jid: 0.0 for jid in junction_ids}
-    junc_max_queue  = {jid: 0   for jid in junction_ids}
+    junc_wait_acc = {jid: 0.0 for jid in junction_ids}
+    junc_max_queue = {jid: 0 for jid in junction_ids}
     junc_phase_cnt = {jid: [0 for _ in phase_indices()] for jid in junction_ids}
     green_wave = GreenWaveTracker()
 
@@ -321,12 +326,12 @@ def run_eval_episode(
 
         _update_green_wave_tracker(green_wave)
 
-        n_steps        += 1
-        total_switches += sum(1 for sw in info["switches"].values() if sw)
-        total_wait_density += info["global_wait"]
+        n_steps += 1
+        total_switches += sum(1 for sw in info['switches'].values() if sw)
+        total_wait_density += info['global_wait']
 
         # Per-junction wait density.
-        for jid, w in info["local_waits"].items():
+        for jid, w in info['local_waits'].items():
             junc_wait_acc[jid] += w
 
         # Per-lane peak queue (raw vehicle count, not density).
@@ -343,14 +348,12 @@ def run_eval_episode(
     # Close SUMO → flushes tripinfo file.
     # ------------------------------------------------------------------
     env.close()
-    env.tripinfo_output = None   # clear so next reset() runs without flag
+    env.tripinfo_output = None  # clear so next reset() runs without flag
 
     # ------------------------------------------------------------------
     # Parse tripinfo.
     # ------------------------------------------------------------------
-    avg_wait, avg_travel, throughput = _parse_tripinfo(
-        tripinfo_path, env.episode_length
-    )
+    avg_wait, avg_travel, throughput = _parse_tripinfo(tripinfo_path, env.episode_length)
     try:
         os.unlink(tripinfo_path)
     except OSError:
@@ -360,28 +363,25 @@ def run_eval_episode(
     # Aggregate in-sim metrics.
     # ------------------------------------------------------------------
     avg_wait_density = total_wait_density / max(1, n_steps)
-    switch_freq      = total_switches / max(1, n_junctions) / (env.episode_length / 60.0)
+    switch_freq = total_switches / max(1, n_junctions) / (env.episode_length / 60.0)
 
-    per_junction_wait_density = {
-        jid: junc_wait_acc[jid] / max(1, n_steps)
-        for jid in junction_ids
-    }
+    per_junction_wait_density = {jid: junc_wait_acc[jid] / max(1, n_steps) for jid in junction_ids}
     green_wave_metrics = green_wave.metrics()
 
     return EvalMetrics(
-        avg_waiting_time           = avg_wait,
-        avg_travel_time            = avg_travel,
-        throughput_per_hour        = throughput,
-        max_queue_length           = float(max_queue_ever),
-        phase_switch_freq          = switch_freq,
-        avg_wait_density           = avg_wait_density,
-        per_junction_wait_density  = per_junction_wait_density,
-        per_junction_max_queue     = junc_max_queue,
-        per_junction_phase_counts  = junc_phase_cnt,
-        avg_tls_passes_per_vehicle       = green_wave_metrics["avg_tls_passes_per_vehicle"],
-        avg_stops_before_tls_per_vehicle = green_wave_metrics["avg_stops_before_tls_per_vehicle"],
-        nonstop_tls_pass_rate            = green_wave_metrics["nonstop_tls_pass_rate"],
-        avg_best_nonstop_tls_streak      = green_wave_metrics["avg_best_nonstop_tls_streak"],
+        avg_waiting_time=avg_wait,
+        avg_travel_time=avg_travel,
+        throughput_per_hour=throughput,
+        max_queue_length=float(max_queue_ever),
+        phase_switch_freq=switch_freq,
+        avg_wait_density=avg_wait_density,
+        per_junction_wait_density=per_junction_wait_density,
+        per_junction_max_queue=junc_max_queue,
+        per_junction_phase_counts=junc_phase_cnt,
+        avg_tls_passes_per_vehicle=green_wave_metrics['avg_tls_passes_per_vehicle'],
+        avg_stops_before_tls_per_vehicle=green_wave_metrics['avg_stops_before_tls_per_vehicle'],
+        nonstop_tls_pass_rate=green_wave_metrics['nonstop_tls_pass_rate'],
+        avg_best_nonstop_tls_streak=green_wave_metrics['avg_best_nonstop_tls_streak'],
     )
 
 
@@ -407,6 +407,7 @@ def _update_green_wave_tracker(tracker: GreenWaveTracker) -> None:
 # Multi-seed averaging
 # ---------------------------------------------------------------------------
 
+
 def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
     """Return element-wise mean of a list of EvalMetrics.
 
@@ -422,29 +423,24 @@ def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
 
     jids = list(metrics_list[0].per_junction_wait_density.keys())
     return EvalMetrics(
-        avg_waiting_time    = mean('avg_waiting_time'),
-        avg_travel_time     = mean('avg_travel_time'),
-        throughput_per_hour = mean('throughput_per_hour'),
-        max_queue_length    = mean('max_queue_length'),
-        phase_switch_freq   = mean('phase_switch_freq'),
-        avg_wait_density    = mean('avg_wait_density'),
+        avg_waiting_time=mean('avg_waiting_time'),
+        avg_travel_time=mean('avg_travel_time'),
+        throughput_per_hour=mean('throughput_per_hour'),
+        max_queue_length=mean('max_queue_length'),
+        phase_switch_freq=mean('phase_switch_freq'),
+        avg_wait_density=mean('avg_wait_density'),
         avg_tls_passes_per_vehicle=mean('avg_tls_passes_per_vehicle'),
         avg_stops_before_tls_per_vehicle=mean('avg_stops_before_tls_per_vehicle'),
         nonstop_tls_pass_rate=mean('nonstop_tls_pass_rate'),
         avg_best_nonstop_tls_streak=mean('avg_best_nonstop_tls_streak'),
         per_junction_wait_density={
-            jid: sum(m.per_junction_wait_density[jid] for m in metrics_list) / n
-            for jid in jids
+            jid: sum(m.per_junction_wait_density[jid] for m in metrics_list) / n for jid in jids
         },
         per_junction_max_queue={
-            jid: int(round(sum(m.per_junction_max_queue[jid] for m in metrics_list) / n))
-            for jid in jids
+            jid: int(round(sum(m.per_junction_max_queue[jid] for m in metrics_list) / n)) for jid in jids
         },
         per_junction_phase_counts={
-            jid: [
-                sum(m.per_junction_phase_counts[jid][ph] for m in metrics_list)
-                for ph in phase_indices()
-            ]
+            jid: [sum(m.per_junction_phase_counts[jid][ph] for m in metrics_list) for ph in phase_indices()]
             for jid in jids
         },
     )
@@ -453,6 +449,7 @@ def average_eval_metrics(metrics_list: list[EvalMetrics]) -> EvalMetrics:
 # ---------------------------------------------------------------------------
 # Tripinfo parser
 # ---------------------------------------------------------------------------
+
 
 def _parse_tripinfo(
     path: str,
@@ -480,15 +477,15 @@ def _parse_tripinfo(
     except ET.ParseError:
         return 0.0, 0.0, 0.0
 
-    wait_sum   = 0.0
+    wait_sum = 0.0
     travel_sum = 0.0
-    n_trips    = 0
+    n_trips = 0
 
-    for trip in root.findall("tripinfo"):
+    for trip in root.findall('tripinfo'):
         try:
-            wait_sum   += float(trip.get("waitingTime", 0.0))
-            travel_sum += float(trip.get("duration",    0.0))
-            n_trips    += 1
+            wait_sum += float(trip.get('waitingTime', 0.0))
+            travel_sum += float(trip.get('duration', 0.0))
+            n_trips += 1
         except (TypeError, ValueError):
             continue
 
@@ -497,7 +494,7 @@ def _parse_tripinfo(
 
     hours = episode_length / 3600.0
     return (
-        wait_sum   / n_trips,
+        wait_sum / n_trips,
         travel_sum / n_trips,
-        n_trips    / hours,
+        n_trips / hours,
     )
