@@ -23,7 +23,6 @@ class MovementTransition:
 @dataclass(frozen=True)
 class MovementPpoBatch:
     transitions: tuple[MovementTransition, ...]
-    actions: torch.Tensor
     old_log_probs: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor

@@ -48,11 +48,9 @@ def combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
 def training_diagnostics(buffer: MovementRolloutBuffer) -> TrainingDiagnostics:
     if buffer.returns is None or buffer.advantages is None:
         raise ValueError('Returns must be computed before training diagnostics.')
-    values = torch.tensor(
-        tuple(transition.values for transition in buffer.transitions),
-        dtype=torch.float32,
-    )
-    returns = buffer.returns
+    values = torch.cat(tuple(torch.tensor(transition.values, dtype=torch.float32) for transition in buffer.transitions))
+    returns = torch.cat(buffer.returns)
+    advantages = torch.cat(buffer.advantages)
     return_variance = float(returns.var())
     residual_variance = float((returns - values).var())
     explained_variance = 1.0 - residual_variance / (return_variance + 1e-8)
@@ -61,6 +59,6 @@ def training_diagnostics(buffer: MovementRolloutBuffer) -> TrainingDiagnostics:
         return_standard_deviation=float(returns.std()),
         mean_value=float(values.mean()),
         value_standard_deviation=float(values.std()),
-        advantage_standard_deviation=float(buffer.advantages.std()),
+        advantage_standard_deviation=float(advantages.std()),
         explained_variance=explained_variance,
     )

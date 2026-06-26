@@ -253,15 +253,17 @@ def _evaluate_batch_policy(
                 transition.action_masks,
             )
         )
-        action_tensor = torch.tensor(transition.actions, dtype=torch.long, device=device)
         batch_log_probs.append(
             torch.stack(
-                tuple(distribution.log_prob(action) for distribution, action in zip(distributions, action_tensor))
+                tuple(
+                    distribution.log_prob(torch.tensor(action, dtype=torch.long, device=device))
+                    for distribution, action in zip(distributions, transition.actions)
+                )
             )
         )
         batch_entropies.append(torch.stack(tuple(distribution.entropy() for distribution in distributions)))
         batch_values.append(values)
-    return torch.stack(batch_log_probs), torch.stack(batch_entropies), torch.stack(batch_values)
+    return torch.cat(batch_log_probs), torch.cat(batch_entropies), torch.cat(batch_values)
 
 
 def _actor_parameters(model: MovementActorCritic) -> Iterator[torch.nn.Parameter]:

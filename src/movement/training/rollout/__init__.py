@@ -23,8 +23,8 @@ class MovementRolloutBuffer:
         self.gamma = gamma
         self.lam = lam
         self.transitions: list[MovementTransition] = []
-        self.advantages: torch.Tensor | None = None
-        self.returns: torch.Tensor | None = None
+        self.advantages: tuple[torch.Tensor, ...] | None = None
+        self.returns: tuple[torch.Tensor, ...] | None = None
 
     def add(self, transition: MovementTransition) -> None:
         if len(transition.actions) != self.traffic_light_count:
@@ -44,20 +44,18 @@ class MovementRolloutBuffer:
             gamma=first.gamma,
             lam=first.lam,
         )
-        advantages = []
-        returns = []
+        advantages: list[torch.Tensor] = []
+        returns: list[torch.Tensor] = []
         for buffer in buffers:
-            if buffer.traffic_light_count != first.traffic_light_count:
-                raise ValueError('Cannot concatenate rollout buffers with different traffic light counts.')
             if buffer.gamma != first.gamma or buffer.lam != first.lam:
                 raise ValueError('Cannot concatenate rollout buffers with different discount settings.')
             if buffer.advantages is None or buffer.returns is None:
                 raise ValueError('All rollout buffers must have computed returns before concatenation.')
             combined.transitions.extend(buffer.transitions)
-            advantages.append(buffer.advantages)
-            returns.append(buffer.returns)
-        combined.advantages = torch.cat(tuple(advantages), dim=0)
-        combined.returns = torch.cat(tuple(returns), dim=0)
+            advantages.extend(buffer.advantages)
+            returns.extend(buffer.returns)
+        combined.advantages = tuple(advantages)
+        combined.returns = tuple(returns)
         return combined
 
     def compute_returns_and_advantages(
@@ -73,8 +71,8 @@ class MovementRolloutBuffer:
             use_discounted_return_targets=use_discounted_return_targets,
             bootstrap_values=bootstrap_values,
         )
-        self.advantages = targets.advantages
-        self.returns = targets.returns
+        self.advantages = tuple(targets.advantages[step_index] for step_index in range(targets.advantages.shape[0]))
+        self.returns = tuple(targets.returns[step_index] for step_index in range(targets.returns.shape[0]))
 
     def iterate_minibatches(
         self,
@@ -89,24 +87,23 @@ class MovementRolloutBuffer:
         for start in range(0, len(self.transitions), batch_size):
             batch_indices = indices[start : start + batch_size]
             transitions = tuple(self.transitions[int(index)] for index in batch_indices)
-            actions = torch.tensor(
-                tuple(transition.actions for transition in transitions),
-                dtype=torch.long,
-                device=torch_device,
-            )
-            old_log_probs = torch.tensor(
-                tuple(transition.old_log_probs for transition in transitions),
-                dtype=torch.float32,
-                device=torch_device,
-            )
-            advantages = self.advantages[batch_indices].to(torch_device)
-            returns = self.returns[batch_indices].to(torch_device)
-            policy_mask = torch.tensor(
+            old_log_probs = torch.cat(
                 tuple(
-                    tuple(sum(action_mask) > 1 for action_mask in transition.action_masks) for transition in transitions
-                ),
-                dtype=torch.bool,
-                device=torch_device,
+                    torch.tensor(transition.old_log_probs, dtype=torch.float32, device=torch_device)
+                    for transition in transitions
+                )
+            )
+            advantages = torch.cat(tuple(self.advantages[int(index)].to(torch_device) for index in batch_indices))
+            returns = torch.cat(tuple(self.returns[int(index)].to(torch_device) for index in batch_indices))
+            policy_mask = torch.cat(
+                tuple(
+                    torch.tensor(
+                        tuple(sum(action_mask) > 1 for action_mask in transition.action_masks),
+                        dtype=torch.bool,
+                        device=torch_device,
+                    )
+                    for transition in transitions
+                )
             )
             normalized_advantages = normalize_advantages(
                 advantages=advantages,
@@ -114,7 +111,6 @@ class MovementRolloutBuffer:
             )
             yield MovementPpoBatch(
                 transitions=transitions,
-                actions=actions,
                 old_log_probs=old_log_probs,
                 advantages=normalized_advantages,
                 returns=returns,

@@ -96,7 +96,7 @@ def test_rollout_buffer_computes_discounted_returns_for_value_warmup() -> None:
     )
 
     assert buffer.returns is not None
-    assert tuple(float(value) for value in buffer.returns[:, 0]) == (2.0, 2.0)
+    assert tuple(float(row[0]) for row in buffer.returns) == (2.0, 2.0)
 
 
 def test_reward_clipping_limits_gridlock_outliers() -> None:
@@ -431,8 +431,8 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
 
     batch = next(buffer.iterate_minibatches(transitions_per_batch=1, device='cpu'))
 
-    assert batch.policy_mask.tolist() == [[False]]
-    assert batch.advantages.tolist() == [[0.0]]
+    assert batch.policy_mask.tolist() == [False]
+    assert batch.advantages.tolist() == [0.0]
 
 
 def test_rollout_bootstraps_truncated_returns_from_next_state_value() -> None:
@@ -457,8 +457,8 @@ def test_rollout_bootstraps_truncated_returns_from_next_state_value() -> None:
 
     assert buffer.returns is not None
     assert buffer.advantages is not None
-    assert tuple(float(value) for value in buffer.returns[:, 0]) == (3.0, 4.0)
-    assert tuple(float(value) for value in buffer.advantages[:, 0]) == (2.75, 3.5)
+    assert tuple(float(row[0]) for row in buffer.returns) == (3.0, 4.0)
+    assert tuple(float(row[0]) for row in buffer.advantages) == (2.75, 3.5)
 
 
 def test_rollout_ignores_bootstrap_after_true_terminal_state() -> None:
@@ -482,8 +482,8 @@ def test_rollout_ignores_bootstrap_after_true_terminal_state() -> None:
 
     assert buffer.returns is not None
     assert buffer.advantages is not None
-    assert float(buffer.returns[0, 0]) == 2.0
-    assert float(buffer.advantages[0, 0]) == 1.5
+    assert float(buffer.returns[0][0]) == 2.0
+    assert float(buffer.advantages[0][0]) == 1.5
 
 
 def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bootstrap() -> None:
@@ -525,8 +525,51 @@ def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bo
     assert len(combined) == 2
     assert combined.returns is not None
     assert combined.advantages is not None
-    assert tuple(float(value) for value in combined.returns[:, 0]) == (3.0, 7.0)
-    assert tuple(float(value) for value in combined.advantages[:, 0]) == (3.0, 7.0)
+    assert tuple(float(row[0]) for row in combined.returns) == (3.0, 7.0)
+    assert tuple(float(row[0]) for row in combined.advantages) == (3.0, 7.0)
+
+
+def test_rollout_buffer_concatenates_different_traffic_light_counts() -> None:
+    first = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
+    first.add(
+        MovementTransition(
+            sample=_sample(),
+            actions=(0,),
+            old_log_probs=(0.0,),
+            action_masks=((True,),),
+            rewards=(1.0,),
+            values=(0.0,),
+            done=True,
+        )
+    )
+    first.compute_returns_and_advantages(
+        use_discounted_return_targets=True,
+        bootstrap_values=(0.0,),
+    )
+    second = MovementRolloutBuffer(traffic_light_count=2, gamma=0.5, lam=1.0)
+    second.add(
+        MovementTransition(
+            sample=_sample(),
+            actions=(0, 1),
+            old_log_probs=(0.0, -0.5),
+            action_masks=((True,), (True, True)),
+            rewards=(2.0, 3.0),
+            values=(0.0, 1.0),
+            done=True,
+        )
+    )
+    second.compute_returns_and_advantages(
+        use_discounted_return_targets=True,
+        bootstrap_values=(0.0, 0.0),
+    )
+
+    combined = MovementRolloutBuffer.concatenate_computed((first, second))
+    batch = next(combined.iterate_minibatches(transitions_per_batch=2, device='cpu'))
+
+    assert len(combined) == 2
+    assert batch.old_log_probs.shape == (3,)
+    assert sorted(batch.returns.tolist()) == [1.0, 2.0, 3.0]
+    assert batch.policy_mask.tolist().count(True) == 1
 
 
 def _ppo_config(
