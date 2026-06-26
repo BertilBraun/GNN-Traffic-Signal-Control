@@ -43,6 +43,7 @@ wandb/
 
 .pytest_cache/
 .cache/
+.tmp/
 
 checkpoints/
 reports/
