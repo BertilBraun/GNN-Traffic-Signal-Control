@@ -16,6 +16,7 @@ from src.movement.demand import resolve_sumocfg_route_files
 
 EFFECTIVE_VEHICLE_SPACING_M = 8.0
 MAX_ROUTE_ATTEMPTS_PER_VEHICLE = 50
+INITIAL_TRAFFIC_VEHICLE_CLASS = 'passenger'
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ def _candidate_edges(network: Net) -> tuple[Edge, ...]:
         and edge.getFunction() == ''
         and edge.getLength() > 0.0
         and edge.getLaneNumber() > 0
+        and edge.allows(INITIAL_TRAFFIC_VEHICLE_CLASS)
     )
     if not edges:
         raise ValueError('Network has no edges eligible for initial traffic.')
@@ -125,7 +127,11 @@ def _destination_edges(
                 destination_ids.add(inline_route.attrib['edges'].split()[-1])
     if not destination_ids:
         destination_ids.update(edge.getID() for edge in _candidate_edges(network) if not edge.getOutgoing())
-    destinations = tuple(network.getEdge(edge_id) for edge_id in sorted(destination_ids))
+    destinations = tuple(
+        network.getEdge(edge_id)
+        for edge_id in sorted(destination_ids)
+        if network.getEdge(edge_id).allows(INITIAL_TRAFFIC_VEHICLE_CLASS)
+    )
     if not destinations:
         raise ValueError('Route files do not define boundary destination edges.')
     return destinations
@@ -177,6 +183,7 @@ def _sample_route(
             start_edge,
             destination_edge,
             fastest=False,
+            vClass=INITIAL_TRAFFIC_VEHICLE_CLASS,
         )
         if route is None or len(route) < 2:
             continue

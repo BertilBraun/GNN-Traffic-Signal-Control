@@ -2,6 +2,8 @@ from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 
+import sumolib
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -44,5 +46,24 @@ def test_generate_initial_population_writes_valid_route_suffixes() -> None:
         assert all(vehicle.attrib['depart'] == '0' for vehicle in vehicles)
         assert all(vehicle.attrib['departPos'] == 'random_free' for vehicle in vehicles)
         assert all(len(vehicle.find('route').attrib['edges'].split()) >= 2 for vehicle in vehicles)
+    finally:
+        population.cleanup()
+
+
+def test_generate_city_initial_population_uses_passenger_valid_routes() -> None:
+    population = generate_initial_traffic_population(
+        cfg_path=ROOT / 'configs' / 'mannheim_innenstadt' / 'mannheim_innenstadt.sumocfg',
+        net_path=ROOT / 'configs' / 'mannheim_innenstadt' / 'mannheim_innenstadt.net.xml',
+        target_occupancy=0.06,
+        seed=100,
+    )
+
+    try:
+        network = sumolib.net.readNet(str(ROOT / 'configs' / 'mannheim_innenstadt' / 'mannheim_innenstadt.net.xml'))
+        root = ET.parse(population.route_file).getroot()
+        routes = [vehicle.find('route').attrib['edges'].split() for vehicle in root.findall('vehicle')]
+
+        assert routes
+        assert all(network.getEdge(edge_id).allows('passenger') for route in routes for edge_id in route)
     finally:
         population.cleanup()

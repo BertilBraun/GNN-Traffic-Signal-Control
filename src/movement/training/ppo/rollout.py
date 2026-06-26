@@ -31,7 +31,6 @@ from src.movement.normalization import RunningNormalizer
 from src.movement.runtime import MovementControlRuntime
 from src.movement.training.il.checkpoint import MovementCheckpointMetadata, NormalizerState, normalizer_from_state
 from src.movement.training.ppo.policy import (
-    actions_from_states,
     allowed_action_masks,
     current_sample,
     forward_policy,
@@ -459,12 +458,9 @@ def request_runtime_targets(
         actions=actions,
     )
     accepted_states = runtime.request_targets(desired_states)
-    accepted_actions = actions_from_states(
-        programs=runtime.programs,
-        traffic_light_ids=context.traffic_light_ids,
-        states=accepted_states,
-    )
-    if accepted_actions != tuple(actions):
+    if any(
+        accepted_states[traffic_light_id] != desired_states[traffic_light_id] for traffic_light_id in desired_states
+    ):
         raise RuntimeError('Runtime rejected an action permitted by the PPO action mask.')
     return accepted_states
 
