@@ -1995,6 +1995,10 @@ for the active movement runtime. `scripts/inspect_movement_city.py` validates a
 city config by starting `MovementControlRuntime`, extracting selectable
 programs, building the movement graph, and reporting skipped traffic lights and
 suspicious graph structure. Usage commands are in `docs/city_osm_usage.md`.
+The next OSM tooling layer is specified in `docs/network_build_pipeline_plan.md`:
+cache Overpass responses, add replayable manual prune recipes, build an HTML
+prune UI, and wrap build/inspect/visualize/run steps in one coherent workbench
+script.
 
 Deliverables:
 

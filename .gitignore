@@ -46,3 +46,4 @@ wandb/
 
 checkpoints/
 reports/
+data/
