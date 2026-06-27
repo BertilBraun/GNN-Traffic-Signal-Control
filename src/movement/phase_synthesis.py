@@ -106,24 +106,80 @@ def _atomic_link_groups(
     indexed_links: list[TrafficLightLinkSpec],
     are_foes: Callable[[int, int], bool],
 ) -> tuple[_AtomicLinkGroup, ...]:
-    grouped_links: dict[LaneId | int, list[TrafficLightLinkSpec]] = {}
-    for link in indexed_links:
-        key: LaneId | int = (
-            link.incoming_lane_id if link.incoming_lane_id is not None else link.traffic_light_link_index
-        )
-        grouped_links.setdefault(key, []).append(link)
+    grouped_links = sorted(
+        _atomic_link_components(indexed_links),
+        key=lambda links: min(link.traffic_light_link_index for link in links),
+    )
     groups = tuple(
         _AtomicLinkGroup(
             links=tuple(links),
             enabled_indices=frozenset(link.traffic_light_link_index for link in links),
         )
-        for _key, links in sorted(
-            grouped_links.items(),
-            key=lambda item: min(link.traffic_light_link_index for link in item[1]),
-        )
+        for links in grouped_links
         if not _has_sumo_or_outgoing_edge_conflict(links, are_foes)
     )
     return groups
+
+
+def _atomic_link_components(
+    indexed_links: list[TrafficLightLinkSpec],
+) -> tuple[list[TrafficLightLinkSpec], ...]:
+    remaining_indices = set(range(len(indexed_links)))
+    components: list[list[TrafficLightLinkSpec]] = []
+    while remaining_indices:
+        start_index = min(remaining_indices)
+        component_indices = _atomic_component_indices(start_index, indexed_links)
+        remaining_indices -= component_indices
+        components.append([indexed_links[index] for index in sorted(component_indices)])
+    return tuple(components)
+
+
+def _atomic_component_indices(
+    start_index: int,
+    indexed_links: list[TrafficLightLinkSpec],
+) -> set[int]:
+    component_indices = {start_index}
+    pending_indices = [start_index]
+    while pending_indices:
+        first_index = pending_indices.pop()
+        for second_index, second in enumerate(indexed_links):
+            if second_index in component_indices:
+                continue
+            first = indexed_links[first_index]
+            if _links_share_atomic_activation_constraint(first, second):
+                component_indices.add(second_index)
+                pending_indices.append(second_index)
+    return component_indices
+
+
+def _links_share_atomic_activation_constraint(
+    first: TrafficLightLinkSpec,
+    second: TrafficLightLinkSpec,
+) -> bool:
+    if first.incoming_lane_id is not None and first.incoming_lane_id == second.incoming_lane_id:
+        return True
+    return _same_approach_to_same_outgoing_destination(first, second)
+
+
+def _same_approach_to_same_outgoing_destination(
+    first: TrafficLightLinkSpec,
+    second: TrafficLightLinkSpec,
+) -> bool:
+    first_incoming_edge_id = _edge_id_from_lane_id(first.incoming_lane_id)
+    second_incoming_edge_id = _edge_id_from_lane_id(second.incoming_lane_id)
+    if first_incoming_edge_id is None or first_incoming_edge_id != second_incoming_edge_id:
+        return False
+    first_outgoing_destination = _outgoing_destination(first)
+    second_outgoing_destination = _outgoing_destination(second)
+    return first_outgoing_destination is not None and first_outgoing_destination == second_outgoing_destination
+
+
+def _outgoing_destination(link: TrafficLightLinkSpec) -> str | None:
+    if link.outgoing_lane_id is not None:
+        return f'lane:{link.outgoing_lane_id}'
+    if link.outgoing_edge_id is not None:
+        return f'edge:{link.outgoing_edge_id}'
+    return None
 
 
 def _maximal_compatible_group_sets(

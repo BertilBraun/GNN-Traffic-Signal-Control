@@ -170,6 +170,47 @@ def test_conflict_phases_do_not_generate_left_plus_right_without_parallel_straig
     assert 'GrrG' not in {str(state) for state in states}
 
 
+def test_conflict_phases_do_not_partially_open_parallel_lanes_to_same_destination() -> None:
+    links = [
+        TrafficLightLinkSpec(
+            traffic_light_link_index=0,
+            incoming_lane_id=LaneId('north_in_0'),
+            outgoing_edge_id='south_out',
+            request_index=0,
+        ),
+        TrafficLightLinkSpec(
+            traffic_light_link_index=1,
+            incoming_lane_id=LaneId('north_in_1'),
+            outgoing_edge_id='south_out',
+            request_index=1,
+        ),
+        TrafficLightLinkSpec(
+            traffic_light_link_index=2,
+            incoming_lane_id=LaneId('north_in_1'),
+            outgoing_edge_id='east_out',
+            request_index=2,
+        ),
+        TrafficLightLinkSpec(
+            traffic_light_link_index=3,
+            incoming_lane_id=LaneId('east_in_0'),
+            outgoing_edge_id='west_out',
+            request_index=3,
+        ),
+    ]
+
+    def are_foes(first: int, second: int) -> bool:
+        return {first, second} == {2, 3}
+
+    states = build_conflict_phase_states(
+        links=links,
+        number_of_links=4,
+        are_foes=are_foes,
+    )
+
+    assert [str(state) for state in states] == ['GGGr', 'rrrG']
+    assert 'GrrG' not in {str(state) for state in states}
+
+
 def test_conflict_phase_synthesis_groups_shared_lanes_before_search() -> None:
     links = [
         TrafficLightLinkSpec(
