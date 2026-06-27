@@ -23,6 +23,7 @@ from src.movement.evaluation import (
 )
 from src.movement.evaluation.multi_city import (
     MultiCityEvaluationAggregate,
+    MultiCityEvaluationRunRequest,
     MultiCityEvaluationResult,
     aggregate_multi_city_records,
     default_episode_runner,
@@ -165,7 +166,7 @@ def run_multi_city_training_evaluation(
         steps=config.eval_steps,
         demand_scales=config.eval_demand_scales,
         learned_policy_config=learned_policy_config,
-        episode_runner=default_episode_runner,
+        episode_runner=cached_multi_city_episode_runner,
     )
     write_multi_city_evaluation_scalars(
         writer=writer,
@@ -352,6 +353,65 @@ def checkpoint_selection_score(
         return float('inf')
     teleport_rate = metrics.teleport_count / max(1, metrics.departed_vehicles)
     return metrics.average_time_loss_s / metrics.completion_rate + evaluation_steps * teleport_rate
+
+
+def cached_multi_city_episode_runner(
+    request: MultiCityEvaluationRunRequest,
+    learned_policy_config: LearnedPolicyConfig | None,
+) -> EvaluationMetrics:
+    if request.policy == EvaluationPolicy.LEARNED:
+        return default_episode_runner(request, learned_policy_config)
+    return _cached_multi_city_baseline_metrics(
+        city_name=request.city_name,
+        city_split=request.city_split,
+        sumo_config_path=request.sumo_config_path,
+        policy=request.policy,
+        seed=request.seed,
+        demand_scale=request.demand_scale,
+        steps=request.steps,
+        decision_interval=request.decision_interval,
+        yellow_duration=request.yellow_duration,
+        minimum_green_steps=request.minimum_green_steps,
+        minimum_initial_occupancy=request.minimum_initial_occupancy,
+        maximum_initial_occupancy=request.maximum_initial_occupancy,
+        time_to_teleport=request.time_to_teleport,
+    )
+
+
+@cache
+def _cached_multi_city_baseline_metrics(
+    city_name: str,
+    city_split: CitySplit,
+    sumo_config_path: Path,
+    policy: EvaluationPolicy,
+    seed: int,
+    demand_scale: float,
+    steps: int,
+    decision_interval: int,
+    yellow_duration: int,
+    minimum_green_steps: int,
+    minimum_initial_occupancy: float,
+    maximum_initial_occupancy: float,
+    time_to_teleport: int | None,
+) -> EvaluationMetrics:
+    return default_episode_runner(
+        MultiCityEvaluationRunRequest(
+            city_name=city_name,
+            city_split=city_split,
+            sumo_config_path=sumo_config_path,
+            policy=policy,
+            seed=seed,
+            demand_scale=demand_scale,
+            steps=steps,
+            decision_interval=decision_interval,
+            yellow_duration=yellow_duration,
+            minimum_green_steps=minimum_green_steps,
+            minimum_initial_occupancy=minimum_initial_occupancy,
+            maximum_initial_occupancy=maximum_initial_occupancy,
+            time_to_teleport=time_to_teleport,
+        ),
+        None,
+    )
 
 
 def _evaluation_records(
