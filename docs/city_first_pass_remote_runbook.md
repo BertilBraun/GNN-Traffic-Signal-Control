@@ -8,6 +8,10 @@ Use `configs/training/city_first_pass_16_worker.yaml` for this run. It schedules
 four rollout workers per training city, sixteen rollout workers total, and keeps
 Freiburg as held-out evaluation only.
 
+Deterministic baseline evaluations are cached under `.cache/evaluation` by
+default. Re-running the same max-pressure or queue evaluation parameters reuses
+the cached metrics; learned-policy evaluations always run again.
+
 ## 1. Machine Sanity Check
 
 ```bash
@@ -43,6 +47,12 @@ The expected combined dataset is:
 ```text
 data/il/city_first_pass_16_worker/combined.jsonl
 ```
+
+The config keeps `samples_per_city: 9600`, `samples_per_simulation: 80`, and the
+collector default `sample_stride: 3`. Each collection simulation therefore keeps
+80 samples, advances through 240 raw decisions, and stops after about 2400 SUMO
+seconds with the 10-second decision interval. That requires 120 simulations per
+training city, or 480 collection jobs total across the four training cities.
 
 ## 4. IL Training
 

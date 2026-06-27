@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.movement.evaluation import EvaluationPolicy, LearnedPolicyConfig  # noqa: E402
 from src.movement.evaluation.multi_city import (  # noqa: E402
+    FileCachedEpisodeRunner,
     default_episode_runner,
     print_multi_city_summary,
     run_multi_city_evaluation,
@@ -47,6 +48,12 @@ def parse_arguments() -> argparse.Namespace:
         help='Override experiment evaluation demand scales',
     )
     parser.add_argument('--log-dir', type=Path, default=None, help='Optional TensorBoard output directory')
+    parser.add_argument(
+        '--cache-dir',
+        type=Path,
+        default=ROOT / '.cache' / 'evaluation',
+        help='Directory for deterministic baseline evaluation cache files',
+    )
     return parser.parse_args()
 
 
@@ -81,7 +88,10 @@ def main() -> None:
         steps=steps,
         demand_scales=demand_scales,
         learned_policy_config=learned_policy_config,
-        episode_runner=default_episode_runner,
+        episode_runner=FileCachedEpisodeRunner(
+            cache_dir=parsed_arguments.cache_dir,
+            episode_runner=default_episode_runner,
+        ),
     )
     parsed_arguments.output_dir.mkdir(parents=True, exist_ok=True)
     json_path = parsed_arguments.output_dir / 'summary.json'

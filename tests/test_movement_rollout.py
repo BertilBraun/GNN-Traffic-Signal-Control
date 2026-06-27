@@ -11,12 +11,15 @@ sys.path.insert(0, str(ROOT))
 from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy
 from src.movement.evaluation import LearnedPolicyConfig
-from src.movement.evaluation.multi_city import MultiCityEvaluationAggregate, MultiCityEvaluationRunRequest
+from src.movement.evaluation.multi_city import (
+    FileCachedEpisodeRunner,
+    MultiCityEvaluationAggregate,
+    MultiCityEvaluationRunRequest,
+)
 from src.movement.experiment_config import CitySplit
 from src.movement.training.il.checkpoint import NormalizerState
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.ppo import validate_config
-from src.movement.training.ppo import evaluation as ppo_evaluation
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
     SpeedChangeTracker,
@@ -217,7 +220,7 @@ def test_held_out_learned_score_ignores_train_city_aggregates() -> None:
     assert score == pytest.approx(checkpoint_selection_score(metrics=held_out_metrics, evaluation_steps=600))
 
 
-def test_multi_city_ppo_evaluation_caches_baselines_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_file_cached_episode_runner_caches_baselines_only(tmp_path: Path) -> None:
     calls: list[EvaluationPolicy] = []
 
     def fake_episode_runner(
@@ -227,8 +230,10 @@ def test_multi_city_ppo_evaluation_caches_baselines_only(monkeypatch: pytest.Mon
         calls.append(request.policy)
         return _evaluation_metrics(completed_vehicles=1, departed_vehicles=1, average_time_loss_s=1.0)
 
-    monkeypatch.setattr(ppo_evaluation, 'default_episode_runner', fake_episode_runner)
-    ppo_evaluation._cached_multi_city_baseline_metrics.cache_clear()
+    cached_runner = FileCachedEpisodeRunner(
+        cache_dir=tmp_path / 'cache',
+        episode_runner=fake_episode_runner,
+    )
     baseline_request = _multi_city_request(policy=EvaluationPolicy.MAX_PRESSURE)
     learned_request = _multi_city_request(policy=EvaluationPolicy.LEARNED)
     learned_policy_config = LearnedPolicyConfig(
@@ -236,10 +241,10 @@ def test_multi_city_ppo_evaluation_caches_baselines_only(monkeypatch: pytest.Mon
         device='cpu',
     )
 
-    ppo_evaluation.cached_multi_city_episode_runner(baseline_request, None)
-    ppo_evaluation.cached_multi_city_episode_runner(baseline_request, None)
-    ppo_evaluation.cached_multi_city_episode_runner(learned_request, learned_policy_config)
-    ppo_evaluation.cached_multi_city_episode_runner(learned_request, learned_policy_config)
+    cached_runner(baseline_request, None)
+    cached_runner(baseline_request, None)
+    cached_runner(learned_request, learned_policy_config)
+    cached_runner(learned_request, learned_policy_config)
 
     assert calls.count(EvaluationPolicy.MAX_PRESSURE) == 1
     assert calls.count(EvaluationPolicy.LEARNED) == 2

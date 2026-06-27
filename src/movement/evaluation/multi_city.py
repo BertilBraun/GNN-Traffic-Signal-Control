@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import csv
+from hashlib import sha256
+import json
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -72,6 +74,76 @@ class MultiCityEvaluationResult:
 EpisodeRunner = Callable[[MultiCityEvaluationRunRequest, LearnedPolicyConfig | None], EvaluationMetrics]
 
 
+@dataclass(frozen=True)
+class FileCachedEpisodeRunner:
+    cache_dir: Path
+    episode_runner: EpisodeRunner
+
+    def __call__(
+        self,
+        request: MultiCityEvaluationRunRequest,
+        learned_policy_config: LearnedPolicyConfig | None,
+    ) -> EvaluationMetrics:
+        if request.policy == EvaluationPolicy.LEARNED:
+            return self.episode_runner(request, learned_policy_config)
+        key = MultiCityEvaluationCacheKey.from_request(request)
+        path = self.cache_dir / f'{key.sha256()}.json'
+        if path.exists():
+            return MultiCityEvaluationCacheEntry.model_validate_json(
+                path.read_text(encoding='utf-8')
+            ).metrics_dataclass()
+        metrics = self.episode_runner(request, None)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            MultiCityEvaluationCacheEntry(
+                key=key,
+                metrics=EvaluationMetricsOutput.model_validate(metrics),
+            ).model_dump_json(indent=2),
+            encoding='utf-8',
+        )
+        return metrics
+
+
+class MultiCityEvaluationCacheKey(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    city_name: str
+    city_split: str
+    sumo_config_path: str
+    policy: str
+    seed: int
+    demand_scale: float
+    steps: int
+    decision_interval: int
+    yellow_duration: int
+    minimum_green_steps: int
+    minimum_initial_occupancy: float
+    maximum_initial_occupancy: float
+    time_to_teleport: int | None
+
+    @classmethod
+    def from_request(cls, request: MultiCityEvaluationRunRequest) -> 'MultiCityEvaluationCacheKey':
+        return cls(
+            city_name=request.city_name,
+            city_split=request.city_split.value,
+            sumo_config_path=str(request.sumo_config_path.resolve()),
+            policy=request.policy.value,
+            seed=request.seed,
+            demand_scale=request.demand_scale,
+            steps=request.steps,
+            decision_interval=request.decision_interval,
+            yellow_duration=request.yellow_duration,
+            minimum_green_steps=request.minimum_green_steps,
+            minimum_initial_occupancy=request.minimum_initial_occupancy,
+            maximum_initial_occupancy=request.maximum_initial_occupancy,
+            time_to_teleport=request.time_to_teleport,
+        )
+
+    def sha256(self) -> str:
+        payload = json.dumps(self.model_dump(mode='json'), sort_keys=True, separators=(',', ':'))
+        return sha256(payload.encode('utf-8')).hexdigest()
+
+
 class EvaluationMetricsOutput(BaseModel):
     model_config = ConfigDict(frozen=True, from_attributes=True)
 
@@ -95,6 +167,16 @@ class EvaluationMetricsOutput(BaseModel):
     per_junction_wait_density_s_per_m: dict[str, float]
     per_junction_max_queue_length_vehicles: dict[str, float]
     per_junction_phase_counts: dict[str, tuple[int, ...]]
+
+
+class MultiCityEvaluationCacheEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: MultiCityEvaluationCacheKey
+    metrics: EvaluationMetricsOutput
+
+    def metrics_dataclass(self) -> EvaluationMetrics:
+        return EvaluationMetrics(**self.metrics.model_dump())
 
 
 class MultiCityEvaluationRecordOutput(BaseModel):
