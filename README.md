@@ -8,12 +8,10 @@ On a fresh Ubuntu-style GPU node, start the first city training pass with:
 curl -L https://raw.githubusercontent.com/BertilBraun/GNN-Traffic-Signal-Control/master/train.sh | bash
 ```
 
-Do not pipe this script into `sh`; it is a Bash script.
-
 Default startup behavior:
 
 - `DEVICE=cuda`
-- `WORKERS=8`
+- `WORKERS=16`
 - `RUN_FULL_PPO=0`, so it stops after the 100-iteration PPO pilot
 - TensorBoard starts on `0.0.0.0:6006`
 - city SUMO networks are rebuilt from the committed build recipes
@@ -22,7 +20,7 @@ Default startup behavior:
 Common overrides:
 
 ```bash
-curl -L https://raw.githubusercontent.com/BertilBraun/GNN-Traffic-Signal-Control/master/train.sh | env WORKERS=16 bash
+curl -L https://raw.githubusercontent.com/BertilBraun/GNN-Traffic-Signal-Control/master/train.sh | env WORKERS=8 bash
 curl -L https://raw.githubusercontent.com/BertilBraun/GNN-Traffic-Signal-Control/master/train.sh | env RUN_TESTS=0 bash
 curl -L https://raw.githubusercontent.com/BertilBraun/GNN-Traffic-Signal-Control/master/train.sh | env RUN_FULL_PPO=1 bash
 ```

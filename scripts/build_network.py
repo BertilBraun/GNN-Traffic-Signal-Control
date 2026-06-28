@@ -384,6 +384,10 @@ def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str, prune_
         if roundabouts:
             print(f'  Removed {roundabouts} stale roundabout metadata entries')
 
+        stripped_edge_types = _strip_plain_edge_types(edg_file)
+        if stripped_edge_types:
+            print(f'  Stripped {stripped_edge_types} OSM edge type references from plain edges')
+
         merged_total, loop_total, spur_total = 0, 0, 0
         for _ in range(20):
             spurs = _remove_dead_end_spurs_in_plain(nod_file, edg_file)
@@ -470,6 +474,21 @@ def _remove_roundabouts_in_plain(edg_file: Path) -> int:
     if removed:
         edges_tree.write(str(edg_file), encoding='utf-8', xml_declaration=True)
     return removed
+
+
+def _strip_plain_edge_types(edg_file: Path) -> int:
+    """Remove OSM type references after netconvert materializes edge attributes."""
+    edges_tree = ET.parse(str(edg_file))
+    edges_root = edges_tree.getroot()
+    stripped = 0
+    for edge in edges_root.findall('edge'):
+        if 'type' not in edge.attrib:
+            continue
+        del edge.attrib['type']
+        stripped += 1
+    if stripped:
+        edges_tree.write(str(edg_file), encoding='utf-8', xml_declaration=True)
+    return stripped
 
 
 def _apply_prune_recipe_to_plain(
