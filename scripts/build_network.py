@@ -95,6 +95,7 @@ class NetconvertOsmImportOptions:
     join_junctions: bool
     guess_signal_clusters: bool
     remove_geometry_nodes: bool
+    simple_projection: bool
 
 
 @dataclass(frozen=True)
@@ -344,24 +345,35 @@ def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netco
             join_junctions=True,
             guess_signal_clusters=True,
             remove_geometry_nodes=True,
+            simple_projection=False,
         ),
         NetconvertOsmImportOptions(
             label='OSM import without SUMO junction/TL joining',
             join_junctions=False,
             guess_signal_clusters=True,
             remove_geometry_nodes=True,
+            simple_projection=False,
         ),
         NetconvertOsmImportOptions(
             label='OSM import without SUMO signal clustering',
             join_junctions=False,
             guess_signal_clusters=False,
             remove_geometry_nodes=True,
+            simple_projection=False,
         ),
         NetconvertOsmImportOptions(
             label='geometry-preserving OSM import',
             join_junctions=False,
             guess_signal_clusters=False,
             remove_geometry_nodes=False,
+            simple_projection=False,
+        ),
+        NetconvertOsmImportOptions(
+            label='simple-projection OSM import',
+            join_junctions=False,
+            guess_signal_clusters=False,
+            remove_geometry_nodes=False,
+            simple_projection=True,
         ),
     )
 
@@ -416,6 +428,8 @@ def _netconvert_osm_import_command(
         command.extend(['--geometry.remove', 'true'])
     if import_options.guess_signal_clusters:
         command.extend(['--tls.guess-signals', 'true'])
+    if import_options.simple_projection:
+        command.extend(['--simple-projection', 'true'])
     if import_options.join_junctions:
         command.extend(
             [

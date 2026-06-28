@@ -76,6 +76,7 @@ def test_netconvert_osm_import_command_can_disable_sumo_import_helpers(tmp_path:
             join_junctions=True,
             guess_signal_clusters=True,
             remove_geometry_nodes=True,
+            simple_projection=False,
         ),
     )
     fallback_command = _netconvert_osm_import_command(
@@ -88,6 +89,7 @@ def test_netconvert_osm_import_command_can_disable_sumo_import_helpers(tmp_path:
             join_junctions=False,
             guess_signal_clusters=False,
             remove_geometry_nodes=False,
+            simple_projection=True,
         ),
     )
 
@@ -99,6 +101,7 @@ def test_netconvert_osm_import_command_can_disable_sumo_import_helpers(tmp_path:
     assert '--tls.join' not in fallback_command
     assert '--tls.guess-signals' not in fallback_command
     assert '--geometry.remove' not in fallback_command
+    assert '--simple-projection' in fallback_command
     assert fallback_command[:5] == ['netconvert', '--osm-files', str(osm_path), '--output-file', str(net_path)]
 
 
