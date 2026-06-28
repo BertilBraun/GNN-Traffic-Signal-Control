@@ -290,6 +290,38 @@ def _run_netconvert(
 
 
 def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netconvert: str) -> None:
+    cmd = _netconvert_osm_import_command(
+        osm_path=osm_path,
+        net_path=net_path,
+        join_dist=join_dist,
+        netconvert=netconvert,
+        join_junctions=True,
+    )
+    print('  Running netconvert (OSM import) ...')
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 and _is_netconvert_internal_abort(result):
+        print(result.stderr[-3000:])
+        print('  netconvert aborted during joined OSM import; retrying without SUMO junction/TL joining ...')
+        fallback_cmd = _netconvert_osm_import_command(
+            osm_path=osm_path,
+            net_path=net_path,
+            join_dist=join_dist,
+            netconvert=netconvert,
+            join_junctions=False,
+        )
+        result = subprocess.run(fallback_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr[-3000:])
+        raise RuntimeError(f'netconvert OSM import failed (exit {result.returncode})')
+
+
+def _netconvert_osm_import_command(
+    osm_path: Path,
+    net_path: Path,
+    join_dist: float,
+    netconvert: str,
+    join_junctions: bool,
+) -> list[str]:
     cmd = [
         netconvert,
         '--osm-files',
@@ -300,14 +332,6 @@ def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netco
         'true',
         '--geometry.remove',
         'true',
-        '--junctions.join',
-        'true',
-        '--junctions.join-dist',
-        str(join_dist),
-        '--tls.join',
-        'true',
-        '--tls.join-dist',
-        str(join_dist),
         '--tls.guess-signals',
         'true',
         '--remove-edges.by-vclass',
@@ -317,11 +341,24 @@ def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netco
         '--osm.crossings',
         'false',
     ]
-    print('  Running netconvert (OSM import) ...')
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(result.stderr[-3000:])
-        raise RuntimeError(f'netconvert OSM import failed (exit {result.returncode})')
+    if join_junctions:
+        cmd.extend(
+            [
+                '--junctions.join',
+                'true',
+                '--junctions.join-dist',
+                str(join_dist),
+                '--tls.join',
+                'true',
+                '--tls.join-dist',
+                str(join_dist),
+            ]
+        )
+    return cmd
+
+
+def _is_netconvert_internal_abort(result: subprocess.CompletedProcess[str]) -> bool:
+    return result.returncode < 0 or 'Assertion `' in result.stderr
 
 
 def _plain_xml_cleanup(net_path: Path, join_dist: float, netconvert: str, prune_recipe: PruneRecipe | None) -> None:
