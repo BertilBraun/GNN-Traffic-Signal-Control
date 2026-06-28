@@ -263,15 +263,55 @@ def _fetch_osm_for_bbox(
     cache_path = cache_directory / f'{_osm_cache_key(bbox=bbox, query=query)}.osm'
     if cache_path.exists() and not refresh_osm:
         shutil.copy2(cache_path, output_path)
+        reordered = _normalize_osm_element_order(output_path)
         print(f'  Reused cached OSM {cache_path} -> {output_path}')
+        if reordered:
+            print(f'  Normalized OSM element order for SUMO compatibility ({reordered} moved elements)')
         return OsmSource(path=output_path, kind=OsmSourceKind.CACHE, cache_path=cache_path)
 
     temporary_cache_path = cache_path.with_suffix('.tmp')
     _download_osm_query(bbox=bbox, query=query, out_path=temporary_cache_path)
+    reordered = _normalize_osm_element_order(temporary_cache_path)
     temporary_cache_path.replace(cache_path)
     shutil.copy2(cache_path, output_path)
     print(f'  Cached OSM {cache_path} -> {output_path}')
+    if reordered:
+        print(f'  Normalized OSM element order for SUMO compatibility ({reordered} moved elements)')
     return OsmSource(path=output_path, kind=OsmSourceKind.DOWNLOAD, cache_path=cache_path)
+
+
+def _normalize_osm_element_order(osm_path: Path) -> int:
+    tree = ET.parse(str(osm_path))
+    root = tree.getroot()
+    children = list(root)
+    ordered_children = sorted(children, key=_osm_element_rank)
+    moved = sum(1 for old_child, new_child in zip(children, ordered_children) if old_child is not new_child)
+    if moved == 0:
+        return 0
+    for child in children:
+        root.remove(child)
+    for child in ordered_children:
+        root.append(child)
+    tree.write(str(osm_path), encoding='utf-8', xml_declaration=True)
+    return moved
+
+
+def _osm_element_rank(element: ET.Element) -> int:
+    match element.tag:
+        case 'note':
+            return 0
+        case 'meta':
+            return 1
+        case 'bounds':
+            return 2
+        case 'node':
+            return 3
+        case 'way':
+            return 4
+        case 'relation':
+            return 5
+        case _:
+            return 6
 
 
 # ---------------------------------------------------------------------------

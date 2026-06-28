@@ -10,6 +10,7 @@ from scripts.build_network import (
     NetconvertOsmImportOptions,
     _is_netconvert_internal_abort,
     _netconvert_osm_import_command,
+    _normalize_osm_element_order,
     _strip_plain_edge_types,
 )
 
@@ -34,6 +35,31 @@ def test_strip_plain_edge_types_removes_osm_type_references(tmp_path: Path) -> N
     assert edges_by_id['a'].get('priority') == '3'
     assert edges_by_id['a'].get('speed') == '8.33'
     assert edges_by_id['b'].get('priority') == '10'
+
+
+def test_normalize_osm_element_order_moves_nodes_before_ways(tmp_path: Path) -> None:
+    osm_path = tmp_path / 'city.osm'
+    osm_path.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <way id="10">
+    <nd ref="1"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <note>source</note>
+  <node id="1" lat="49.0" lon="8.0"/>
+  <relation id="20"/>
+  <meta osm_base="2026-06-28T00:00:00Z"/>
+</osm>
+""",
+        encoding='utf-8',
+    )
+
+    moved = _normalize_osm_element_order(osm_path)
+
+    child_tags = [child.tag for child in ET.parse(osm_path).getroot()]
+    assert moved > 0
+    assert child_tags == ['note', 'meta', 'node', 'way', 'relation']
 
 
 def test_netconvert_osm_import_command_can_disable_sumo_import_helpers(tmp_path: Path) -> None:
