@@ -118,10 +118,10 @@ build_city_networks() {
     local build_file
     for build_file in \
         configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml \
-        configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml \
         configs/stuttgart_mitte/stuttgart_mitte.build.yaml \
         configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml \
-        configs/freiburg_altstadt/freiburg_altstadt.build.yaml
+        configs/freiburg_altstadt/freiburg_altstadt.build.yaml \
+        configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
     do
         run_command uv run python scripts/network_workbench.py --build-file "$build_file" rebuild
     done
