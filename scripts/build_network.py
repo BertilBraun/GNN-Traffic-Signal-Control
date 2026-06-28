@@ -90,6 +90,14 @@ class OsmSource:
 
 
 @dataclass(frozen=True)
+class NetconvertOsmImportOptions:
+    label: str
+    join_junctions: bool
+    guess_signal_clusters: bool
+    remove_geometry_nodes: bool
+
+
+@dataclass(frozen=True)
 class PruneApplicationReport:
     deleted_junction_count: int
     deleted_edge_count: int
@@ -290,26 +298,53 @@ def _run_netconvert(
 
 
 def _netconvert_from_osm(osm_path: Path, net_path: Path, join_dist: float, netconvert: str) -> None:
-    cmd = _netconvert_osm_import_command(
-        osm_path=osm_path,
-        net_path=net_path,
-        join_dist=join_dist,
-        netconvert=netconvert,
-        join_junctions=True,
+    import_options = (
+        NetconvertOsmImportOptions(
+            label='joined OSM import',
+            join_junctions=True,
+            guess_signal_clusters=True,
+            remove_geometry_nodes=True,
+        ),
+        NetconvertOsmImportOptions(
+            label='OSM import without SUMO junction/TL joining',
+            join_junctions=False,
+            guess_signal_clusters=True,
+            remove_geometry_nodes=True,
+        ),
+        NetconvertOsmImportOptions(
+            label='OSM import without SUMO signal clustering',
+            join_junctions=False,
+            guess_signal_clusters=False,
+            remove_geometry_nodes=True,
+        ),
+        NetconvertOsmImportOptions(
+            label='geometry-preserving OSM import',
+            join_junctions=False,
+            guess_signal_clusters=False,
+            remove_geometry_nodes=False,
+        ),
     )
+
     print('  Running netconvert (OSM import) ...')
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0 and _is_netconvert_internal_abort(result):
-        print(result.stderr[-3000:])
-        print('  netconvert aborted during joined OSM import; retrying without SUMO junction/TL joining ...')
-        fallback_cmd = _netconvert_osm_import_command(
+    result: subprocess.CompletedProcess[str] | None = None
+    for index, import_option in enumerate(import_options):
+        if index:
+            print(f'  Retrying netconvert with {import_option.label} ...')
+        command = _netconvert_osm_import_command(
             osm_path=osm_path,
             net_path=net_path,
             join_dist=join_dist,
             netconvert=netconvert,
-            join_junctions=False,
+            import_options=import_option,
         )
-        result = subprocess.run(fallback_cmd, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        if not _is_netconvert_internal_abort(result):
+            break
+        print(result.stderr[-3000:])
+
+    assert result is not None
     if result.returncode != 0:
         print(result.stderr[-3000:])
         raise RuntimeError(f'netconvert OSM import failed (exit {result.returncode})')
@@ -320,19 +355,15 @@ def _netconvert_osm_import_command(
     net_path: Path,
     join_dist: float,
     netconvert: str,
-    join_junctions: bool,
+    import_options: NetconvertOsmImportOptions,
 ) -> list[str]:
-    cmd = [
+    command = [
         netconvert,
         '--osm-files',
         str(osm_path),
         '--output-file',
         str(net_path),
         '--no-turnarounds',
-        'true',
-        '--geometry.remove',
-        'true',
-        '--tls.guess-signals',
         'true',
         '--remove-edges.by-vclass',
         'pedestrian',
@@ -341,8 +372,12 @@ def _netconvert_osm_import_command(
         '--osm.crossings',
         'false',
     ]
-    if join_junctions:
-        cmd.extend(
+    if import_options.remove_geometry_nodes:
+        command.extend(['--geometry.remove', 'true'])
+    if import_options.guess_signal_clusters:
+        command.extend(['--tls.guess-signals', 'true'])
+    if import_options.join_junctions:
+        command.extend(
             [
                 '--junctions.join',
                 'true',
@@ -354,7 +389,7 @@ def _netconvert_osm_import_command(
                 str(join_dist),
             ]
         )
-    return cmd
+    return command
 
 
 def _is_netconvert_internal_abort(result: subprocess.CompletedProcess[str]) -> bool:
