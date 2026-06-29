@@ -23,7 +23,7 @@ from src.movement.training.il import (
     _phase_match_counts,
     _save_training_checkpoints,
 )
-from src.movement.training.il.tensors import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.il.tensors import edge_tensors_from_sample
 from src.movement.training.il.types import (
     MovementILLoss,
     MovementILTrainingConfig,
@@ -87,6 +87,16 @@ class CachedMovementTensorSample:
     phase_incidences: dict[str, StoredPhaseIncidence]
     teacher_selected_phase_by_tls: dict[str, int]
     city_name: str
+
+
+@dataclass(frozen=True)
+class RawTensorPreparationState:
+    dataset_path: str
+    file_size_bytes: int
+    train_indices: tuple[int, ...]
+    cache_indices: tuple[int, ...]
+    lane_normalizer: RunningNormalizer
+    movement_normalizer: RunningNormalizer
 
 
 class IndexedJsonlDataset:
@@ -181,37 +191,16 @@ class MovementTensorCache:
         self.memory_cache: OrderedDict[int, CachedMovementTensorSample] = OrderedDict()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def build(self, sample_indices: Sequence[int]) -> None:
-        missing_indices = tuple(index for index in sample_indices if not self._cache_path(index).exists())
-        if not missing_indices:
-            print(f'tensor_cache existing_samples={len(sample_indices)} cache_dir={self.cache_dir}', flush=True)
-            return
-        started_s = time.monotonic()
-        last_progress_s = started_s
-        print(
-            f'tensor_cache_start missing_samples={len(missing_indices)} cache_dir={self.cache_dir}',
-            flush=True,
-        )
-        for position, sample_index in enumerate(missing_indices, start=1):
-            sample = self.dataset.sample(sample_index)
-            cached_sample = _cached_sample_from_sample(
-                sample=sample,
-                lane_normalizer=self.lane_normalizer,
-                movement_normalizer=self.movement_normalizer,
-                device=torch.device('cpu'),
-            )
-            torch.save(cached_sample, self._cache_path(sample_index))
-            current_s = time.monotonic()
-            if position % 1000 == 0 or position == len(missing_indices) or current_s - last_progress_s >= 60.0:
-                last_progress_s = current_s
-                elapsed_s = time.monotonic() - started_s
-                print(f'tensor_cache samples={position}/{len(missing_indices)} elapsed={_format_duration(elapsed_s)}')
-
     def get(self, sample_index: int) -> CachedMovementTensorSample:
         cached = self.memory_cache.get(sample_index)
         if cached is not None:
             self.memory_cache.move_to_end(sample_index)
-            return _move_cached_sample(cached, self.device)
+            return _normalised_cached_sample(
+                sample=cached,
+                lane_normalizer=self.lane_normalizer,
+                movement_normalizer=self.movement_normalizer,
+                device=self.device,
+            )
         loaded = cast(
             CachedMovementTensorSample,
             torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
@@ -219,7 +208,12 @@ class MovementTensorCache:
         self.memory_cache[sample_index] = loaded
         if len(self.memory_cache) > self.max_cached_samples:
             self.memory_cache.popitem(last=False)
-        return _move_cached_sample(loaded, self.device)
+        return _normalised_cached_sample(
+            sample=loaded,
+            lane_normalizer=self.lane_normalizer,
+            movement_normalizer=self.movement_normalizer,
+            device=self.device,
+        )
 
     def _cache_path(self, sample_index: int) -> Path:
         return self.cache_dir / f'sample_{sample_index:08d}.pt'
@@ -242,32 +236,26 @@ def train_movement_il_from_indexed_jsonl(
     print_indexed_dataset_stats(stats)
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
-    lane_normalizer = _fit_indexed_normalizer(
+    checkpoint_dir = Path(config.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    raw_cache_dir = checkpoint_dir / 'raw_tensor_cache'
+    lane_normalizer, movement_normalizer = _prepare_raw_tensor_cache(
         dataset=dataset,
-        sample_indices=split.train_indices,
-        label='lane',
-        lane_rows=True,
-    )
-    movement_normalizer = _fit_indexed_normalizer(
-        dataset=dataset,
-        sample_indices=split.train_indices,
-        label='movement',
-        lane_rows=False,
+        cache_dir=raw_cache_dir,
+        train_indices=split.train_indices,
+        cache_indices=(*split.train_indices, *split.validation_indices),
     )
     first_sample = dataset.sample(split.train_indices[0])
     lane_feature_dim = len(first_sample.x_lane[0])
     movement_feature_dim = len(first_sample.x_movement[0])
-    checkpoint_dir = Path(config.checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     tensor_cache = MovementTensorCache(
         dataset=dataset,
-        cache_dir=checkpoint_dir / 'tensor_cache',
+        cache_dir=raw_cache_dir,
         lane_normalizer=lane_normalizer,
         movement_normalizer=movement_normalizer,
         device=device,
         max_cached_samples=4096,
     )
-    tensor_cache.build((*split.train_indices, *split.validation_indices))
     model = MovementScorer(
         lane_feature_dim=lane_feature_dim,
         movement_feature_dim=movement_feature_dim,
@@ -550,43 +538,119 @@ def _ordered_city_names(groups: Sequence[CitySeedIndexedGroup]) -> tuple[str, ..
     return tuple(city_names)
 
 
-def _fit_indexed_normalizer(
+def _prepare_raw_tensor_cache(
     dataset: IndexedJsonlDataset,
-    sample_indices: Sequence[int],
-    label: str,
-    lane_rows: bool,
-) -> RunningNormalizer:
-    normalizer = RunningNormalizer()
+    cache_dir: Path,
+    train_indices: Sequence[int],
+    cache_indices: Sequence[int],
+) -> tuple[RunningNormalizer, RunningNormalizer]:
+    preparation_path = cache_dir / 'preparation_state.pt'
+    cached_state = _load_preparation_state(
+        preparation_path=preparation_path,
+        dataset=dataset,
+        train_indices=train_indices,
+        cache_indices=cache_indices,
+    )
+    if cached_state is not None:
+        print(f'raw_tensor_cache_ready samples={len(cache_indices)} cache_dir={cache_dir}', flush=True)
+        return cached_state.lane_normalizer, cached_state.movement_normalizer
+    lane_normalizer, movement_normalizer = _build_raw_tensor_cache_and_fit_normalizers(
+        dataset=dataset,
+        cache_dir=cache_dir,
+        train_indices=train_indices,
+        cache_indices=cache_indices,
+    )
+    torch.save(
+        RawTensorPreparationState(
+            dataset_path=str(dataset.dataset_path),
+            file_size_bytes=dataset.dataset_path.stat().st_size,
+            train_indices=tuple(train_indices),
+            cache_indices=tuple(cache_indices),
+            lane_normalizer=lane_normalizer,
+            movement_normalizer=movement_normalizer,
+        ),
+        preparation_path,
+    )
+    return lane_normalizer, movement_normalizer
+
+
+def _load_preparation_state(
+    preparation_path: Path,
+    dataset: IndexedJsonlDataset,
+    train_indices: Sequence[int],
+    cache_indices: Sequence[int],
+) -> RawTensorPreparationState | None:
+    if not preparation_path.exists():
+        return None
+    state = cast(
+        RawTensorPreparationState,
+        torch.load(preparation_path, map_location='cpu', weights_only=False),
+    )
+    if state.dataset_path != str(dataset.dataset_path):
+        return None
+    if state.file_size_bytes != dataset.dataset_path.stat().st_size:
+        return None
+    if state.train_indices != tuple(train_indices):
+        return None
+    if state.cache_indices != tuple(cache_indices):
+        return None
+    if not all(
+        _raw_cache_path(cache_dir=preparation_path.parent, sample_index=index).exists() for index in cache_indices
+    ):
+        return None
+    return state
+
+
+def _build_raw_tensor_cache_and_fit_normalizers(
+    dataset: IndexedJsonlDataset,
+    cache_dir: Path,
+    train_indices: Sequence[int],
+    cache_indices: Sequence[int],
+) -> tuple[RunningNormalizer, RunningNormalizer]:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    train_index_set = set(train_indices)
+    lane_normalizer = RunningNormalizer()
+    movement_normalizer = RunningNormalizer()
     started_s = time.monotonic()
     last_progress_s = started_s
-    print(f'normalizer_start kind={label} samples={len(sample_indices)}', flush=True)
-    for position, sample_index in enumerate(sample_indices, start=1):
-        sample = dataset.sample(sample_index)
-        normalizer.update_rows(sample.x_lane if lane_rows else sample.x_movement)
+    print(
+        f'raw_tensor_cache_start samples={len(cache_indices)} train_samples={len(train_indices)} cache_dir={cache_dir}',
+        flush=True,
+    )
+    for position, sample_index in enumerate(cache_indices, start=1):
+        cache_path = _raw_cache_path(cache_dir=cache_dir, sample_index=sample_index)
+        if cache_path.exists():
+            cached_sample = cast(
+                CachedMovementTensorSample,
+                torch.load(cache_path, map_location='cpu', weights_only=False),
+            )
+        else:
+            cached_sample = _cached_sample_from_sample(sample=dataset.sample(sample_index), device=torch.device('cpu'))
+            torch.save(cached_sample, cache_path)
+        if sample_index in train_index_set:
+            lane_normalizer.update_rows(_tensor_rows(cached_sample.x_lane))
+            movement_normalizer.update_rows(_tensor_rows(cached_sample.x_movement))
         current_s = time.monotonic()
-        if position % 1000 == 0 or position == len(sample_indices) or current_s - last_progress_s >= 60.0:
+        if position % 1000 == 0 or position == len(cache_indices) or current_s - last_progress_s >= 60.0:
             last_progress_s = current_s
+            percent = _percent(position, len(cache_indices))
             print(
-                f'normalizer kind={label} samples={position}/{len(sample_indices)} '
+                f'raw_tensor_cache samples={position}/{len(cache_indices)} percent={percent:.1f} '
                 f'elapsed={_format_duration(current_s - started_s)}',
                 flush=True,
             )
-    normalizer.freeze()
-    return normalizer
+    lane_normalizer.freeze()
+    movement_normalizer.freeze()
+    return lane_normalizer, movement_normalizer
 
 
 def _cached_sample_from_sample(
     sample: MovementDatasetSample,
-    lane_normalizer: RunningNormalizer,
-    movement_normalizer: RunningNormalizer,
     device: torch.device,
 ) -> CachedMovementTensorSample:
-    x_lane, x_movement, target = tensors_from_sample(
-        sample=sample,
-        lane_normalizer=lane_normalizer,
-        movement_normalizer=movement_normalizer,
-        device=device,
-    )
+    x_lane = torch.tensor(sample.x_lane, dtype=torch.float32, device=device)
+    x_movement = torch.tensor(sample.x_movement, dtype=torch.float32, device=device)
+    target = torch.tensor(sample.teacher_movement_scores, dtype=torch.float32, device=device)
     city_name = IndexedSampleMetadata.model_validate(sample.metadata).city_name
     return CachedMovementTensorSample(
         x_lane=x_lane,
@@ -599,16 +663,37 @@ def _cached_sample_from_sample(
     )
 
 
-def _move_cached_sample(sample: CachedMovementTensorSample, device: torch.device) -> CachedMovementTensorSample:
+def _normalised_cached_sample(
+    sample: CachedMovementTensorSample,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    device: torch.device,
+) -> CachedMovementTensorSample:
     return CachedMovementTensorSample(
-        x_lane=sample.x_lane.to(device),
-        x_movement=sample.x_movement.to(device),
+        x_lane=_normalise_tensor(sample.x_lane, lane_normalizer).to(device),
+        x_movement=_normalise_tensor(sample.x_movement, movement_normalizer).to(device),
         target=sample.target.to(device),
         edge_index_dict={key: value.to(device) for key, value in sample.edge_index_dict.items()},
         phase_incidences=sample.phase_incidences,
         teacher_selected_phase_by_tls=sample.teacher_selected_phase_by_tls,
         city_name=sample.city_name,
     )
+
+
+def _normalise_tensor(tensor: torch.Tensor, normalizer: RunningNormalizer) -> torch.Tensor:
+    if normalizer.count == 0:
+        return torch.zeros_like(tensor)
+    mean = torch.tensor(normalizer.mean, dtype=torch.float32)
+    std = torch.tensor(normalizer.std, dtype=torch.float32).clamp_min(normalizer.epsilon)
+    return torch.round((tensor - mean) / std, decimals=6)
+
+
+def _tensor_rows(tensor: torch.Tensor) -> tuple[tuple[float, ...], ...]:
+    return tuple(tuple(float(value) for value in row) for row in tensor.tolist())
+
+
+def _raw_cache_path(cache_dir: Path, sample_index: int) -> Path:
+    return cache_dir / f'sample_{sample_index:08d}.pt'
 
 
 def _epoch_batches(
