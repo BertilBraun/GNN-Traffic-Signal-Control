@@ -88,6 +88,13 @@ class CachedPhaseTensor:
 
 
 @dataclass(frozen=True)
+class CachedPhaseTensorData:
+    incidence_rows: tuple[tuple[float, ...], ...]
+    movement_ids: tuple[int, ...]
+    target_phase: int
+
+
+@dataclass(frozen=True)
 class CachedMovementTensorSample:
     x_lane: torch.Tensor
     x_movement: torch.Tensor
@@ -97,6 +104,18 @@ class CachedMovementTensorSample:
     teacher_selected_phase_by_tls: dict[str, int]
     city_name: str
     phase_tensors: dict[str, CachedPhaseTensor] | None = None
+
+
+@dataclass(frozen=True)
+class CachedMovementTensorBatch:
+    x_lane: torch.Tensor
+    x_movement: torch.Tensor
+    target: torch.Tensor
+    edge_index_dict: dict[str, torch.Tensor]
+    lane_counts: tuple[int, ...]
+    movement_counts: tuple[int, ...]
+    phase_tensors_by_sample: tuple[dict[str, CachedPhaseTensorData], ...]
+    city_names: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -315,8 +334,8 @@ class IndexedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
         )
 
 
-def _collate_cached_samples(samples: Sequence[CachedMovementTensorSample]) -> tuple[CachedMovementTensorSample, ...]:
-    return tuple(samples)
+def _collate_cached_samples(samples: Sequence[CachedMovementTensorSample]) -> CachedMovementTensorBatch:
+    return _cached_sample_batch(samples=samples)
 
 
 def train_movement_il_from_indexed_jsonl(
@@ -507,12 +526,11 @@ def _train_indexed_epoch(
     train_loader_iterator = iter(train_loader)
     for batch_number in range(1, len(batch_indices) + 1):
         load_started_s = time.monotonic()
-        cpu_samples = next(train_loader_iterator)
-        samples = tuple(_move_cached_sample(sample, torch.device(config.device)) for sample in cpu_samples)
+        batch = _move_cached_batch(cpu_batch=next(train_loader_iterator), device=torch.device(config.device))
         load_elapsed_s += time.monotonic() - load_started_s
-        timed_batch_metrics = _timed_indexed_batch_loss_metrics(
+        timed_batch_metrics = _timed_indexed_cached_batch_loss_metrics(
             model=model,
-            samples=samples,
+            batch=batch,
             loss_name=config.loss,
             phase_loss_coefficient=config.phase_loss_coefficient,
             gradient_workers=gradient_workers,
@@ -520,7 +538,7 @@ def _train_indexed_epoch(
         batch_metrics = timed_batch_metrics.metrics
         forward_elapsed_s += timed_batch_metrics.forward_elapsed_s
         loss_elapsed_s += timed_batch_metrics.loss_elapsed_s
-        batch_sample_count = len(samples)
+        batch_sample_count = len(batch.city_names)
         batch_loss_value = float(batch_metrics.loss.detach().cpu())
         moving_losses.append(batch_loss_value)
         if len(moving_losses) > 100:
@@ -584,7 +602,7 @@ def _train_data_loader(
     tensor_cache: MovementTensorCache,
     sample_indices: Sequence[int],
     config: MovementILTrainingConfig,
-) -> DataLoader[tuple[CachedMovementTensorSample, ...]]:
+) -> DataLoader[CachedMovementTensorBatch]:
     train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
     dataset = IndexedTensorCacheDataset(
         cache_dir=tensor_cache.cache_dir,
@@ -609,6 +627,48 @@ def _train_data_loader(
         prefetch_factor=2,
         persistent_workers=False,
     )
+
+
+def _timed_indexed_cached_batch_loss_metrics(
+    model: MovementScorer,
+    batch: CachedMovementTensorBatch,
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+    gradient_workers: int,
+) -> TimedIndexedBatchLossMetrics:
+    if gradient_workers != 1:
+        gradient_workers = 1
+    forward_started_s = time.monotonic()
+    flat_predictions = model(
+        x_lane=batch.x_lane,
+        x_movement=batch.x_movement,
+        edge_index_dict=batch.edge_index_dict,
+    )
+    predictions = _split_movement_tensor(
+        tensor=flat_predictions,
+        movement_counts=batch.movement_counts,
+    )
+    forward_elapsed_s = time.monotonic() - forward_started_s
+    loss_started_s = time.monotonic()
+    metrics = _indexed_batch_loss_metrics(
+        samples=_samples_from_batch(batch),
+        predictions=predictions,
+        loss_name=loss_name,
+        phase_loss_coefficient=phase_loss_coefficient,
+    )
+    return TimedIndexedBatchLossMetrics(
+        metrics=metrics,
+        forward_elapsed_s=forward_elapsed_s,
+        loss_elapsed_s=time.monotonic() - loss_started_s,
+    )
+
+
+def _split_movement_tensor(
+    tensor: torch.Tensor,
+    movement_counts: Sequence[int],
+) -> tuple[torch.Tensor, ...]:
+    starts = _starts_from_counts(movement_counts)
+    return tuple(tensor[start : start + count] for start, count in zip(starts, movement_counts))
 
 
 def _timed_indexed_batch_loss_metrics(
@@ -1312,6 +1372,101 @@ def _move_cached_sample(sample: CachedMovementTensorSample, device: torch.device
             for traffic_light_id, phase_tensor in sample.phase_tensors.items()
         },
     )
+
+
+def _cached_sample_batch(samples: Sequence[CachedMovementTensorSample]) -> CachedMovementTensorBatch:
+    lane_counts = tuple(sample.x_lane.shape[0] for sample in samples)
+    movement_counts = tuple(sample.x_movement.shape[0] for sample in samples)
+    phase_tensors_by_sample: list[dict[str, CachedPhaseTensorData]] = []
+    for sample in samples:
+        assert sample.phase_tensors is not None
+        phase_tensors_by_sample.append(_phase_tensor_data_from_tensors(sample.phase_tensors))
+    return CachedMovementTensorBatch(
+        x_lane=torch.cat(tuple(sample.x_lane for sample in samples), dim=0),
+        x_movement=torch.cat(tuple(sample.x_movement for sample in samples), dim=0),
+        target=torch.cat(tuple(sample.target for sample in samples), dim=0),
+        edge_index_dict=_batched_edge_index_dict(samples=samples),
+        lane_counts=lane_counts,
+        movement_counts=movement_counts,
+        phase_tensors_by_sample=tuple(phase_tensors_by_sample),
+        city_names=tuple(sample.city_name for sample in samples),
+    )
+
+
+def _move_cached_batch(cpu_batch: CachedMovementTensorBatch, device: torch.device) -> CachedMovementTensorBatch:
+    return CachedMovementTensorBatch(
+        x_lane=cpu_batch.x_lane.to(device),
+        x_movement=cpu_batch.x_movement.to(device),
+        target=cpu_batch.target.to(device),
+        edge_index_dict={key: value.to(device) for key, value in cpu_batch.edge_index_dict.items()},
+        lane_counts=cpu_batch.lane_counts,
+        movement_counts=cpu_batch.movement_counts,
+        phase_tensors_by_sample=cpu_batch.phase_tensors_by_sample,
+        city_names=cpu_batch.city_names,
+    )
+
+
+def _samples_from_batch(batch: CachedMovementTensorBatch) -> tuple[CachedMovementTensorSample, ...]:
+    lane_starts = _starts_from_counts(batch.lane_counts)
+    movement_starts = _starts_from_counts(batch.movement_counts)
+    return tuple(
+        CachedMovementTensorSample(
+            x_lane=batch.x_lane[lane_start : lane_start + lane_count],
+            x_movement=batch.x_movement[movement_start : movement_start + movement_count],
+            target=batch.target[movement_start : movement_start + movement_count],
+            edge_index_dict=batch.edge_index_dict,
+            phase_incidences={},
+            teacher_selected_phase_by_tls={},
+            city_name=city_name,
+            phase_tensors=_phase_tensors_from_data(phase_tensors=phase_tensors, device=batch.x_lane.device),
+        )
+        for lane_start, lane_count, movement_start, movement_count, phase_tensors, city_name in zip(
+            lane_starts,
+            batch.lane_counts,
+            movement_starts,
+            batch.movement_counts,
+            batch.phase_tensors_by_sample,
+            batch.city_names,
+        )
+    )
+
+
+def _phase_tensor_data_from_tensors(
+    phase_tensors: dict[str, CachedPhaseTensor],
+) -> dict[str, CachedPhaseTensorData]:
+    return {
+        traffic_light_id: CachedPhaseTensorData(
+            incidence_rows=tuple(
+                tuple(float(value) for value in row) for row in phase_tensor.incidence_matrix.tolist()
+            ),
+            movement_ids=tuple(int(value) for value in phase_tensor.movement_ids.tolist()),
+            target_phase=phase_tensor.target_phase,
+        )
+        for traffic_light_id, phase_tensor in phase_tensors.items()
+    }
+
+
+def _phase_tensors_from_data(
+    phase_tensors: dict[str, CachedPhaseTensorData],
+    device: torch.device,
+) -> dict[str, CachedPhaseTensor]:
+    return {
+        traffic_light_id: CachedPhaseTensor(
+            incidence_matrix=torch.tensor(phase_tensor.incidence_rows, dtype=torch.float32, device=device),
+            movement_ids=torch.tensor(phase_tensor.movement_ids, dtype=torch.long, device=device),
+            target_phase=phase_tensor.target_phase,
+        )
+        for traffic_light_id, phase_tensor in phase_tensors.items()
+    }
+
+
+def _starts_from_counts(counts: Sequence[int]) -> tuple[int, ...]:
+    starts: list[int] = []
+    offset = 0
+    for count in counts:
+        starts.append(offset)
+        offset += count
+    return tuple(starts)
 
 
 def _phase_tensors_from_sample(
