@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from random import Random
@@ -38,6 +38,12 @@ class IndexedSampleMetadata(BaseModel):
 
     city_name: str
     collection_seed: int
+
+
+class IndexedSampleEnvelope(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    metadata: IndexedSampleMetadata
 
 
 @dataclass(frozen=True)
@@ -178,8 +184,14 @@ class MovementTensorCache:
     def build(self, sample_indices: Sequence[int]) -> None:
         missing_indices = tuple(index for index in sample_indices if not self._cache_path(index).exists())
         if not missing_indices:
+            print(f'tensor_cache existing_samples={len(sample_indices)} cache_dir={self.cache_dir}', flush=True)
             return
         started_s = time.monotonic()
+        last_progress_s = started_s
+        print(
+            f'tensor_cache_start missing_samples={len(missing_indices)} cache_dir={self.cache_dir}',
+            flush=True,
+        )
         for position, sample_index in enumerate(missing_indices, start=1):
             sample = self.dataset.sample(sample_index)
             cached_sample = _cached_sample_from_sample(
@@ -189,7 +201,9 @@ class MovementTensorCache:
                 device=torch.device('cpu'),
             )
             torch.save(cached_sample, self._cache_path(sample_index))
-            if position % 1000 == 0 or position == len(missing_indices):
+            current_s = time.monotonic()
+            if position % 1000 == 0 or position == len(missing_indices) or current_s - last_progress_s >= 60.0:
+                last_progress_s = current_s
                 elapsed_s = time.monotonic() - started_s
                 print(f'tensor_cache samples={position}/{len(missing_indices)} elapsed={_format_duration(elapsed_s)}')
 
@@ -228,10 +242,16 @@ def train_movement_il_from_indexed_jsonl(
     print_indexed_dataset_stats(stats)
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
-    lane_normalizer = _fit_indexed_normalizer(dataset=dataset, sample_indices=split.train_indices, lane_rows=True)
+    lane_normalizer = _fit_indexed_normalizer(
+        dataset=dataset,
+        sample_indices=split.train_indices,
+        label='lane',
+        lane_rows=True,
+    )
     movement_normalizer = _fit_indexed_normalizer(
         dataset=dataset,
         sample_indices=split.train_indices,
+        label='movement',
         lane_rows=False,
     )
     first_sample = dataset.sample(split.train_indices[0])
@@ -466,22 +486,39 @@ def _write_indexed_validation_losses(
 def _index_jsonl_records(dataset_path: Path) -> tuple[IndexedJsonlRecord, ...]:
     records: list[IndexedJsonlRecord] = []
     byte_offset = 0
+    file_size_bytes = dataset_path.stat().st_size
+    started_s = time.monotonic()
+    last_progress_s = started_s
+    print(f'jsonl_index_start path={dataset_path} size={file_size_bytes} bytes', flush=True)
     with dataset_path.open('rb') as handle:
         for sample_index, raw_line in enumerate(handle):
             byte_length = len(raw_line)
             if raw_line.strip():
-                sample = load_jsonl_sample_line(raw_line.decode('utf-8'))
-                metadata = IndexedSampleMetadata.model_validate(sample.metadata)
+                envelope = IndexedSampleEnvelope.model_validate_json(raw_line)
                 records.append(
                     IndexedJsonlRecord(
                         sample_index=len(records),
                         byte_offset=byte_offset,
                         byte_length=byte_length,
-                        city_name=metadata.city_name,
-                        collection_seed=metadata.collection_seed,
+                        city_name=envelope.metadata.city_name,
+                        collection_seed=envelope.metadata.collection_seed,
                     )
                 )
             byte_offset += byte_length
+            current_s = time.monotonic()
+            if current_s - last_progress_s >= 60.0:
+                last_progress_s = current_s
+                print(
+                    f'jsonl_index bytes={byte_offset}/{file_size_bytes} '
+                    f'percent={_percent(byte_offset, file_size_bytes):.1f} records={len(records)} '
+                    f'elapsed={_format_duration(current_s - started_s)}',
+                    flush=True,
+                )
+    print(
+        f'jsonl_index_done bytes={byte_offset}/{file_size_bytes} records={len(records)} '
+        f'elapsed={_format_duration(time.monotonic() - started_s)}',
+        flush=True,
+    )
     return tuple(records)
 
 
@@ -515,13 +552,25 @@ def _ordered_city_names(groups: Sequence[CitySeedIndexedGroup]) -> tuple[str, ..
 
 def _fit_indexed_normalizer(
     dataset: IndexedJsonlDataset,
-    sample_indices: Iterable[int],
+    sample_indices: Sequence[int],
+    label: str,
     lane_rows: bool,
 ) -> RunningNormalizer:
     normalizer = RunningNormalizer()
-    for sample_index in sample_indices:
+    started_s = time.monotonic()
+    last_progress_s = started_s
+    print(f'normalizer_start kind={label} samples={len(sample_indices)}', flush=True)
+    for position, sample_index in enumerate(sample_indices, start=1):
         sample = dataset.sample(sample_index)
         normalizer.update_rows(sample.x_lane if lane_rows else sample.x_movement)
+        current_s = time.monotonic()
+        if position % 1000 == 0 or position == len(sample_indices) or current_s - last_progress_s >= 60.0:
+            last_progress_s = current_s
+            print(
+                f'normalizer kind={label} samples={position}/{len(sample_indices)} '
+                f'elapsed={_format_duration(current_s - started_s)}',
+                flush=True,
+            )
     normalizer.freeze()
     return normalizer
 
@@ -646,6 +695,12 @@ def _memory_summary(device: torch.device) -> str:
         reserved_gib = torch.cuda.memory_reserved(device) / 1024**3
         return f'gpu_alloc_gib={allocated_gib:.2f} gpu_reserved_gib={reserved_gib:.2f}'
     return cpu_memory
+
+
+def _percent(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return numerator / denominator * 100.0
 
 
 def _format_duration(seconds: float) -> str:
