@@ -6,6 +6,7 @@ from collections import OrderedDict
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from random import Random
 from threading import Lock
@@ -336,6 +337,60 @@ class IndexedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
         )
 
 
+class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
+    def __init__(
+        self,
+        raw_cache_dir: Path,
+        batch_cache_dir: Path,
+        batch_indices: Sequence[Sequence[int]],
+        lane_normalizer: RunningNormalizer,
+        movement_normalizer: RunningNormalizer,
+    ) -> None:
+        self.raw_cache_dir = raw_cache_dir
+        self.batch_cache_dir = batch_cache_dir
+        self.batch_indices = tuple(tuple(batch) for batch in batch_indices)
+        self.lane_normalizer = lane_normalizer
+        self.movement_normalizer = movement_normalizer
+        self.batch_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def __len__(self) -> int:
+        return len(self.batch_indices)
+
+    def __getitem__(self, index: int) -> CachedMovementTensorBatch:
+        sample_indices = self.batch_indices[index]
+        batch_path = self._batch_path(sample_indices)
+        if batch_path.exists():
+            return cast(CachedMovementTensorBatch, torch.load(batch_path, map_location='cpu', weights_only=False))
+        batch = _collate_cached_samples(tuple(self._sample(sample_index) for sample_index in sample_indices))
+        torch.save(batch, batch_path)
+        return batch
+
+    def _sample(self, sample_index: int) -> CachedMovementTensorSample:
+        raw_sample = cast(
+            CachedMovementTensorSample,
+            torch.load(
+                _raw_cache_path(cache_dir=self.raw_cache_dir, sample_index=sample_index),
+                map_location='cpu',
+                weights_only=False,
+            ),
+        )
+        return _normalised_cached_sample(
+            sample=raw_sample,
+            lane_normalizer=self.lane_normalizer,
+            movement_normalizer=self.movement_normalizer,
+            device=torch.device('cpu'),
+        )
+
+    def _batch_path(self, sample_indices: Sequence[int]) -> Path:
+        digest = hashlib.blake2b(digest_size=16)
+        digest.update(b'indexed-il-batch-v1')
+        digest.update(_normalizer_digest_bytes(self.lane_normalizer))
+        digest.update(_normalizer_digest_bytes(self.movement_normalizer))
+        for sample_index in sample_indices:
+            digest.update(int(sample_index).to_bytes(8, byteorder='little', signed=False))
+        return self.batch_cache_dir / f'batch_{digest.hexdigest()}.pt'
+
+
 class PreloadedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
     def __init__(
         self,
@@ -536,7 +591,7 @@ def _train_indexed_epoch(
     gradient_workers = _gradient_worker_count(config.gradient_workers, config.samples_per_batch)
     train_loader = _train_data_loader(
         tensor_cache=tensor_cache,
-        sample_indices=tuple(index for batch in batch_indices for index in batch),
+        batch_indices=batch_indices,
         config=config,
     )
     train_loader_iterator = iter(train_loader)
@@ -622,29 +677,32 @@ def _prefetch_factor(prefetch_batches: int, train_workers: int) -> int:
 
 def _train_data_loader(
     tensor_cache: MovementTensorCache,
-    sample_indices: Sequence[int],
+    batch_indices: Sequence[Sequence[int]],
     config: MovementILTrainingConfig,
 ) -> DataLoader[CachedMovementTensorBatch]:
     train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
-    dataset = _train_dataset(
-        tensor_cache=tensor_cache,
-        sample_indices=sample_indices,
-        preload_cache=config.preload_cache,
-    )
+    if config.preload_cache:
+        dataset = _preloaded_train_dataset(tensor_cache=tensor_cache, batch_indices=batch_indices)
+        batch_size = config.samples_per_batch
+        collate = _collate_cached_samples
+    else:
+        dataset = _batch_train_dataset(tensor_cache=tensor_cache, batch_indices=batch_indices)
+        batch_size = None
+        collate = None
     if train_workers == 1:
         return DataLoader(
             dataset,
-            batch_size=config.samples_per_batch,
+            batch_size=batch_size,
             shuffle=False,
             num_workers=0,
-            collate_fn=_collate_cached_samples,
+            collate_fn=collate,
         )
     return DataLoader(
         dataset,
-        batch_size=config.samples_per_batch,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=train_workers,
-        collate_fn=_collate_cached_samples,
+        collate_fn=collate,
         prefetch_factor=_prefetch_factor(
             prefetch_batches=config.prefetch_batches,
             train_workers=train_workers,
@@ -653,16 +711,23 @@ def _train_data_loader(
     )
 
 
-def _train_dataset(
+def _preloaded_train_dataset(
     tensor_cache: MovementTensorCache,
-    sample_indices: Sequence[int],
-    preload_cache: bool,
+    batch_indices: Sequence[Sequence[int]],
 ) -> Dataset[CachedMovementTensorSample]:
-    if preload_cache:
-        return PreloadedTensorCacheDataset(tuple(tensor_cache.get_cpu(sample_index) for sample_index in sample_indices))
-    return IndexedTensorCacheDataset(
-        cache_dir=tensor_cache.cache_dir,
-        sample_indices=sample_indices,
+    return PreloadedTensorCacheDataset(
+        tuple(tensor_cache.get_cpu(sample_index) for batch in batch_indices for sample_index in batch)
+    )
+
+
+def _batch_train_dataset(
+    tensor_cache: MovementTensorCache,
+    batch_indices: Sequence[Sequence[int]],
+) -> Dataset[CachedMovementTensorBatch]:
+    return IndexedBatchTensorCacheDataset(
+        raw_cache_dir=tensor_cache.cache_dir,
+        batch_cache_dir=tensor_cache.cache_dir / 'batch_tensor_cache',
+        batch_indices=batch_indices,
         lane_normalizer=tensor_cache.lane_normalizer,
         movement_normalizer=tensor_cache.movement_normalizer,
     )
@@ -1603,6 +1668,14 @@ def _normalise_tensor(tensor: torch.Tensor, normalizer: RunningNormalizer) -> to
     return torch.round((tensor - mean) / std, decimals=6)
 
 
+def _normalizer_digest_bytes(normalizer: RunningNormalizer) -> bytes:
+    return (
+        int(normalizer.count).to_bytes(8, byteorder='little', signed=False)
+        + repr(normalizer.mean).encode('utf-8')
+        + repr(normalizer.std).encode('utf-8')
+    )
+
+
 def _tensor_rows(tensor: torch.Tensor) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(float(value) for value in row) for row in tensor.tolist())
 
@@ -1618,11 +1691,13 @@ def _epoch_batches(
     epoch: int,
 ) -> tuple[tuple[int, ...], ...]:
     shuffled_indices = list(sample_indices)
-    Random(seed + epoch).shuffle(shuffled_indices)
-    return tuple(
+    Random(seed).shuffle(shuffled_indices)
+    batches = list(
         tuple(shuffled_indices[batch_start : batch_start + samples_per_batch])
         for batch_start in range(0, len(shuffled_indices), samples_per_batch)
     )
+    Random(seed + epoch + 1_000_003).shuffle(batches)
+    return tuple(batches)
 
 
 def _should_save_checkpoint(epoch: int, config: MovementILTrainingConfig) -> bool:
