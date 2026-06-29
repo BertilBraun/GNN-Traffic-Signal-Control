@@ -88,10 +88,11 @@ class CachedPhaseTensor:
 
 
 @dataclass(frozen=True)
-class CachedPhaseTensorData:
-    incidence_rows: tuple[tuple[float, ...], ...]
-    movement_ids: tuple[int, ...]
-    target_phase: int
+class CachedPhaseLogitGroupBatch:
+    incidence_matrices: torch.Tensor
+    movement_ids: torch.Tensor
+    targets: torch.Tensor
+    sample_indices: torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -112,9 +113,10 @@ class CachedMovementTensorBatch:
     x_movement: torch.Tensor
     target: torch.Tensor
     edge_index_dict: dict[str, torch.Tensor]
+    movement_sample_indices: torch.Tensor
     lane_counts: tuple[int, ...]
     movement_counts: tuple[int, ...]
-    phase_tensors_by_sample: tuple[dict[str, CachedPhaseTensorData], ...]
+    phase_logit_groups: tuple[CachedPhaseLogitGroupBatch, ...]
     city_names: tuple[str, ...]
 
 
@@ -644,15 +646,11 @@ def _timed_indexed_cached_batch_loss_metrics(
         x_movement=batch.x_movement,
         edge_index_dict=batch.edge_index_dict,
     )
-    predictions = _split_movement_tensor(
-        tensor=flat_predictions,
-        movement_counts=batch.movement_counts,
-    )
     forward_elapsed_s = time.monotonic() - forward_started_s
     loss_started_s = time.monotonic()
-    metrics = _indexed_batch_loss_metrics(
-        samples=_samples_from_batch(batch),
-        predictions=predictions,
+    metrics = _indexed_cached_batch_loss_metrics(
+        batch=batch,
+        flat_predictions=flat_predictions,
         loss_name=loss_name,
         phase_loss_coefficient=phase_loss_coefficient,
     )
@@ -663,12 +661,88 @@ def _timed_indexed_cached_batch_loss_metrics(
     )
 
 
-def _split_movement_tensor(
-    tensor: torch.Tensor,
-    movement_counts: Sequence[int],
-) -> tuple[torch.Tensor, ...]:
-    starts = _starts_from_counts(movement_counts)
-    return tuple(tensor[start : start + count] for start, count in zip(starts, movement_counts))
+def _indexed_cached_batch_loss_metrics(
+    batch: CachedMovementTensorBatch,
+    flat_predictions: torch.Tensor,
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+) -> IndexedBatchLossMetrics:
+    regression_loss = _packed_sample_weighted_regression_loss(
+        prediction=flat_predictions,
+        target=batch.target,
+        movement_sample_indices=batch.movement_sample_indices,
+        sample_count=len(batch.city_names),
+        loss_name=loss_name,
+    )
+    phase_loss = _packed_sample_weighted_phase_loss(
+        flat_predictions=flat_predictions,
+        phase_logit_groups=batch.phase_logit_groups,
+        sample_count=len(batch.city_names),
+    )
+    with torch.no_grad():
+        phase_matches, phase_decisions = _packed_phase_match_counts(
+            flat_predictions=flat_predictions,
+            phase_logit_groups=batch.phase_logit_groups,
+        )
+    return IndexedBatchLossMetrics(
+        loss=regression_loss + phase_loss_coefficient * phase_loss,
+        regression_loss=regression_loss,
+        phase_loss=phase_loss,
+        phase_matches=phase_matches,
+        phase_decisions=phase_decisions,
+        sample_count=len(batch.city_names),
+    )
+
+
+def _packed_sample_weighted_regression_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    movement_sample_indices: torch.Tensor,
+    sample_count: int,
+    loss_name: MovementILLoss,
+) -> torch.Tensor:
+    elementwise_loss = _elementwise_regression_loss(prediction=prediction, target=target, loss_name=loss_name)
+    sample_loss_sums = prediction.new_zeros((sample_count,))
+    sample_loss_counts = prediction.new_zeros((sample_count,))
+    sample_loss_sums.index_add_(0, movement_sample_indices, elementwise_loss)
+    sample_loss_counts.index_add_(0, movement_sample_indices, torch.ones_like(elementwise_loss))
+    return (sample_loss_sums / sample_loss_counts.clamp_min(1.0)).mean()
+
+
+def _packed_sample_weighted_phase_loss(
+    flat_predictions: torch.Tensor,
+    phase_logit_groups: Sequence[CachedPhaseLogitGroupBatch],
+    sample_count: int,
+) -> torch.Tensor:
+    sample_loss_sums = flat_predictions.new_zeros((sample_count,))
+    sample_loss_counts = flat_predictions.new_zeros((sample_count,))
+    for group in phase_logit_groups:
+        logits = _packed_phase_logits(flat_predictions=flat_predictions, group=group)
+        losses = F.cross_entropy(logits, group.targets, reduction='none')
+        sample_loss_sums.index_add_(0, group.sample_indices, losses)
+        sample_loss_counts.index_add_(0, group.sample_indices, torch.ones_like(losses))
+    return (sample_loss_sums / sample_loss_counts.clamp_min(1.0)).mean()
+
+
+def _packed_phase_match_counts(
+    flat_predictions: torch.Tensor,
+    phase_logit_groups: Sequence[CachedPhaseLogitGroupBatch],
+) -> tuple[int, int]:
+    matches = 0
+    decisions = 0
+    for group in phase_logit_groups:
+        logits = _packed_phase_logits(flat_predictions=flat_predictions, group=group)
+        matches += int((logits.argmax(dim=1) == group.targets).sum().detach().cpu())
+        decisions += group.targets.numel()
+    return matches, decisions
+
+
+def _packed_phase_logits(
+    flat_predictions: torch.Tensor,
+    group: CachedPhaseLogitGroupBatch,
+) -> torch.Tensor:
+    movement_scores = flat_predictions[group.movement_ids]
+    return torch.bmm(group.incidence_matrices, movement_scores.unsqueeze(-1)).squeeze(-1)
 
 
 def _timed_indexed_batch_loss_metrics(
@@ -1377,18 +1451,15 @@ def _move_cached_sample(sample: CachedMovementTensorSample, device: torch.device
 def _cached_sample_batch(samples: Sequence[CachedMovementTensorSample]) -> CachedMovementTensorBatch:
     lane_counts = tuple(sample.x_lane.shape[0] for sample in samples)
     movement_counts = tuple(sample.x_movement.shape[0] for sample in samples)
-    phase_tensors_by_sample: list[dict[str, CachedPhaseTensorData]] = []
-    for sample in samples:
-        assert sample.phase_tensors is not None
-        phase_tensors_by_sample.append(_phase_tensor_data_from_tensors(sample.phase_tensors))
     return CachedMovementTensorBatch(
         x_lane=torch.cat(tuple(sample.x_lane for sample in samples), dim=0),
         x_movement=torch.cat(tuple(sample.x_movement for sample in samples), dim=0),
         target=torch.cat(tuple(sample.target for sample in samples), dim=0),
         edge_index_dict=_batched_edge_index_dict(samples=samples),
+        movement_sample_indices=_movement_sample_indices(movement_counts),
         lane_counts=lane_counts,
         movement_counts=movement_counts,
-        phase_tensors_by_sample=tuple(phase_tensors_by_sample),
+        phase_logit_groups=_phase_logit_group_batches(samples=samples),
         city_names=tuple(sample.city_name for sample in samples),
     )
 
@@ -1399,74 +1470,78 @@ def _move_cached_batch(cpu_batch: CachedMovementTensorBatch, device: torch.devic
         x_movement=cpu_batch.x_movement.to(device),
         target=cpu_batch.target.to(device),
         edge_index_dict={key: value.to(device) for key, value in cpu_batch.edge_index_dict.items()},
+        movement_sample_indices=cpu_batch.movement_sample_indices.to(device),
         lane_counts=cpu_batch.lane_counts,
         movement_counts=cpu_batch.movement_counts,
-        phase_tensors_by_sample=cpu_batch.phase_tensors_by_sample,
+        phase_logit_groups=tuple(
+            _move_phase_logit_group(group=group, device=device) for group in cpu_batch.phase_logit_groups
+        ),
         city_names=cpu_batch.city_names,
     )
 
 
-def _samples_from_batch(batch: CachedMovementTensorBatch) -> tuple[CachedMovementTensorSample, ...]:
-    lane_starts = _starts_from_counts(batch.lane_counts)
-    movement_starts = _starts_from_counts(batch.movement_counts)
-    return tuple(
-        CachedMovementTensorSample(
-            x_lane=batch.x_lane[lane_start : lane_start + lane_count],
-            x_movement=batch.x_movement[movement_start : movement_start + movement_count],
-            target=batch.target[movement_start : movement_start + movement_count],
-            edge_index_dict=batch.edge_index_dict,
-            phase_incidences={},
-            teacher_selected_phase_by_tls={},
-            city_name=city_name,
-            phase_tensors=_phase_tensors_from_data(phase_tensors=phase_tensors, device=batch.x_lane.device),
-        )
-        for lane_start, lane_count, movement_start, movement_count, phase_tensors, city_name in zip(
-            lane_starts,
-            batch.lane_counts,
-            movement_starts,
-            batch.movement_counts,
-            batch.phase_tensors_by_sample,
-            batch.city_names,
-        )
+def _movement_sample_indices(movement_counts: Sequence[int]) -> torch.Tensor:
+    return torch.cat(
+        tuple(
+            torch.full((movement_count,), sample_index, dtype=torch.long)
+            for sample_index, movement_count in enumerate(movement_counts)
+        ),
+        dim=0,
     )
 
 
-def _phase_tensor_data_from_tensors(
-    phase_tensors: dict[str, CachedPhaseTensor],
-) -> dict[str, CachedPhaseTensorData]:
-    return {
-        traffic_light_id: CachedPhaseTensorData(
-            incidence_rows=tuple(
-                tuple(float(value) for value in row) for row in phase_tensor.incidence_matrix.tolist()
-            ),
-            movement_ids=tuple(int(value) for value in phase_tensor.movement_ids.tolist()),
-            target_phase=phase_tensor.target_phase,
+@dataclass(frozen=True)
+class PhaseLogitGroupRows:
+    incidence_matrices: list[torch.Tensor]
+    movement_ids: list[torch.Tensor]
+    targets: list[int]
+    sample_indices: list[int]
+
+
+def _phase_logit_group_batches(
+    samples: Sequence[CachedMovementTensorSample],
+) -> tuple[CachedPhaseLogitGroupBatch, ...]:
+    groups: dict[tuple[int, int], PhaseLogitGroupRows] = {}
+    movement_offset = 0
+    for sample_index, sample in enumerate(samples):
+        assert sample.phase_tensors is not None
+        for phase_tensor in sample.phase_tensors.values():
+            group_key = (phase_tensor.incidence_matrix.shape[0], phase_tensor.incidence_matrix.shape[1])
+            group = groups.setdefault(
+                group_key,
+                PhaseLogitGroupRows(
+                    incidence_matrices=[],
+                    movement_ids=[],
+                    targets=[],
+                    sample_indices=[],
+                ),
+            )
+            group.incidence_matrices.append(phase_tensor.incidence_matrix)
+            group.movement_ids.append(phase_tensor.movement_ids + movement_offset)
+            group.targets.append(phase_tensor.target_phase)
+            group.sample_indices.append(sample_index)
+        movement_offset += sample.x_movement.shape[0]
+    return tuple(
+        CachedPhaseLogitGroupBatch(
+            incidence_matrices=torch.stack(tuple(group.incidence_matrices)),
+            movement_ids=torch.stack(tuple(group.movement_ids)),
+            targets=torch.tensor(group.targets, dtype=torch.long),
+            sample_indices=torch.tensor(group.sample_indices, dtype=torch.long),
         )
-        for traffic_light_id, phase_tensor in phase_tensors.items()
-    }
+        for group in groups.values()
+    )
 
 
-def _phase_tensors_from_data(
-    phase_tensors: dict[str, CachedPhaseTensorData],
+def _move_phase_logit_group(
+    group: CachedPhaseLogitGroupBatch,
     device: torch.device,
-) -> dict[str, CachedPhaseTensor]:
-    return {
-        traffic_light_id: CachedPhaseTensor(
-            incidence_matrix=torch.tensor(phase_tensor.incidence_rows, dtype=torch.float32, device=device),
-            movement_ids=torch.tensor(phase_tensor.movement_ids, dtype=torch.long, device=device),
-            target_phase=phase_tensor.target_phase,
-        )
-        for traffic_light_id, phase_tensor in phase_tensors.items()
-    }
-
-
-def _starts_from_counts(counts: Sequence[int]) -> tuple[int, ...]:
-    starts: list[int] = []
-    offset = 0
-    for count in counts:
-        starts.append(offset)
-        offset += count
-    return tuple(starts)
+) -> CachedPhaseLogitGroupBatch:
+    return CachedPhaseLogitGroupBatch(
+        incidence_matrices=group.incidence_matrices.to(device),
+        movement_ids=group.movement_ids.to(device),
+        targets=group.targets.to(device),
+        sample_indices=group.sample_indices.to(device),
+    )
 
 
 def _phase_tensors_from_sample(
