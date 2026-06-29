@@ -152,6 +152,11 @@ def parse_args() -> argparse.Namespace:
         help='Worker processes used to build the raw tensor cache; 1 disables multiprocessing',
     )
     parser.add_argument(
+        '--preload-cache',
+        action='store_true',
+        help='Load all raw tensor cache samples into RAM before training to avoid per-batch disk reads',
+    )
+    parser.add_argument(
         '--ckpt-dir',
         type=Path,
         default=None,
@@ -513,6 +518,7 @@ def main() -> None:
         progress_every_batches=args.progress_every_batches,
         progress_every_seconds=args.progress_every_seconds,
         cache_workers=args.cache_workers,
+        preload_cache=args.preload_cache,
     )
     batch_planner = _batch_planner(
         config=config,

@@ -34,6 +34,7 @@ class MovementILTrainingConfig:
     progress_every_batches: int = 0
     progress_every_seconds: int = 60
     cache_workers: int = 1
+    preload_cache: bool = False
 
 
 @dataclass(frozen=True)

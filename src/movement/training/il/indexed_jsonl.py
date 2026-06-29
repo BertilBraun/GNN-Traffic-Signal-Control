@@ -197,6 +197,7 @@ class MovementTensorCache:
         movement_normalizer: RunningNormalizer,
         device: torch.device,
         max_cached_samples: int,
+        retain_cached_samples: bool,
     ) -> None:
         self.dataset = dataset
         self.cache_dir = cache_dir
@@ -204,8 +205,28 @@ class MovementTensorCache:
         self.movement_normalizer = movement_normalizer
         self.device = device
         self.max_cached_samples = max_cached_samples
+        self.retain_cached_samples = retain_cached_samples
         self.memory_cache: OrderedDict[int, CachedMovementTensorSample] = OrderedDict()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def preload(self, sample_indices: Sequence[int]) -> None:
+        started_s = time.monotonic()
+        last_progress_s = started_s
+        print(f'preload_cache_start samples={len(sample_indices)} cache_dir={self.cache_dir}', flush=True)
+        for position, sample_index in enumerate(sample_indices, start=1):
+            self.memory_cache[sample_index] = cast(
+                CachedMovementTensorSample,
+                torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
+            )
+            current_s = time.monotonic()
+            if position % 1000 == 0 or position == len(sample_indices) or current_s - last_progress_s >= 30.0:
+                last_progress_s = current_s
+                print(
+                    f'preload_cache samples={position}/{len(sample_indices)} '
+                    f'percent={_percent(position, len(sample_indices)):.1f} '
+                    f'elapsed={_format_duration(current_s - started_s)}',
+                    flush=True,
+                )
 
     def get(self, sample_index: int) -> CachedMovementTensorSample:
         cached = self.memory_cache.get(sample_index)
@@ -222,7 +243,7 @@ class MovementTensorCache:
             torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
         )
         self.memory_cache[sample_index] = loaded
-        if len(self.memory_cache) > self.max_cached_samples:
+        if not self.retain_cached_samples and len(self.memory_cache) > self.max_cached_samples:
             self.memory_cache.popitem(last=False)
         return _normalised_cached_sample(
             sample=loaded,
@@ -272,7 +293,10 @@ def train_movement_il_from_indexed_jsonl(
         movement_normalizer=movement_normalizer,
         device=device,
         max_cached_samples=4096,
+        retain_cached_samples=config.preload_cache,
     )
+    if config.preload_cache:
+        tensor_cache.preload((*split.train_indices, *split.validation_indices))
     model = MovementScorer(
         lane_feature_dim=lane_feature_dim,
         movement_feature_dim=movement_feature_dim,
@@ -390,10 +414,19 @@ def _train_indexed_epoch(
     started_s = time.monotonic()
     last_progress_s = started_s
     moving_losses: list[float] = []
+    load_elapsed_s = 0.0
+    forward_elapsed_s = 0.0
+    loss_elapsed_s = 0.0
+    backward_elapsed_s = 0.0
     for batch_number, batch_sample_indices in enumerate(batch_indices, start=1):
+        load_started_s = time.monotonic()
         samples = tuple(tensor_cache.get(sample_index) for sample_index in batch_sample_indices)
+        load_elapsed_s += time.monotonic() - load_started_s
+        forward_started_s = time.monotonic()
         predictions = _batched_predictions(model=model, samples=samples)
+        forward_elapsed_s += time.monotonic() - forward_started_s
         batch_losses: list[torch.Tensor] = []
+        loss_started_s = time.monotonic()
         for sample, prediction in zip(samples, predictions):
             regression_loss = _loss(prediction, sample.target, config.loss)
             phase_loss = _cached_phase_classification_loss(sample=sample, movement_scores=prediction)
@@ -411,9 +444,12 @@ def _train_indexed_epoch(
             total_phase_decisions += decisions
             total_trained_samples += 1
         loss = torch.stack(tuple(batch_losses)).mean()
+        loss_elapsed_s += time.monotonic() - loss_started_s
+        backward_started_s = time.monotonic()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        backward_elapsed_s += time.monotonic() - backward_started_s
         current_s = time.monotonic()
         if _should_print_batch_progress(
             batch_number=batch_number,
@@ -433,6 +469,10 @@ def _train_indexed_epoch(
                 started_s=started_s,
                 moving_average_loss=sum(moving_losses) / len(moving_losses),
                 device=torch.device(config.device),
+                load_elapsed_s=load_elapsed_s,
+                forward_elapsed_s=forward_elapsed_s,
+                loss_elapsed_s=loss_elapsed_s,
+                backward_elapsed_s=backward_elapsed_s,
             )
     return IndexedEpochMetrics(
         loss=total_loss_value / total_trained_samples,
@@ -949,6 +989,10 @@ def _print_batch_progress(
     started_s: float,
     moving_average_loss: float,
     device: torch.device,
+    load_elapsed_s: float,
+    forward_elapsed_s: float,
+    loss_elapsed_s: float,
+    backward_elapsed_s: float,
 ) -> None:
     elapsed_s = time.monotonic() - started_s
     percent = samples_processed / total_samples * 100.0
@@ -958,7 +1002,10 @@ def _print_batch_progress(
         f'epoch={epoch}/{epochs} batch={batch_number}/{total_batches} '
         f'samples={samples_processed}/{total_samples} percent={percent:.1f} '
         f'elapsed={_format_duration(elapsed_s)} eta={_format_duration(eta_s)} '
-        f'loss_ma={moving_average_loss:.6f} {_memory_summary(device)}'
+        f'loss_ma={moving_average_loss:.6f} '
+        f't_load={load_elapsed_s:.1f}s t_forward={forward_elapsed_s:.1f}s '
+        f't_loss={loss_elapsed_s:.1f}s t_backward={backward_elapsed_s:.1f}s '
+        f'{_memory_summary(device)}'
     )
 
 
