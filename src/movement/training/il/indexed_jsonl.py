@@ -256,7 +256,7 @@ class MovementTensorCache:
         for position, sample_index in enumerate(sample_indices, start=1):
             raw_sample = cast(
                 CachedMovementTensorSample,
-                torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
+                _load_torch_cpu(self._cache_path(sample_index)),
             )
             self.memory_cache[sample_index] = _normalised_cached_sample(
                 sample=raw_sample,
@@ -285,7 +285,7 @@ class MovementTensorCache:
                 return cached
         raw_sample = cast(
             CachedMovementTensorSample,
-            torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
+            _load_torch_cpu(self._cache_path(sample_index)),
         )
         loaded = _normalised_cached_sample(
             sample=raw_sample,
@@ -323,11 +323,7 @@ class IndexedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
         sample_index = self.sample_indices[index]
         raw_sample = cast(
             CachedMovementTensorSample,
-            torch.load(
-                _raw_cache_path(cache_dir=self.cache_dir, sample_index=sample_index),
-                map_location='cpu',
-                weights_only=False,
-            ),
+            _load_torch_cpu(_raw_cache_path(cache_dir=self.cache_dir, sample_index=sample_index)),
         )
         return _normalised_cached_sample(
             sample=raw_sample,
@@ -360,7 +356,7 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
         sample_indices = self.batch_indices[index]
         batch_path = self._batch_path(sample_indices)
         if batch_path.exists():
-            return cast(CachedMovementTensorBatch, torch.load(batch_path, map_location='cpu', weights_only=False))
+            return cast(CachedMovementTensorBatch, _load_torch_cpu(batch_path))
         batch = _collate_cached_samples(tuple(self._sample(sample_index) for sample_index in sample_indices))
         torch.save(batch, batch_path)
         return batch
@@ -368,11 +364,7 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
     def _sample(self, sample_index: int) -> CachedMovementTensorSample:
         raw_sample = cast(
             CachedMovementTensorSample,
-            torch.load(
-                _raw_cache_path(cache_dir=self.raw_cache_dir, sample_index=sample_index),
-                map_location='cpu',
-                weights_only=False,
-            ),
+            _load_torch_cpu(_raw_cache_path(cache_dir=self.raw_cache_dir, sample_index=sample_index)),
         )
         return _normalised_cached_sample(
             sample=raw_sample,
@@ -407,6 +399,10 @@ class PreloadedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
 
 def _collate_cached_samples(samples: Sequence[CachedMovementTensorSample]) -> CachedMovementTensorBatch:
     return _cached_sample_batch(samples=samples)
+
+
+def _load_torch_cpu(path: Path) -> object:
+    return torch.load(path, map_location='cpu', weights_only=False, mmap=True)
 
 
 def train_movement_il_from_indexed_jsonl(
@@ -1255,7 +1251,7 @@ def _index_jsonl_records(dataset_path: Path, index_cache_path: Path | None) -> t
 def _load_jsonl_index_state(dataset_path: Path, index_cache_path: Path | None) -> JsonlIndexState | None:
     if index_cache_path is None or not index_cache_path.exists():
         return None
-    state = cast(JsonlIndexState, torch.load(index_cache_path, map_location='cpu', weights_only=False))
+    state = cast(JsonlIndexState, _load_torch_cpu(index_cache_path))
     file_stat = dataset_path.stat()
     if state.dataset_path != str(dataset_path):
         return None
@@ -1340,7 +1336,7 @@ def _load_preparation_state(
         return None
     state = cast(
         RawTensorPreparationState,
-        torch.load(preparation_path, map_location='cpu', weights_only=False),
+        _load_torch_cpu(preparation_path),
     )
     if state.dataset_path != str(dataset.dataset_path):
         return None
@@ -1465,7 +1461,7 @@ def _build_raw_tensor_cache_chunk(chunk: RawTensorCacheChunk) -> RawTensorCacheC
             if cache_path.exists():
                 cached_sample = cast(
                     CachedMovementTensorSample,
-                    torch.load(cache_path, map_location='cpu', weights_only=False),
+                    _load_torch_cpu(cache_path),
                 )
             else:
                 handle.seek(record.byte_offset)
