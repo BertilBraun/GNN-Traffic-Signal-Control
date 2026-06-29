@@ -20,6 +20,7 @@ from src.movement.training.il.tensors import (
     tensors_from_sample,
 )
 from src.movement.training.il.types import MovementILTrainingConfig
+from src.movement.training.il.types import MovementILTrainingSnapshot
 from src.movement.models.bipartite_gnn import MovementScorer
 
 
@@ -156,6 +157,39 @@ def test_movement_il_reports_progress_when_requested(tmp_path: Path, capsys) -> 
     assert 'epoch=2/3' in output
     assert 'epoch=3/3' in output
     assert 'loss=' in output
+
+
+class _FailingObserver:
+    def on_epoch_completed(self, snapshot: MovementILTrainingSnapshot) -> None:
+        raise RuntimeError(f'observer failed at epoch {snapshot.epoch}')
+
+
+def test_movement_il_saves_epoch_checkpoint_before_observer(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / 'ckpt'
+    config = MovementILTrainingConfig(
+        epochs=3,
+        lr=0.01,
+        hidden_dim=8,
+        checkpoint_dir=checkpoint_dir,
+        seed=1,
+        num_hops=0,
+    )
+
+    try:
+        train_movement_il(
+            samples=[_sample()],
+            config=config,
+            observer=_FailingObserver(),
+            batch_planner=random_batch_planner(config),
+            validation_samples=(),
+        )
+    except RuntimeError as error:
+        assert str(error) == 'observer failed at epoch 1'
+    else:
+        raise AssertionError('expected observer failure')
+
+    assert (checkpoint_dir / 'movement_policy_last.pt').exists()
+    assert (checkpoint_dir / 'movement_policy_best.pt').exists()
 
 
 def test_movement_il_logs_each_epoch_to_tensorboard(tmp_path: Path) -> None:

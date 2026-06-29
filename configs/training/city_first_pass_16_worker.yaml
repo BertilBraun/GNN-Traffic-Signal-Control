@@ -44,8 +44,8 @@ imitation_learning:
   samples_per_city: 9600
   samples_per_simulation: 80
   collection_workers: 16
-  epochs: 500
-  samples_per_batch: 32
+  epochs: 20
+  samples_per_batch: 128
   phase_loss_coefficient: 1.0
 
 ppo:

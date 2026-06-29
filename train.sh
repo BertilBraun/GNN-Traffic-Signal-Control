@@ -8,7 +8,8 @@ RUN_NAME="${RUN_NAME:-city_first_pass_16_worker}"
 EXPERIMENT_CONFIG="${EXPERIMENT_CONFIG:-configs/training/city_first_pass_16_worker.yaml}"
 DEVICE="${DEVICE:-cuda}"
 WORKERS="${WORKERS:-16}"
-IL_EPOCHS="${IL_EPOCHS:-500}"
+IL_EPOCHS="${IL_EPOCHS:-20}"
+IL_SAMPLES_PER_BATCH="${IL_SAMPLES_PER_BATCH:-128}"
 PPO_PILOT_ITERATIONS="${PPO_PILOT_ITERATIONS:-100}"
 PPO_TOTAL_ITERATIONS="${PPO_TOTAL_ITERATIONS:-1000}"
 TENSORBOARD_PORT="${TENSORBOARD_PORT:-6006}"
@@ -191,6 +192,7 @@ train_imitation_policy() {
         --data "$combined_dataset" \
         --device "$DEVICE" \
         --epochs "$IL_EPOCHS" \
+        --samples-per-batch "$IL_SAMPLES_PER_BATCH" \
         --ckpt-dir "checkpoints/il/$RUN_NAME" \
         --log-dir "runs/il/$RUN_NAME" \
         --eval-every-epochs 0

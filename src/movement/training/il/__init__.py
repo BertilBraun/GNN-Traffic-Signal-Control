@@ -44,6 +44,8 @@ def train_movement_il(
     movement_normalizer = _fit_normalizer(sample.x_movement for sample in samples)
     lane_feature_dim = len(samples[0].x_lane[0])
     movement_feature_dim = len(samples[0].x_movement[0])
+    checkpoint_dir = Path(config.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     model = MovementScorer(
         lane_feature_dim=lane_feature_dim,
         movement_feature_dim=movement_feature_dim,
@@ -127,6 +129,18 @@ def train_movement_il(
                 loss_name=config.loss,
                 phase_loss_coefficient=config.phase_loss_coefficient,
             )
+        _save_training_checkpoints(
+            checkpoint_dir=checkpoint_dir,
+            model_state=model.state_dict(),
+            best_state=best_state,
+            config=config,
+            lane_feature_dim=lane_feature_dim,
+            movement_feature_dim=movement_feature_dim,
+            lane_normalizer=lane_normalizer,
+            movement_normalizer=movement_normalizer,
+            final_loss=final_loss,
+            best_loss=best_loss,
+        )
         if observer is not None:
             observer.on_epoch_completed(
                 MovementILTrainingSnapshot(
@@ -146,10 +160,29 @@ def train_movement_il(
                 )
             )
 
-    checkpoint_dir = Path(config.checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    if writer is not None:
+        writer.close()
+    return MovementILTrainingResult(
+        checkpoint_path=checkpoint_dir / 'movement_policy_last.pt',
+        final_loss=final_loss,
+        epochs=config.epochs,
+    )
+
+
+def _save_training_checkpoints(
+    checkpoint_dir: Path,
+    model_state: dict[str, torch.Tensor],
+    best_state: dict[str, torch.Tensor],
+    config: MovementILTrainingConfig,
+    lane_feature_dim: int,
+    movement_feature_dim: int,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    final_loss: float,
+    best_loss: float,
+) -> None:
     last_checkpoint = movement_checkpoint_payload(
-        model_state=model.state_dict(),
+        model_state=model_state,
         config=config,
         lane_feature_dim=lane_feature_dim,
         movement_feature_dim=movement_feature_dim,
@@ -170,13 +203,6 @@ def train_movement_il(
     best_path = checkpoint_dir / 'movement_policy_best.pt'
     torch.save(last_checkpoint, last_path)
     torch.save(best_checkpoint, best_path)
-    if writer is not None:
-        writer.close()
-    return MovementILTrainingResult(
-        checkpoint_path=last_path,
-        final_loss=final_loss,
-        epochs=config.epochs,
-    )
 
 
 def train_movement_il_from_jsonl(
