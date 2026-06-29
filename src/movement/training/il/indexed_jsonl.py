@@ -614,6 +614,12 @@ def _gradient_worker_count(gradient_workers: int, samples_per_batch: int) -> int
     return min(gradient_workers, samples_per_batch)
 
 
+def _prefetch_factor(prefetch_batches: int, train_workers: int) -> int:
+    if prefetch_batches <= 0:
+        raise ValueError('prefetch_batches must be positive.')
+    return max(1, (prefetch_batches + train_workers - 1) // train_workers)
+
+
 def _train_data_loader(
     tensor_cache: MovementTensorCache,
     sample_indices: Sequence[int],
@@ -639,7 +645,10 @@ def _train_data_loader(
         shuffle=False,
         num_workers=train_workers,
         collate_fn=_collate_cached_samples,
-        prefetch_factor=2,
+        prefetch_factor=_prefetch_factor(
+            prefetch_batches=config.prefetch_batches,
+            train_workers=train_workers,
+        ),
         persistent_workers=False,
     )
 

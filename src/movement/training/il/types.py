@@ -36,6 +36,7 @@ class MovementILTrainingConfig:
     cache_workers: int = 1
     preload_cache: bool = False
     train_workers: int = 1
+    prefetch_batches: int = 2
     gradient_workers: int = 1
 
 

@@ -163,6 +163,12 @@ def parse_args() -> argparse.Namespace:
         help='CPU threads used to load and normalize samples within each training batch',
     )
     parser.add_argument(
+        '--prefetch-batches',
+        type=int,
+        default=2,
+        help='Approximate total training batches prefetched by DataLoader workers',
+    )
+    parser.add_argument(
         '--gradient-workers',
         type=int,
         default=1,
@@ -532,6 +538,7 @@ def main() -> None:
         cache_workers=args.cache_workers,
         preload_cache=args.preload_cache,
         train_workers=args.train_workers,
+        prefetch_batches=args.prefetch_batches,
         gradient_workers=args.gradient_workers,
     )
     batch_planner = _batch_planner(
