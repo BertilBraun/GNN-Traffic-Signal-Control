@@ -336,6 +336,20 @@ class IndexedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
         )
 
 
+class PreloadedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
+    def __init__(
+        self,
+        samples: Sequence[CachedMovementTensorSample],
+    ) -> None:
+        self.samples = tuple(samples)
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> CachedMovementTensorSample:
+        return self.samples[index]
+
+
 def _collate_cached_samples(samples: Sequence[CachedMovementTensorSample]) -> CachedMovementTensorBatch:
     return _cached_sample_batch(samples=samples)
 
@@ -606,11 +620,10 @@ def _train_data_loader(
     config: MovementILTrainingConfig,
 ) -> DataLoader[CachedMovementTensorBatch]:
     train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
-    dataset = IndexedTensorCacheDataset(
-        cache_dir=tensor_cache.cache_dir,
+    dataset = _train_dataset(
+        tensor_cache=tensor_cache,
         sample_indices=sample_indices,
-        lane_normalizer=tensor_cache.lane_normalizer,
-        movement_normalizer=tensor_cache.movement_normalizer,
+        preload_cache=config.preload_cache,
     )
     if train_workers == 1:
         return DataLoader(
@@ -628,6 +641,21 @@ def _train_data_loader(
         collate_fn=_collate_cached_samples,
         prefetch_factor=2,
         persistent_workers=False,
+    )
+
+
+def _train_dataset(
+    tensor_cache: MovementTensorCache,
+    sample_indices: Sequence[int],
+    preload_cache: bool,
+) -> Dataset[CachedMovementTensorSample]:
+    if preload_cache:
+        return PreloadedTensorCacheDataset(tuple(tensor_cache.get_cpu(sample_index) for sample_index in sample_indices))
+    return IndexedTensorCacheDataset(
+        cache_dir=tensor_cache.cache_dir,
+        sample_indices=sample_indices,
+        lane_normalizer=tensor_cache.lane_normalizer,
+        movement_normalizer=tensor_cache.movement_normalizer,
     )
 
 
