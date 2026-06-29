@@ -146,6 +146,12 @@ def parse_args() -> argparse.Namespace:
         help='Limit training samples after city/seed split for smoke tests',
     )
     parser.add_argument(
+        '--cache-workers',
+        type=int,
+        default=1,
+        help='Worker processes used to build the raw tensor cache; 1 disables multiprocessing',
+    )
+    parser.add_argument(
         '--ckpt-dir',
         type=Path,
         default=None,
@@ -506,6 +512,7 @@ def main() -> None:
         checkpoint_every_epochs=args.checkpoint_every_epochs,
         progress_every_batches=args.progress_every_batches,
         progress_every_seconds=args.progress_every_seconds,
+        cache_workers=args.cache_workers,
     )
     batch_planner = _batch_planner(
         config=config,

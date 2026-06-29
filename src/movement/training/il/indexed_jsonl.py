@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from random import Random
@@ -95,6 +96,21 @@ class RawTensorPreparationState:
     file_size_bytes: int
     train_indices: tuple[int, ...]
     cache_indices: tuple[int, ...]
+    lane_normalizer: RunningNormalizer
+    movement_normalizer: RunningNormalizer
+
+
+@dataclass(frozen=True)
+class RawTensorCacheChunk:
+    dataset_path: str
+    cache_dir: str
+    records: tuple[IndexedJsonlRecord, ...]
+    train_indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class RawTensorCacheChunkResult:
+    processed_count: int
     lane_normalizer: RunningNormalizer
     movement_normalizer: RunningNormalizer
 
@@ -244,6 +260,7 @@ def train_movement_il_from_indexed_jsonl(
         cache_dir=raw_cache_dir,
         train_indices=split.train_indices,
         cache_indices=(*split.train_indices, *split.validation_indices),
+        cache_workers=config.cache_workers,
     )
     first_sample = dataset.sample(split.train_indices[0])
     lane_feature_dim = len(first_sample.x_lane[0])
@@ -543,6 +560,7 @@ def _prepare_raw_tensor_cache(
     cache_dir: Path,
     train_indices: Sequence[int],
     cache_indices: Sequence[int],
+    cache_workers: int,
 ) -> tuple[RunningNormalizer, RunningNormalizer]:
     preparation_path = cache_dir / 'preparation_state.pt'
     cached_state = _load_preparation_state(
@@ -559,6 +577,7 @@ def _prepare_raw_tensor_cache(
         cache_dir=cache_dir,
         train_indices=train_indices,
         cache_indices=cache_indices,
+        cache_workers=cache_workers,
     )
     torch.save(
         RawTensorPreparationState(
@@ -606,42 +625,134 @@ def _build_raw_tensor_cache_and_fit_normalizers(
     cache_dir: Path,
     train_indices: Sequence[int],
     cache_indices: Sequence[int],
+    cache_workers: int,
 ) -> tuple[RunningNormalizer, RunningNormalizer]:
+    if cache_workers <= 0:
+        raise ValueError('cache_workers must be positive.')
     cache_dir.mkdir(parents=True, exist_ok=True)
-    train_index_set = set(train_indices)
     lane_normalizer = RunningNormalizer()
     movement_normalizer = RunningNormalizer()
     started_s = time.monotonic()
     last_progress_s = started_s
+    worker_count = min(cache_workers, len(cache_indices))
     print(
-        f'raw_tensor_cache_start samples={len(cache_indices)} train_samples={len(train_indices)} cache_dir={cache_dir}',
+        f'raw_tensor_cache_start samples={len(cache_indices)} train_samples={len(train_indices)} '
+        f'workers={worker_count} cache_dir={cache_dir}',
         flush=True,
     )
-    for position, sample_index in enumerate(cache_indices, start=1):
-        cache_path = _raw_cache_path(cache_dir=cache_dir, sample_index=sample_index)
-        if cache_path.exists():
-            cached_sample = cast(
-                CachedMovementTensorSample,
-                torch.load(cache_path, map_location='cpu', weights_only=False),
-            )
-        else:
-            cached_sample = _cached_sample_from_sample(sample=dataset.sample(sample_index), device=torch.device('cpu'))
-            torch.save(cached_sample, cache_path)
-        if sample_index in train_index_set:
-            lane_normalizer.update_rows(_tensor_rows(cached_sample.x_lane))
-            movement_normalizer.update_rows(_tensor_rows(cached_sample.x_movement))
+    records_by_index = {record.sample_index: record for record in dataset.records}
+    records = tuple(records_by_index[sample_index] for sample_index in cache_indices)
+    chunks = _raw_cache_chunks(
+        dataset_path=dataset.dataset_path,
+        cache_dir=cache_dir,
+        records=records,
+        train_indices=tuple(train_indices),
+        worker_count=worker_count,
+    )
+    processed_count = 0
+    for result in _raw_cache_chunk_results(chunks=chunks, worker_count=worker_count):
+        processed_count += result.processed_count
+        _merge_normalizer(lane_normalizer, result.lane_normalizer)
+        _merge_normalizer(movement_normalizer, result.movement_normalizer)
         current_s = time.monotonic()
-        if position % 1000 == 0 or position == len(cache_indices) or current_s - last_progress_s >= 60.0:
+        if processed_count == len(cache_indices) or current_s - last_progress_s >= 30.0:
             last_progress_s = current_s
-            percent = _percent(position, len(cache_indices))
+            percent = _percent(processed_count, len(cache_indices))
             print(
-                f'raw_tensor_cache samples={position}/{len(cache_indices)} percent={percent:.1f} '
+                f'raw_tensor_cache samples={processed_count}/{len(cache_indices)} percent={percent:.1f} '
                 f'elapsed={_format_duration(current_s - started_s)}',
                 flush=True,
             )
     lane_normalizer.freeze()
     movement_normalizer.freeze()
     return lane_normalizer, movement_normalizer
+
+
+def _raw_cache_chunks(
+    dataset_path: Path,
+    cache_dir: Path,
+    records: Sequence[IndexedJsonlRecord],
+    train_indices: tuple[int, ...],
+    worker_count: int,
+) -> tuple[RawTensorCacheChunk, ...]:
+    chunk_size = max(1, min(512, (len(records) + worker_count * 8 - 1) // (worker_count * 8)))
+    return tuple(
+        RawTensorCacheChunk(
+            dataset_path=str(dataset_path),
+            cache_dir=str(cache_dir),
+            records=tuple(records[start : start + chunk_size]),
+            train_indices=train_indices,
+        )
+        for start in range(0, len(records), chunk_size)
+    )
+
+
+def _raw_cache_chunk_results(
+    chunks: Sequence[RawTensorCacheChunk],
+    worker_count: int,
+) -> Iterator[RawTensorCacheChunkResult]:
+    if worker_count == 1:
+        for chunk in chunks:
+            yield _build_raw_tensor_cache_chunk(chunk)
+        return
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        futures = tuple(executor.submit(_build_raw_tensor_cache_chunk, chunk) for chunk in chunks)
+        for future in as_completed(futures):
+            yield future.result()
+
+
+def _build_raw_tensor_cache_chunk(chunk: RawTensorCacheChunk) -> RawTensorCacheChunkResult:
+    train_index_set = set(chunk.train_indices)
+    lane_normalizer = RunningNormalizer()
+    movement_normalizer = RunningNormalizer()
+    dataset_path = Path(chunk.dataset_path)
+    cache_dir = Path(chunk.cache_dir)
+    with dataset_path.open('rb') as handle:
+        for record in chunk.records:
+            cache_path = _raw_cache_path(cache_dir=cache_dir, sample_index=record.sample_index)
+            if cache_path.exists():
+                cached_sample = cast(
+                    CachedMovementTensorSample,
+                    torch.load(cache_path, map_location='cpu', weights_only=False),
+                )
+            else:
+                handle.seek(record.byte_offset)
+                line = handle.read(record.byte_length).decode('utf-8')
+                cached_sample = _cached_sample_from_sample(
+                    sample=load_jsonl_sample_line(line),
+                    device=torch.device('cpu'),
+                )
+                torch.save(cached_sample, cache_path)
+            if record.sample_index in train_index_set:
+                lane_normalizer.update_rows(_tensor_rows(cached_sample.x_lane))
+                movement_normalizer.update_rows(_tensor_rows(cached_sample.x_movement))
+    return RawTensorCacheChunkResult(
+        processed_count=len(chunk.records),
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+    )
+
+
+def _merge_normalizer(target: RunningNormalizer, source: RunningNormalizer) -> None:
+    if source.count == 0:
+        return
+    if target.count == 0:
+        target.count = source.count
+        target.mean = source.mean
+        target.m2 = source.m2
+        target._dimension = len(source.mean)
+        return
+    combined_count = target.count + source.count
+    means: list[float] = []
+    squared_differences: list[float] = []
+    for target_mean, source_mean, target_m2, source_m2 in zip(target.mean, source.mean, target.m2, source.m2):
+        delta = source_mean - target_mean
+        means.append(target_mean + delta * source.count / combined_count)
+        squared_differences.append(target_m2 + source_m2 + delta * delta * target.count * source.count / combined_count)
+    target.count = combined_count
+    target.mean = tuple(means)
+    target.m2 = tuple(squared_differences)
+    target._dimension = len(target.mean)
 
 
 def _cached_sample_from_sample(
