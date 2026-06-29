@@ -33,6 +33,8 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
             '--cache-workers',
             '4',
             '--preload-cache',
+            '--train-workers',
+            '8',
             '--num-hops',
             '1',
             '--ckpt-dir',
@@ -51,6 +53,7 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
     assert args.max_train_samples == 64
     assert args.cache_workers == 4
     assert args.preload_cache is True
+    assert args.train_workers == 8
     assert args.num_hops == 1
     assert args.ckpt_dir == Path('checkpoints/il/unit')
     assert args.experiment_config is None

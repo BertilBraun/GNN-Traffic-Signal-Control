@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Iterator, Sequence
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from random import Random
+from threading import Lock
 import time
 from typing import cast
 
@@ -222,6 +223,7 @@ class MovementTensorCache:
         self.max_cached_samples = max_cached_samples
         self.retain_cached_samples = retain_cached_samples
         self.memory_cache: OrderedDict[int, CachedMovementTensorSample] = OrderedDict()
+        self.memory_cache_lock = Lock()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def preload(self, sample_indices: Sequence[int]) -> None:
@@ -250,10 +252,14 @@ class MovementTensorCache:
                 )
 
     def get(self, sample_index: int) -> CachedMovementTensorSample:
-        cached = self.memory_cache.get(sample_index)
-        if cached is not None:
-            self.memory_cache.move_to_end(sample_index)
-            return _move_cached_sample(cached, self.device)
+        return _move_cached_sample(self.get_cpu(sample_index), self.device)
+
+    def get_cpu(self, sample_index: int) -> CachedMovementTensorSample:
+        with self.memory_cache_lock:
+            cached = self.memory_cache.get(sample_index)
+            if cached is not None:
+                self.memory_cache.move_to_end(sample_index)
+                return cached
         raw_sample = cast(
             CachedMovementTensorSample,
             torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
@@ -264,10 +270,11 @@ class MovementTensorCache:
             movement_normalizer=self.movement_normalizer,
             device=torch.device('cpu'),
         )
-        self.memory_cache[sample_index] = loaded
-        if not self.retain_cached_samples and len(self.memory_cache) > self.max_cached_samples:
-            self.memory_cache.popitem(last=False)
-        return _move_cached_sample(loaded, self.device)
+        with self.memory_cache_lock:
+            self.memory_cache[sample_index] = loaded
+            if not self.retain_cached_samples and len(self.memory_cache) > self.max_cached_samples:
+                self.memory_cache.popitem(last=False)
+        return loaded
 
     def _cache_path(self, sample_index: int) -> Path:
         return self.cache_dir / f'sample_{sample_index:08d}.pt'
@@ -417,6 +424,14 @@ class IndexedBatchLossMetrics:
     phase_decisions: int
 
 
+class _NoopExecutor:
+    def __enter__(self) -> _NoopExecutor:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        return None
+
+
 def _train_indexed_epoch(
     model: MovementScorer,
     optimizer: torch.optim.Optimizer,
@@ -444,67 +459,92 @@ def _train_indexed_epoch(
     forward_elapsed_s = 0.0
     loss_elapsed_s = 0.0
     backward_elapsed_s = 0.0
-    for batch_number, batch_sample_indices in enumerate(batch_indices, start=1):
-        load_started_s = time.monotonic()
-        samples = tuple(tensor_cache.get(sample_index) for sample_index in batch_sample_indices)
-        load_elapsed_s += time.monotonic() - load_started_s
-        forward_started_s = time.monotonic()
-        predictions = _batched_predictions(model=model, samples=samples)
-        forward_elapsed_s += time.monotonic() - forward_started_s
-        loss_started_s = time.monotonic()
-        batch_metrics = _indexed_batch_loss_metrics(
-            samples=samples,
-            predictions=predictions,
-            loss_name=config.loss,
-            phase_loss_coefficient=config.phase_loss_coefficient,
-        )
-        batch_sample_count = len(samples)
-        batch_loss_value = float(batch_metrics.loss.detach().cpu())
-        moving_losses.append(batch_loss_value)
-        if len(moving_losses) > 100:
-            moving_losses.pop(0)
-        total_loss_value += batch_loss_value * batch_sample_count
-        total_regression_loss_value += float(batch_metrics.regression_loss.detach().cpu()) * batch_sample_count
-        total_phase_loss_value += float(batch_metrics.phase_loss.detach().cpu()) * batch_sample_count
-        total_phase_matches += batch_metrics.phase_matches
-        total_phase_decisions += batch_metrics.phase_decisions
-        total_trained_samples += batch_sample_count
-        loss_elapsed_s += time.monotonic() - loss_started_s
-        backward_started_s = time.monotonic()
-        optimizer.zero_grad()
-        batch_metrics.loss.backward()
-        optimizer.step()
-        backward_elapsed_s += time.monotonic() - backward_started_s
-        current_s = time.monotonic()
-        if _should_print_batch_progress(
-            batch_number=batch_number,
-            total_batches=len(batch_indices),
-            current_s=current_s,
-            last_progress_s=last_progress_s,
-            config=config,
-        ):
-            last_progress_s = current_s
-            _print_batch_progress(
-                epoch=epoch + 1,
-                epochs=config.epochs,
+    train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
+    with ThreadPoolExecutor(max_workers=train_workers) if train_workers > 1 else _NoopExecutor() as executor:
+        for batch_number, batch_sample_indices in enumerate(batch_indices, start=1):
+            load_started_s = time.monotonic()
+            samples = _load_batch_samples(
+                tensor_cache=tensor_cache,
+                sample_indices=batch_sample_indices,
+                executor=executor,
+                device=torch.device(config.device),
+            )
+            load_elapsed_s += time.monotonic() - load_started_s
+            forward_started_s = time.monotonic()
+            predictions = _batched_predictions(model=model, samples=samples)
+            forward_elapsed_s += time.monotonic() - forward_started_s
+            loss_started_s = time.monotonic()
+            batch_metrics = _indexed_batch_loss_metrics(
+                samples=samples,
+                predictions=predictions,
+                loss_name=config.loss,
+                phase_loss_coefficient=config.phase_loss_coefficient,
+            )
+            batch_sample_count = len(samples)
+            batch_loss_value = float(batch_metrics.loss.detach().cpu())
+            moving_losses.append(batch_loss_value)
+            if len(moving_losses) > 100:
+                moving_losses.pop(0)
+            total_loss_value += batch_loss_value * batch_sample_count
+            total_regression_loss_value += float(batch_metrics.regression_loss.detach().cpu()) * batch_sample_count
+            total_phase_loss_value += float(batch_metrics.phase_loss.detach().cpu()) * batch_sample_count
+            total_phase_matches += batch_metrics.phase_matches
+            total_phase_decisions += batch_metrics.phase_decisions
+            total_trained_samples += batch_sample_count
+            loss_elapsed_s += time.monotonic() - loss_started_s
+            backward_started_s = time.monotonic()
+            optimizer.zero_grad()
+            batch_metrics.loss.backward()
+            optimizer.step()
+            backward_elapsed_s += time.monotonic() - backward_started_s
+            current_s = time.monotonic()
+            if _should_print_batch_progress(
                 batch_number=batch_number,
                 total_batches=len(batch_indices),
-                samples_processed=total_trained_samples,
-                total_samples=len(sample_indices),
-                started_s=started_s,
-                moving_average_loss=sum(moving_losses) / len(moving_losses),
-                device=torch.device(config.device),
-                load_elapsed_s=load_elapsed_s,
-                forward_elapsed_s=forward_elapsed_s,
-                loss_elapsed_s=loss_elapsed_s,
-                backward_elapsed_s=backward_elapsed_s,
-            )
+                current_s=current_s,
+                last_progress_s=last_progress_s,
+                config=config,
+            ):
+                last_progress_s = current_s
+                _print_batch_progress(
+                    epoch=epoch + 1,
+                    epochs=config.epochs,
+                    batch_number=batch_number,
+                    total_batches=len(batch_indices),
+                    samples_processed=total_trained_samples,
+                    total_samples=len(sample_indices),
+                    started_s=started_s,
+                    moving_average_loss=sum(moving_losses) / len(moving_losses),
+                    device=torch.device(config.device),
+                    load_elapsed_s=load_elapsed_s,
+                    forward_elapsed_s=forward_elapsed_s,
+                    loss_elapsed_s=loss_elapsed_s,
+                    backward_elapsed_s=backward_elapsed_s,
+                )
     return IndexedEpochMetrics(
         loss=total_loss_value / total_trained_samples,
         regression_loss=total_regression_loss_value / total_trained_samples,
         phase_loss=total_phase_loss_value / total_trained_samples,
         phase_match_rate=total_phase_matches / max(1, total_phase_decisions),
     )
+
+
+def _train_worker_count(train_workers: int, samples_per_batch: int) -> int:
+    if train_workers <= 0:
+        raise ValueError('train_workers must be positive.')
+    return min(train_workers, samples_per_batch)
+
+
+def _load_batch_samples(
+    tensor_cache: MovementTensorCache,
+    sample_indices: Sequence[int],
+    executor: ThreadPoolExecutor | _NoopExecutor,
+    device: torch.device,
+) -> tuple[CachedMovementTensorSample, ...]:
+    if isinstance(executor, _NoopExecutor):
+        return tuple(tensor_cache.get(sample_index) for sample_index in sample_indices)
+    cpu_samples = tuple(executor.map(tensor_cache.get_cpu, sample_indices))
+    return tuple(_move_cached_sample(sample, device) for sample in cpu_samples)
 
 
 def _batched_predictions(

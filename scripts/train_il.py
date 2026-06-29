@@ -157,6 +157,12 @@ def parse_args() -> argparse.Namespace:
         help='Load all raw tensor cache samples into RAM before training to avoid per-batch disk reads',
     )
     parser.add_argument(
+        '--train-workers',
+        type=int,
+        default=1,
+        help='CPU threads used to load and normalize samples within each training batch',
+    )
+    parser.add_argument(
         '--ckpt-dir',
         type=Path,
         default=None,
@@ -519,6 +525,7 @@ def main() -> None:
         progress_every_seconds=args.progress_every_seconds,
         cache_workers=args.cache_workers,
         preload_cache=args.preload_cache,
+        train_workers=args.train_workers,
     )
     batch_planner = _batch_planner(
         config=config,
