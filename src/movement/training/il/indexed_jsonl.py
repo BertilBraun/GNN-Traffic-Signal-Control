@@ -79,6 +79,13 @@ class IndexedTrainValidationSplit:
 
 
 @dataclass(frozen=True)
+class CachedPhaseTensor:
+    incidence_matrix: torch.Tensor
+    movement_ids: torch.Tensor
+    target_phase: int
+
+
+@dataclass(frozen=True)
 class CachedMovementTensorSample:
     x_lane: torch.Tensor
     x_movement: torch.Tensor
@@ -87,6 +94,15 @@ class CachedMovementTensorSample:
     phase_incidences: dict[str, StoredPhaseIncidence]
     teacher_selected_phase_by_tls: dict[str, int]
     city_name: str
+    phase_tensors: dict[str, CachedPhaseTensor] | None = None
+
+
+@dataclass(frozen=True)
+class JsonlIndexState:
+    dataset_path: str
+    file_size_bytes: int
+    modified_time_ns: int
+    records: tuple[IndexedJsonlRecord, ...]
 
 
 @dataclass(frozen=True)
@@ -115,9 +131,9 @@ class RawTensorCacheChunkResult:
 
 
 class IndexedJsonlDataset:
-    def __init__(self, dataset_path: Path | str) -> None:
+    def __init__(self, dataset_path: Path | str, index_cache_path: Path | None = None) -> None:
         self.dataset_path = Path(dataset_path)
-        self.records = _index_jsonl_records(self.dataset_path)
+        self.records = _index_jsonl_records(self.dataset_path, index_cache_path=index_cache_path)
         if not self.records:
             raise ValueError('At least one sample is required.')
 
@@ -213,9 +229,15 @@ class MovementTensorCache:
         last_progress_s = started_s
         print(f'preload_cache_start samples={len(sample_indices)} cache_dir={self.cache_dir}', flush=True)
         for position, sample_index in enumerate(sample_indices, start=1):
-            self.memory_cache[sample_index] = cast(
+            raw_sample = cast(
                 CachedMovementTensorSample,
                 torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
+            )
+            self.memory_cache[sample_index] = _normalised_cached_sample(
+                sample=raw_sample,
+                lane_normalizer=self.lane_normalizer,
+                movement_normalizer=self.movement_normalizer,
+                device=torch.device('cpu'),
             )
             current_s = time.monotonic()
             if position % 1000 == 0 or position == len(sample_indices) or current_s - last_progress_s >= 30.0:
@@ -231,25 +253,21 @@ class MovementTensorCache:
         cached = self.memory_cache.get(sample_index)
         if cached is not None:
             self.memory_cache.move_to_end(sample_index)
-            return _normalised_cached_sample(
-                sample=cached,
-                lane_normalizer=self.lane_normalizer,
-                movement_normalizer=self.movement_normalizer,
-                device=self.device,
-            )
-        loaded = cast(
+            return _move_cached_sample(cached, self.device)
+        raw_sample = cast(
             CachedMovementTensorSample,
             torch.load(self._cache_path(sample_index), map_location='cpu', weights_only=False),
+        )
+        loaded = _normalised_cached_sample(
+            sample=raw_sample,
+            lane_normalizer=self.lane_normalizer,
+            movement_normalizer=self.movement_normalizer,
+            device=torch.device('cpu'),
         )
         self.memory_cache[sample_index] = loaded
         if not self.retain_cached_samples and len(self.memory_cache) > self.max_cached_samples:
             self.memory_cache.popitem(last=False)
-        return _normalised_cached_sample(
-            sample=loaded,
-            lane_normalizer=self.lane_normalizer,
-            movement_normalizer=self.movement_normalizer,
-            device=self.device,
-        )
+        return _move_cached_sample(loaded, self.device)
 
     def _cache_path(self, sample_index: int) -> Path:
         return self.cache_dir / f'sample_{sample_index:08d}.pt'
@@ -262,7 +280,10 @@ def train_movement_il_from_indexed_jsonl(
     validation_fraction: float,
     max_train_samples: int | None,
 ) -> MovementILTrainingResult:
-    dataset = IndexedJsonlDataset(dataset_path)
+    checkpoint_dir = Path(config.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    raw_cache_dir = checkpoint_dir / 'raw_tensor_cache'
+    dataset = IndexedJsonlDataset(dataset_path, index_cache_path=raw_cache_dir / 'jsonl_index.pt')
     split = dataset.split_train_validation(
         validation_fraction=validation_fraction,
         seed=config.seed,
@@ -272,9 +293,6 @@ def train_movement_il_from_indexed_jsonl(
     print_indexed_dataset_stats(stats)
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
-    checkpoint_dir = Path(config.checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    raw_cache_dir = checkpoint_dir / 'raw_tensor_cache'
     lane_normalizer, movement_normalizer = _prepare_raw_tensor_cache(
         dataset=dataset,
         cache_dir=raw_cache_dir,
@@ -291,7 +309,7 @@ def train_movement_il_from_indexed_jsonl(
         lane_normalizer=lane_normalizer,
         movement_normalizer=movement_normalizer,
         device=device,
-        max_cached_samples=4096,
+        max_cached_samples=1024,
         retain_cached_samples=config.preload_cache,
     )
     if config.preload_cache:
@@ -571,11 +589,12 @@ def _sample_weighted_phase_loss(
     groups: dict[int, PhaseLogitGroup] = {}
     device = predictions[0].device
     for sample_index, (sample, prediction) in enumerate(zip(samples, predictions)):
-        for traffic_light_id, incidence in sample.phase_incidences.items():
-            logits = _phase_logits_from_cached_incidence(incidence=incidence, movement_scores=prediction)
+        assert sample.phase_tensors is not None
+        for phase_tensor in sample.phase_tensors.values():
+            logits = _phase_logits_from_cached_incidence(phase_tensor=phase_tensor, movement_scores=prediction)
             group = groups.setdefault(logits.shape[0], PhaseLogitGroup(logits=[], targets=[], sample_indices=[]))
             group.logits.append(logits)
-            group.targets.append(sample.teacher_selected_phase_by_tls[traffic_light_id])
+            group.targets.append(phase_tensor.target_phase)
             group.sample_indices.append(sample_index)
     sample_loss_sums = torch.zeros((len(samples),), dtype=torch.float32, device=device)
     sample_loss_counts = torch.zeros((len(samples),), dtype=torch.float32, device=device)
@@ -600,20 +619,19 @@ def _batched_phase_match_counts(
     matches = 0
     decisions = 0
     for sample, prediction in zip(samples, predictions):
-        for traffic_light_id, incidence in sample.phase_incidences.items():
-            predicted_phase = int(_phase_logits_from_cached_incidence(incidence, prediction).argmax().detach().cpu())
-            matches += int(predicted_phase == sample.teacher_selected_phase_by_tls[traffic_light_id])
+        assert sample.phase_tensors is not None
+        for phase_tensor in sample.phase_tensors.values():
+            predicted_phase = int(_phase_logits_from_cached_incidence(phase_tensor, prediction).argmax().detach().cpu())
+            matches += int(predicted_phase == phase_tensor.target_phase)
             decisions += 1
     return matches, decisions
 
 
 def _phase_logits_from_cached_incidence(
-    incidence: StoredPhaseIncidence,
+    phase_tensor: CachedPhaseTensor,
     movement_scores: torch.Tensor,
 ) -> torch.Tensor:
-    incidence_matrix = torch.tensor(incidence.rows, dtype=movement_scores.dtype, device=movement_scores.device)
-    movement_ids = torch.tensor(incidence.movement_ids, dtype=torch.long, device=movement_scores.device)
-    return incidence_matrix @ movement_scores[movement_ids]
+    return phase_tensor.incidence_matrix.to(dtype=movement_scores.dtype) @ movement_scores[phase_tensor.movement_ids]
 
 
 def _batched_edge_index_dict(
@@ -719,7 +737,14 @@ def _write_indexed_validation_losses(
         writer.add_scalar(f'validation/{city_name}/loss', sum(city_losses) / len(city_losses), epoch)
 
 
-def _index_jsonl_records(dataset_path: Path) -> tuple[IndexedJsonlRecord, ...]:
+def _index_jsonl_records(dataset_path: Path, index_cache_path: Path | None) -> tuple[IndexedJsonlRecord, ...]:
+    cached_state = _load_jsonl_index_state(dataset_path=dataset_path, index_cache_path=index_cache_path)
+    if cached_state is not None:
+        print(
+            f'jsonl_index_ready path={dataset_path} records={len(cached_state.records)} cache={index_cache_path}',
+            flush=True,
+        )
+        return cached_state.records
     records: list[IndexedJsonlRecord] = []
     byte_offset = 0
     file_size_bytes = dataset_path.stat().st_size
@@ -755,7 +780,33 @@ def _index_jsonl_records(dataset_path: Path) -> tuple[IndexedJsonlRecord, ...]:
         f'elapsed={_format_duration(time.monotonic() - started_s)}',
         flush=True,
     )
-    return tuple(records)
+    indexed_records = tuple(records)
+    if index_cache_path is not None:
+        index_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            JsonlIndexState(
+                dataset_path=str(dataset_path),
+                file_size_bytes=file_size_bytes,
+                modified_time_ns=dataset_path.stat().st_mtime_ns,
+                records=indexed_records,
+            ),
+            index_cache_path,
+        )
+    return indexed_records
+
+
+def _load_jsonl_index_state(dataset_path: Path, index_cache_path: Path | None) -> JsonlIndexState | None:
+    if index_cache_path is None or not index_cache_path.exists():
+        return None
+    state = cast(JsonlIndexState, torch.load(index_cache_path, map_location='cpu', weights_only=False))
+    file_stat = dataset_path.stat()
+    if state.dataset_path != str(dataset_path):
+        return None
+    if state.file_size_bytes != file_stat.st_size:
+        return None
+    if state.modified_time_ns != file_stat.st_mtime_ns:
+        return None
+    return state
 
 
 def _groups_from_records(records: Sequence[IndexedJsonlRecord]) -> tuple[CitySeedIndexedGroup, ...]:
@@ -1019,7 +1070,43 @@ def _normalised_cached_sample(
         phase_incidences=sample.phase_incidences,
         teacher_selected_phase_by_tls=sample.teacher_selected_phase_by_tls,
         city_name=sample.city_name,
+        phase_tensors=_phase_tensors_from_sample(sample=sample, device=device),
     )
+
+
+def _move_cached_sample(sample: CachedMovementTensorSample, device: torch.device) -> CachedMovementTensorSample:
+    assert sample.phase_tensors is not None
+    return CachedMovementTensorSample(
+        x_lane=sample.x_lane.to(device),
+        x_movement=sample.x_movement.to(device),
+        target=sample.target.to(device),
+        edge_index_dict={key: value.to(device) for key, value in sample.edge_index_dict.items()},
+        phase_incidences=sample.phase_incidences,
+        teacher_selected_phase_by_tls=sample.teacher_selected_phase_by_tls,
+        city_name=sample.city_name,
+        phase_tensors={
+            traffic_light_id: CachedPhaseTensor(
+                incidence_matrix=phase_tensor.incidence_matrix.to(device),
+                movement_ids=phase_tensor.movement_ids.to(device),
+                target_phase=phase_tensor.target_phase,
+            )
+            for traffic_light_id, phase_tensor in sample.phase_tensors.items()
+        },
+    )
+
+
+def _phase_tensors_from_sample(
+    sample: CachedMovementTensorSample,
+    device: torch.device,
+) -> dict[str, CachedPhaseTensor]:
+    return {
+        traffic_light_id: CachedPhaseTensor(
+            incidence_matrix=torch.tensor(incidence.rows, dtype=torch.float32, device=device),
+            movement_ids=torch.tensor(incidence.movement_ids, dtype=torch.long, device=device),
+            target_phase=sample.teacher_selected_phase_by_tls[traffic_light_id],
+        )
+        for traffic_light_id, incidence in sample.phase_incidences.items()
+    }
 
 
 def _normalise_tensor(tensor: torch.Tensor, normalizer: RunningNormalizer) -> torch.Tensor:

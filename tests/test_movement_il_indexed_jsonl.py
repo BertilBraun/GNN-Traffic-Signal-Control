@@ -22,14 +22,18 @@ from src.movement.training.il.types import MovementILTrainingConfig  # noqa: E40
 
 def test_indexed_jsonl_counts_and_splits_without_materialized_samples(tmp_path: Path) -> None:
     dataset_path = tmp_path / 'samples.jsonl'
+    index_cache_path = tmp_path / 'cache' / 'jsonl_index.pt'
     save_jsonl_samples(dataset_path, _samples())
 
-    dataset = IndexedJsonlDataset(dataset_path)
+    dataset = IndexedJsonlDataset(dataset_path, index_cache_path=index_cache_path)
+    cached_dataset = IndexedJsonlDataset(dataset_path, index_cache_path=index_cache_path)
     split = dataset.split_train_validation(validation_fraction=0.5, seed=3, max_train_samples=None)
     stats = dataset.stats(split)
 
+    assert index_cache_path.exists()
     assert stats.file_size_bytes == dataset_path.stat().st_size
     assert stats.sample_count == 4
+    assert len(cached_dataset.records) == 4
     assert stats.train_count == 2
     assert stats.validation_count == 2
     assert {(group.city_name, group.collection_seed) for group in stats.groups} == {
@@ -75,6 +79,7 @@ def test_indexed_jsonl_training_logs_progress_and_checkpoints(tmp_path: Path, ca
     assert (checkpoint_dir / 'movement_policy_best.pt').exists()
     assert (checkpoint_dir / 'raw_tensor_cache' / 'sample_00000000.pt').exists()
     assert (checkpoint_dir / 'raw_tensor_cache' / 'preparation_state.pt').exists()
+    assert (checkpoint_dir / 'raw_tensor_cache' / 'jsonl_index.pt').exists()
 
 
 def _samples() -> tuple[MovementDatasetSample, ...]:
