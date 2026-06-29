@@ -695,34 +695,36 @@ def _train_data_loader(
     batch_indices: Sequence[Sequence[int]],
     config: MovementILTrainingConfig,
 ) -> DataLoader[CachedMovementTensorBatch]:
-    train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
     if config.preload_cache:
+        train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
         dataset = _preloaded_train_dataset(tensor_cache=tensor_cache, batch_indices=batch_indices)
-        batch_size = config.samples_per_batch
-        collate = _collate_cached_samples
-    else:
-        dataset = _batch_train_dataset(tensor_cache=tensor_cache, batch_indices=batch_indices)
-        batch_size = None
-        collate = None
-    if train_workers == 1:
+        if train_workers == 1:
+            return DataLoader(
+                dataset,
+                batch_size=config.samples_per_batch,
+                shuffle=False,
+                num_workers=0,
+                collate_fn=_collate_cached_samples,
+            )
         return DataLoader(
             dataset,
-            batch_size=batch_size,
+            batch_size=config.samples_per_batch,
             shuffle=False,
-            num_workers=0,
-            collate_fn=collate,
+            num_workers=train_workers,
+            collate_fn=_collate_cached_samples,
+            prefetch_factor=_prefetch_factor(
+                prefetch_batches=config.prefetch_batches,
+                train_workers=train_workers,
+            ),
+            persistent_workers=False,
         )
+    dataset = _batch_train_dataset(tensor_cache=tensor_cache, batch_indices=batch_indices)
     return DataLoader(
         dataset,
-        batch_size=batch_size,
+        batch_size=None,
         shuffle=False,
-        num_workers=train_workers,
-        collate_fn=collate,
-        prefetch_factor=_prefetch_factor(
-            prefetch_batches=config.prefetch_batches,
-            train_workers=train_workers,
-        ),
-        persistent_workers=False,
+        num_workers=0,
+        collate_fn=None,
     )
 
 
