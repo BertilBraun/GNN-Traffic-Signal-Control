@@ -30,6 +30,9 @@ class MovementILTrainingConfig:
     phase_loss_coefficient: float = 1.0
     samples_per_batch: int = 16
     log_dir: Path | str | None = None
+    checkpoint_every_epochs: int = 1
+    progress_every_batches: int = 0
+    progress_every_seconds: int = 60
 
 
 @dataclass(frozen=True)

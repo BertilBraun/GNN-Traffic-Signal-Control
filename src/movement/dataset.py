@@ -128,8 +128,13 @@ def load_jsonl_samples(path: str | Path) -> list[MovementDatasetSample]:
         for line in handle:
             if not line.strip():
                 continue
-            samples.append(_sample_from_dict(json.loads(line)))
+            samples.append(load_jsonl_sample_line(line))
     return samples
+
+
+def load_jsonl_sample_line(line: str) -> MovementDatasetSample:
+    """Load one JSONL sample line written by `save_jsonl_samples`."""
+    return _sample_from_dict(json.loads(line))
 
 
 def _teacher_scores_by_graph_movement(

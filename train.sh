@@ -10,6 +10,8 @@ DEVICE="${DEVICE:-cuda}"
 WORKERS="${WORKERS:-16}"
 IL_EPOCHS="${IL_EPOCHS:-20}"
 IL_SAMPLES_PER_BATCH="${IL_SAMPLES_PER_BATCH:-128}"
+IL_CHECKPOINT_EVERY_EPOCHS="${IL_CHECKPOINT_EVERY_EPOCHS:-1}"
+IL_PROGRESS_EVERY_SECONDS="${IL_PROGRESS_EVERY_SECONDS:-60}"
 PPO_PILOT_ITERATIONS="${PPO_PILOT_ITERATIONS:-100}"
 PPO_TOTAL_ITERATIONS="${PPO_TOTAL_ITERATIONS:-1000}"
 TENSORBOARD_PORT="${TENSORBOARD_PORT:-6006}"
@@ -193,6 +195,8 @@ train_imitation_policy() {
         --device "$DEVICE" \
         --epochs "$IL_EPOCHS" \
         --samples-per-batch "$IL_SAMPLES_PER_BATCH" \
+        --checkpoint-every-epochs "$IL_CHECKPOINT_EVERY_EPOCHS" \
+        --progress-every-seconds "$IL_PROGRESS_EVERY_SECONDS" \
         --ckpt-dir "checkpoints/il/$RUN_NAME" \
         --log-dir "runs/il/$RUN_NAME" \
         --eval-every-epochs 0

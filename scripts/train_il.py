@@ -16,10 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 
-from src.movement.training.il import random_batch_planner, train_movement_il, train_movement_il_from_jsonl  # noqa: E402
+from src.movement.training.il import random_batch_planner, train_movement_il_from_jsonl  # noqa: E402
 from src.movement.training.il.batching import CityBalancedBatchPlanner, MovementILBatchPlanner  # noqa: E402
-from src.movement.training.il.batching import split_train_validation_by_city_seed  # noqa: E402
 from src.movement.training.il.checkpoint import save_movement_checkpoint  # noqa: E402
+from src.movement.training.il.indexed_jsonl import train_movement_il_from_indexed_jsonl  # noqa: E402
 from src.movement.training.il.types import (  # noqa: E402
     MovementILLoss,
     MovementILTrainingConfig,
@@ -120,6 +120,30 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help='Print loss every N epochs (0 disables progress output)',
+    )
+    parser.add_argument(
+        '--checkpoint-every-epochs',
+        type=int,
+        default=1,
+        help='Save movement_policy_last.pt and movement_policy_best.pt every N epochs; 0 saves only at the end',
+    )
+    parser.add_argument(
+        '--progress-every-batches',
+        type=int,
+        default=0,
+        help='Print intra-epoch progress every N batches; 0 disables batch-count cadence',
+    )
+    parser.add_argument(
+        '--progress-every-seconds',
+        type=int,
+        default=60,
+        help='Print intra-epoch progress after roughly this many seconds; 0 disables time cadence',
+    )
+    parser.add_argument(
+        '--max-train-samples',
+        type=int,
+        default=None,
+        help='Limit training samples after city/seed split for smoke tests',
     )
     parser.add_argument(
         '--ckpt-dir',
@@ -479,33 +503,22 @@ def main() -> None:
         phase_loss_coefficient=args.phase_loss_coeff,
         samples_per_batch=args.samples_per_batch,
         log_dir=log_dir,
+        checkpoint_every_epochs=args.checkpoint_every_epochs,
+        progress_every_batches=args.progress_every_batches,
+        progress_every_seconds=args.progress_every_seconds,
     )
     batch_planner = _batch_planner(
         config=config,
         experiment_configuration=experiment_configuration,
     )
     if args.data is not None:
-        if experiment_configuration is None:
-            result = train_movement_il_from_jsonl(
-                dataset_path=args.data,
-                config=config,
-                observer=observer,
-                batch_planner=batch_planner,
-                validation_samples=(),
-            )
-        else:
-            split_samples = split_train_validation_by_city_seed(
-                samples=load_jsonl_samples(args.data),
-                validation_fraction=args.validation_fraction,
-                seed=args.seed,
-            )
-            result = train_movement_il(
-                samples=split_samples.training_samples,
-                config=config,
-                observer=observer,
-                batch_planner=batch_planner,
-                validation_samples=split_samples.validation_samples,
-            )
+        result = train_movement_il_from_indexed_jsonl(
+            dataset_path=args.data,
+            config=config,
+            observer=observer,
+            validation_fraction=args.validation_fraction if experiment_configuration is not None else 0.0,
+            max_train_samples=args.max_train_samples,
+        )
     else:
         with tempfile.TemporaryDirectory(prefix='movement_il_') as temporary_directory:
             dataset_path = Path(temporary_directory) / 'samples.jsonl'

@@ -129,18 +129,19 @@ def train_movement_il(
                 loss_name=config.loss,
                 phase_loss_coefficient=config.phase_loss_coefficient,
             )
-        _save_training_checkpoints(
-            checkpoint_dir=checkpoint_dir,
-            model_state=model.state_dict(),
-            best_state=best_state,
-            config=config,
-            lane_feature_dim=lane_feature_dim,
-            movement_feature_dim=movement_feature_dim,
-            lane_normalizer=lane_normalizer,
-            movement_normalizer=movement_normalizer,
-            final_loss=final_loss,
-            best_loss=best_loss,
-        )
+        if _should_save_checkpoint(epoch=epoch, config=config):
+            _save_training_checkpoints(
+                checkpoint_dir=checkpoint_dir,
+                model_state=model.state_dict(),
+                best_state=best_state,
+                config=config,
+                lane_feature_dim=lane_feature_dim,
+                movement_feature_dim=movement_feature_dim,
+                lane_normalizer=lane_normalizer,
+                movement_normalizer=movement_normalizer,
+                final_loss=final_loss,
+                best_loss=best_loss,
+            )
         if observer is not None:
             observer.on_epoch_completed(
                 MovementILTrainingSnapshot(
@@ -388,3 +389,9 @@ def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> boo
     if progress_every <= 0:
         return False
     return (epoch + 1) % progress_every == 0 or epoch == epochs - 1
+
+
+def _should_save_checkpoint(epoch: int, config: MovementILTrainingConfig) -> bool:
+    if config.checkpoint_every_epochs <= 0:
+        return epoch == config.epochs - 1
+    return (epoch + 1) % config.checkpoint_every_epochs == 0 or epoch == config.epochs - 1
