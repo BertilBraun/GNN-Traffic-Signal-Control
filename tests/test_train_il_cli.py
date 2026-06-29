@@ -28,6 +28,8 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
             '5',
             '--progress-every-seconds',
             '30',
+            '--validation-every-epochs',
+            '0',
             '--max-train-samples',
             '64',
             '--cache-workers',
@@ -54,6 +56,7 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
     assert args.checkpoint_every_epochs == 2
     assert args.progress_every_batches == 5
     assert args.progress_every_seconds == 30
+    assert args.validation_every_epochs == 0
     assert args.max_train_samples == 64
     assert args.cache_workers == 4
     assert args.preload_cache is True

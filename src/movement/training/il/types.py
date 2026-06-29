@@ -33,6 +33,7 @@ class MovementILTrainingConfig:
     checkpoint_every_epochs: int = 1
     progress_every_batches: int = 0
     progress_every_seconds: int = 60
+    validation_every_epochs: int = 1
     cache_workers: int = 1
     preload_cache: bool = False
     train_workers: int = 1

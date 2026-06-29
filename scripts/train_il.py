@@ -100,6 +100,12 @@ def parse_args() -> argparse.Namespace:
         default=0.1,
         help='City/seed validation fraction used with --experiment-config',
     )
+    parser.add_argument(
+        '--validation-every-epochs',
+        type=int,
+        default=1,
+        help='Write held-out validation loss every N epochs; 0 disables validation loss pass',
+    )
     parser.add_argument('--num-hops', type=int, default=1, help='LaneGroup/Movement macro-hops')
     parser.add_argument(
         '--loss',
@@ -535,6 +541,7 @@ def main() -> None:
         checkpoint_every_epochs=args.checkpoint_every_epochs,
         progress_every_batches=args.progress_every_batches,
         progress_every_seconds=args.progress_every_seconds,
+        validation_every_epochs=args.validation_every_epochs,
         cache_workers=args.cache_workers,
         preload_cache=args.preload_cache,
         train_workers=args.train_workers,

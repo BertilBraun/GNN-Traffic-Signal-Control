@@ -486,6 +486,8 @@ def train_movement_il_from_indexed_jsonl(
                 writer.add_scalar('loss/regression', epoch_metrics.regression_loss, epoch + 1)
                 writer.add_scalar('loss/phase', epoch_metrics.phase_loss, epoch + 1)
                 writer.add_scalar('accuracy/phase_match', epoch_metrics.phase_match_rate, epoch + 1)
+            validation_started_s = time.monotonic()
+            if writer is not None and _should_validate(epoch=epoch, config=config):
                 _write_indexed_validation_losses(
                     writer=writer,
                     epoch=epoch + 1,
@@ -495,6 +497,8 @@ def train_movement_il_from_indexed_jsonl(
                     loss_name=config.loss,
                     phase_loss_coefficient=config.phase_loss_coefficient,
                 )
+            validation_elapsed_s = time.monotonic() - validation_started_s
+            checkpoint_started_s = time.monotonic()
             if _should_save_checkpoint(epoch=epoch, config=config):
                 _save_training_checkpoints(
                     checkpoint_dir=checkpoint_dir,
@@ -508,6 +512,8 @@ def train_movement_il_from_indexed_jsonl(
                     final_loss=final_loss,
                     best_loss=best_loss,
                 )
+            checkpoint_elapsed_s = time.monotonic() - checkpoint_started_s
+            observer_started_s = time.monotonic()
             if observer is not None:
                 observer.on_epoch_completed(
                     MovementILTrainingSnapshot(
@@ -525,6 +531,15 @@ def train_movement_il_from_indexed_jsonl(
                         lane_normalizer=lane_normalizer,
                         movement_normalizer=movement_normalizer,
                     )
+                )
+            observer_elapsed_s = time.monotonic() - observer_started_s
+            if validation_elapsed_s > 0.05 or checkpoint_elapsed_s > 0.05 or observer_elapsed_s > 0.05:
+                print(
+                    f'epoch_post={epoch + 1}/{config.epochs} '
+                    f't_validation={validation_elapsed_s:.1f}s '
+                    f't_checkpoint={checkpoint_elapsed_s:.1f}s '
+                    f't_observer={observer_elapsed_s:.1f}s',
+                    flush=True,
                 )
     finally:
         if writer is not None:
@@ -1704,6 +1719,12 @@ def _should_save_checkpoint(epoch: int, config: MovementILTrainingConfig) -> boo
     if config.checkpoint_every_epochs <= 0:
         return epoch == config.epochs - 1
     return (epoch + 1) % config.checkpoint_every_epochs == 0 or epoch == config.epochs - 1
+
+
+def _should_validate(epoch: int, config: MovementILTrainingConfig) -> bool:
+    if config.validation_every_epochs <= 0:
+        return False
+    return (epoch + 1) % config.validation_every_epochs == 0 or epoch == config.epochs - 1
 
 
 def _should_print_batch_progress(
