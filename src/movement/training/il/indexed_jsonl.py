@@ -12,6 +12,7 @@ from random import Random
 from threading import Lock
 import time
 from typing import cast
+from typing import TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -118,6 +119,25 @@ class CachedMovementTensorBatch:
     lane_counts: tuple[int, ...]
     movement_counts: tuple[int, ...]
     phase_logit_groups: tuple[CachedPhaseLogitGroupBatch, ...]
+    city_names: tuple[str, ...]
+
+
+class CachedPhaseLogitGroupPayload(TypedDict):
+    incidence_matrices: torch.Tensor
+    movement_ids: torch.Tensor
+    targets: torch.Tensor
+    sample_indices: torch.Tensor
+
+
+class CachedMovementTensorBatchPayload(TypedDict):
+    x_lane: torch.Tensor
+    x_movement: torch.Tensor
+    target: torch.Tensor
+    edge_index_dict: dict[str, torch.Tensor]
+    movement_sample_indices: torch.Tensor
+    lane_counts: tuple[int, ...]
+    movement_counts: tuple[int, ...]
+    phase_logit_groups: tuple[CachedPhaseLogitGroupPayload, ...]
     city_names: tuple[str, ...]
 
 
@@ -356,9 +376,9 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
         sample_indices = self.batch_indices[index]
         batch_path = self._batch_path(sample_indices)
         if batch_path.exists():
-            return cast(CachedMovementTensorBatch, _load_torch_cpu(batch_path))
+            return _batch_from_payload(cast(CachedMovementTensorBatchPayload, _load_torch_cpu(batch_path)))
         batch = _collate_cached_samples(tuple(self._sample(sample_index) for sample_index in sample_indices))
-        torch.save(batch, batch_path)
+        torch.save(_batch_payload(batch), batch_path)
         return batch
 
     def _sample(self, sample_index: int) -> CachedMovementTensorSample:
@@ -375,7 +395,7 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
 
     def _batch_path(self, sample_indices: Sequence[int]) -> Path:
         digest = hashlib.blake2b(digest_size=16)
-        digest.update(b'indexed-il-batch-v1')
+        digest.update(b'indexed-il-batch-tensor-payload-v1')
         digest.update(_normalizer_digest_bytes(self.lane_normalizer))
         digest.update(_normalizer_digest_bytes(self.movement_normalizer))
         for sample_index in sample_indices:
@@ -1574,6 +1594,52 @@ def _cached_sample_batch(samples: Sequence[CachedMovementTensorSample]) -> Cache
         movement_counts=movement_counts,
         phase_logit_groups=_phase_logit_group_batches(samples=samples),
         city_names=tuple(sample.city_name for sample in samples),
+    )
+
+
+def _batch_payload(batch: CachedMovementTensorBatch) -> CachedMovementTensorBatchPayload:
+    return CachedMovementTensorBatchPayload(
+        x_lane=batch.x_lane,
+        x_movement=batch.x_movement,
+        target=batch.target,
+        edge_index_dict=batch.edge_index_dict,
+        movement_sample_indices=batch.movement_sample_indices,
+        lane_counts=batch.lane_counts,
+        movement_counts=batch.movement_counts,
+        phase_logit_groups=tuple(_phase_group_payload(group) for group in batch.phase_logit_groups),
+        city_names=batch.city_names,
+    )
+
+
+def _phase_group_payload(group: CachedPhaseLogitGroupBatch) -> CachedPhaseLogitGroupPayload:
+    return CachedPhaseLogitGroupPayload(
+        incidence_matrices=group.incidence_matrices,
+        movement_ids=group.movement_ids,
+        targets=group.targets,
+        sample_indices=group.sample_indices,
+    )
+
+
+def _batch_from_payload(payload: CachedMovementTensorBatchPayload) -> CachedMovementTensorBatch:
+    return CachedMovementTensorBatch(
+        x_lane=payload['x_lane'],
+        x_movement=payload['x_movement'],
+        target=payload['target'],
+        edge_index_dict=payload['edge_index_dict'],
+        movement_sample_indices=payload['movement_sample_indices'],
+        lane_counts=payload['lane_counts'],
+        movement_counts=payload['movement_counts'],
+        phase_logit_groups=tuple(_phase_group_from_payload(group) for group in payload['phase_logit_groups']),
+        city_names=payload['city_names'],
+    )
+
+
+def _phase_group_from_payload(payload: CachedPhaseLogitGroupPayload) -> CachedPhaseLogitGroupBatch:
+    return CachedPhaseLogitGroupBatch(
+        incidence_matrices=payload['incidence_matrices'],
+        movement_ids=payload['movement_ids'],
+        targets=payload['targets'],
+        sample_indices=payload['sample_indices'],
     )
 
 
