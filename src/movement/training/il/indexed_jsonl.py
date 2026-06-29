@@ -372,6 +372,14 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
     def __len__(self) -> int:
         return len(self.batch_indices)
 
+    def status(self) -> BatchTensorCacheStatus:
+        ready_count = sum(1 for sample_indices in self.batch_indices if self._batch_path(sample_indices).exists())
+        return BatchTensorCacheStatus(
+            batch_count=len(self.batch_indices),
+            ready_count=ready_count,
+            cache_dir=self.batch_cache_dir,
+        )
+
     def __getitem__(self, index: int) -> CachedMovementTensorBatch:
         sample_indices = self.batch_indices[index]
         batch_path = self._batch_path(sample_indices)
@@ -401,6 +409,13 @@ class IndexedBatchTensorCacheDataset(Dataset[CachedMovementTensorBatch]):
         for sample_index in sample_indices:
             digest.update(int(sample_index).to_bytes(8, byteorder='little', signed=False))
         return self.batch_cache_dir / f'batch_{digest.hexdigest()}.pt'
+
+
+@dataclass(frozen=True)
+class BatchTensorCacheStatus:
+    batch_count: int
+    ready_count: int
+    cache_dir: Path
 
 
 class PreloadedTensorCacheDataset(Dataset[CachedMovementTensorSample]):
@@ -755,12 +770,29 @@ def _batch_train_dataset(
     tensor_cache: MovementTensorCache,
     batch_indices: Sequence[Sequence[int]],
 ) -> Dataset[CachedMovementTensorBatch]:
-    return IndexedBatchTensorCacheDataset(
+    dataset = IndexedBatchTensorCacheDataset(
         raw_cache_dir=tensor_cache.cache_dir,
         batch_cache_dir=tensor_cache.cache_dir / 'batch_tensor_cache',
         batch_indices=batch_indices,
         lane_normalizer=tensor_cache.lane_normalizer,
         movement_normalizer=tensor_cache.movement_normalizer,
+    )
+    _print_batch_tensor_cache_status(dataset.status())
+    return dataset
+
+
+def _print_batch_tensor_cache_status(status: BatchTensorCacheStatus) -> None:
+    missing_count = status.batch_count - status.ready_count
+    if missing_count == 0:
+        print(
+            f'batch_tensor_cache_ready batches={status.batch_count} cache_dir={status.cache_dir}',
+            flush=True,
+        )
+        return
+    print(
+        f'batch_tensor_cache_pending batches={status.batch_count} ready={status.ready_count} '
+        f'missing={missing_count} cache_dir={status.cache_dir}',
+        flush=True,
     )
 
 
