@@ -391,14 +391,10 @@ def _train_indexed_epoch(
     last_progress_s = started_s
     moving_losses: list[float] = []
     for batch_number, batch_sample_indices in enumerate(batch_indices, start=1):
+        samples = tuple(tensor_cache.get(sample_index) for sample_index in batch_sample_indices)
+        predictions = _batched_predictions(model=model, samples=samples)
         batch_losses: list[torch.Tensor] = []
-        for sample_index in batch_sample_indices:
-            sample = tensor_cache.get(sample_index)
-            prediction = model(
-                x_lane=sample.x_lane,
-                x_movement=sample.x_movement,
-                edge_index_dict=sample.edge_index_dict,
-            )
+        for sample, prediction in zip(samples, predictions):
             regression_loss = _loss(prediction, sample.target, config.loss)
             phase_loss = _cached_phase_classification_loss(sample=sample, movement_scores=prediction)
             sample_loss = regression_loss + config.phase_loss_coefficient * phase_loss
@@ -444,6 +440,88 @@ def _train_indexed_epoch(
         phase_loss=total_phase_loss_value / total_trained_samples,
         phase_match_rate=total_phase_matches / max(1, total_phase_decisions),
     )
+
+
+def _batched_predictions(
+    model: MovementScorer,
+    samples: Sequence[CachedMovementTensorSample],
+) -> tuple[torch.Tensor, ...]:
+    movement_counts = tuple(sample.x_movement.shape[0] for sample in samples)
+    x_lane = torch.cat(tuple(sample.x_lane for sample in samples), dim=0)
+    x_movement = torch.cat(tuple(sample.x_movement for sample in samples), dim=0)
+    predictions = model(
+        x_lane=x_lane,
+        x_movement=x_movement,
+        edge_index_dict=_batched_edge_index_dict(samples=samples),
+    )
+    movement_ends: list[int] = []
+    movement_offset = 0
+    for movement_count in movement_counts:
+        movement_offset += movement_count
+        movement_ends.append(movement_offset)
+    movement_starts = (0, *movement_ends[:-1])
+    return tuple(predictions[start:end] for start, end in zip(movement_starts, movement_ends))
+
+
+def _batched_edge_index_dict(
+    samples: Sequence[CachedMovementTensorSample],
+) -> dict[str, torch.Tensor]:
+    edge_parts: dict[str, list[torch.Tensor]] = {
+        'input_lane_to_movement': [],
+        'output_lane_to_movement': [],
+        'movement_to_input_lane': [],
+        'movement_to_output_lane': [],
+        'lane_to_lane': [],
+    }
+    lane_to_lane_weight_parts: list[torch.Tensor] = []
+    lane_offset = 0
+    movement_offset = 0
+    for sample in samples:
+        edge_parts['input_lane_to_movement'].append(
+            _offset_edge_index(sample.edge_index_dict['input_lane_to_movement'], lane_offset, movement_offset)
+        )
+        edge_parts['output_lane_to_movement'].append(
+            _offset_edge_index(sample.edge_index_dict['output_lane_to_movement'], lane_offset, movement_offset)
+        )
+        edge_parts['movement_to_input_lane'].append(
+            _offset_edge_index(sample.edge_index_dict['movement_to_input_lane'], movement_offset, lane_offset)
+        )
+        edge_parts['movement_to_output_lane'].append(
+            _offset_edge_index(sample.edge_index_dict['movement_to_output_lane'], movement_offset, lane_offset)
+        )
+        edge_parts['lane_to_lane'].append(
+            _offset_edge_index(sample.edge_index_dict['lane_to_lane'], lane_offset, lane_offset)
+        )
+        lane_to_lane_weight_parts.append(sample.edge_index_dict['lane_to_lane_weight'])
+        lane_offset += sample.x_lane.shape[0]
+        movement_offset += sample.x_movement.shape[0]
+    return {
+        'input_lane_to_movement': _cat_edge_parts(edge_parts['input_lane_to_movement']),
+        'output_lane_to_movement': _cat_edge_parts(edge_parts['output_lane_to_movement']),
+        'movement_to_input_lane': _cat_edge_parts(edge_parts['movement_to_input_lane']),
+        'movement_to_output_lane': _cat_edge_parts(edge_parts['movement_to_output_lane']),
+        'lane_to_lane': _cat_edge_parts(edge_parts['lane_to_lane']),
+        'lane_to_lane_weight': torch.cat(tuple(lane_to_lane_weight_parts), dim=0),
+    }
+
+
+def _offset_edge_index(edge_index: torch.Tensor, source_offset: int, target_offset: int) -> torch.Tensor:
+    if edge_index.numel() == 0:
+        return edge_index
+    offsets = torch.tensor(
+        ((source_offset,), (target_offset,)),
+        dtype=edge_index.dtype,
+        device=edge_index.device,
+    )
+    return edge_index + offsets
+
+
+def _cat_edge_parts(edge_parts: Sequence[torch.Tensor]) -> torch.Tensor:
+    non_empty_parts = tuple(edge_part for edge_part in edge_parts if edge_part.numel() > 0)
+    if not non_empty_parts:
+        device = edge_parts[0].device
+        return torch.empty((2, 0), dtype=torch.long, device=device)
+    return torch.cat(non_empty_parts, dim=1)
 
 
 def print_indexed_dataset_stats(stats: IndexedJsonlStats) -> None:
