@@ -700,8 +700,16 @@ def print_indexed_dataset_stats(stats: IndexedJsonlStats) -> None:
         f'dataset path={stats.dataset_path} size={stats.file_size_bytes} bytes '
         f'samples={stats.sample_count} train={stats.train_count} validation={stats.validation_count}'
     )
-    for group in stats.groups:
-        print(f'dataset_group city={group.city_name} seed={group.collection_seed} samples={len(group.sample_indices)}')
+    print(f'dataset_groups count={len(stats.groups)}')
+    city_names = tuple(dict.fromkeys(group.city_name for group in stats.groups))
+    for city_name in city_names:
+        city_groups = tuple(group for group in stats.groups if group.city_name == city_name)
+        city_samples = sum(len(group.sample_indices) for group in city_groups)
+        city_seeds = tuple(group.collection_seed for group in city_groups)
+        print(
+            f'dataset_city city={city_name} groups={len(city_groups)} samples={city_samples} '
+            f'seed_min={min(city_seeds)} seed_max={max(city_seeds)}'
+        )
 
 
 def _write_indexed_validation_losses(
@@ -803,8 +811,6 @@ def _load_jsonl_index_state(dataset_path: Path, index_cache_path: Path | None) -
     if state.dataset_path != str(dataset_path):
         return None
     if state.file_size_bytes != file_stat.st_size:
-        return None
-    if state.modified_time_ns != file_stat.st_mtime_ns:
         return None
     return state
 
