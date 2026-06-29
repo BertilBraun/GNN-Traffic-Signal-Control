@@ -12,6 +12,7 @@ import time
 from typing import cast
 
 import torch
+import torch.nn.functional as F
 from pydantic import BaseModel, ConfigDict
 from torch.utils.tensorboard import SummaryWriter
 
@@ -20,8 +21,6 @@ from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 from src.movement.training.il import (
     _loss,
-    _phase_classification_loss,
-    _phase_match_counts,
     _save_training_checkpoints,
 )
 from src.movement.training.il.tensors import edge_tensors_from_sample
@@ -391,6 +390,15 @@ class IndexedEpochMetrics:
     phase_match_rate: float
 
 
+@dataclass(frozen=True)
+class IndexedBatchLossMetrics:
+    loss: torch.Tensor
+    regression_loss: torch.Tensor
+    phase_loss: torch.Tensor
+    phase_matches: int
+    phase_decisions: int
+
+
 def _train_indexed_epoch(
     model: MovementScorer,
     optimizer: torch.optim.Optimizer,
@@ -425,29 +433,28 @@ def _train_indexed_epoch(
         forward_started_s = time.monotonic()
         predictions = _batched_predictions(model=model, samples=samples)
         forward_elapsed_s += time.monotonic() - forward_started_s
-        batch_losses: list[torch.Tensor] = []
         loss_started_s = time.monotonic()
-        for sample, prediction in zip(samples, predictions):
-            regression_loss = _loss(prediction, sample.target, config.loss)
-            phase_loss = _cached_phase_classification_loss(sample=sample, movement_scores=prediction)
-            sample_loss = regression_loss + config.phase_loss_coefficient * phase_loss
-            batch_losses.append(sample_loss)
-            sample_loss_value = float(sample_loss.detach().cpu())
-            moving_losses.append(sample_loss_value)
-            if len(moving_losses) > 100:
-                moving_losses.pop(0)
-            total_loss_value += sample_loss_value
-            total_regression_loss_value += float(regression_loss.detach().cpu())
-            total_phase_loss_value += float(phase_loss.detach().cpu())
-            matches, decisions = _cached_phase_match_counts(sample=sample, movement_scores=prediction)
-            total_phase_matches += matches
-            total_phase_decisions += decisions
-            total_trained_samples += 1
-        loss = torch.stack(tuple(batch_losses)).mean()
+        batch_metrics = _indexed_batch_loss_metrics(
+            samples=samples,
+            predictions=predictions,
+            loss_name=config.loss,
+            phase_loss_coefficient=config.phase_loss_coefficient,
+        )
+        batch_sample_count = len(samples)
+        batch_loss_value = float(batch_metrics.loss.detach().cpu())
+        moving_losses.append(batch_loss_value)
+        if len(moving_losses) > 100:
+            moving_losses.pop(0)
+        total_loss_value += batch_loss_value * batch_sample_count
+        total_regression_loss_value += float(batch_metrics.regression_loss.detach().cpu()) * batch_sample_count
+        total_phase_loss_value += float(batch_metrics.phase_loss.detach().cpu()) * batch_sample_count
+        total_phase_matches += batch_metrics.phase_matches
+        total_phase_decisions += batch_metrics.phase_decisions
+        total_trained_samples += batch_sample_count
         loss_elapsed_s += time.monotonic() - loss_started_s
         backward_started_s = time.monotonic()
         optimizer.zero_grad()
-        loss.backward()
+        batch_metrics.loss.backward()
         optimizer.step()
         backward_elapsed_s += time.monotonic() - backward_started_s
         current_s = time.monotonic()
@@ -501,6 +508,112 @@ def _batched_predictions(
         movement_ends.append(movement_offset)
     movement_starts = (0, *movement_ends[:-1])
     return tuple(predictions[start:end] for start, end in zip(movement_starts, movement_ends))
+
+
+def _indexed_batch_loss_metrics(
+    samples: Sequence[CachedMovementTensorSample],
+    predictions: Sequence[torch.Tensor],
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+) -> IndexedBatchLossMetrics:
+    regression_loss = _sample_weighted_regression_loss(
+        predictions=predictions,
+        samples=samples,
+        loss_name=loss_name,
+    )
+    phase_loss = _sample_weighted_phase_loss(samples=samples, predictions=predictions)
+    with torch.no_grad():
+        phase_matches, phase_decisions = _batched_phase_match_counts(samples=samples, predictions=predictions)
+    return IndexedBatchLossMetrics(
+        loss=regression_loss + phase_loss_coefficient * phase_loss,
+        regression_loss=regression_loss,
+        phase_loss=phase_loss,
+        phase_matches=phase_matches,
+        phase_decisions=phase_decisions,
+    )
+
+
+def _sample_weighted_regression_loss(
+    predictions: Sequence[torch.Tensor],
+    samples: Sequence[CachedMovementTensorSample],
+    loss_name: MovementILLoss,
+) -> torch.Tensor:
+    losses = tuple(
+        _elementwise_regression_loss(prediction=prediction, target=sample.target, loss_name=loss_name).mean()
+        for prediction, sample in zip(predictions, samples)
+    )
+    return torch.stack(losses).mean()
+
+
+def _elementwise_regression_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    loss_name: MovementILLoss,
+) -> torch.Tensor:
+    match loss_name:
+        case MovementILLoss.HUBER:
+            return F.smooth_l1_loss(prediction, target, reduction='none')
+        case MovementILLoss.MEAN_SQUARED_ERROR:
+            return F.mse_loss(prediction, target, reduction='none')
+
+
+@dataclass(frozen=True)
+class PhaseLogitGroup:
+    logits: list[torch.Tensor]
+    targets: list[int]
+    sample_indices: list[int]
+
+
+def _sample_weighted_phase_loss(
+    samples: Sequence[CachedMovementTensorSample],
+    predictions: Sequence[torch.Tensor],
+) -> torch.Tensor:
+    groups: dict[int, PhaseLogitGroup] = {}
+    device = predictions[0].device
+    for sample_index, (sample, prediction) in enumerate(zip(samples, predictions)):
+        for traffic_light_id, incidence in sample.phase_incidences.items():
+            logits = _phase_logits_from_cached_incidence(incidence=incidence, movement_scores=prediction)
+            group = groups.setdefault(logits.shape[0], PhaseLogitGroup(logits=[], targets=[], sample_indices=[]))
+            group.logits.append(logits)
+            group.targets.append(sample.teacher_selected_phase_by_tls[traffic_light_id])
+            group.sample_indices.append(sample_index)
+    sample_loss_sums = torch.zeros((len(samples),), dtype=torch.float32, device=device)
+    sample_loss_counts = torch.zeros((len(samples),), dtype=torch.float32, device=device)
+    for group in groups.values():
+        logits_tensor = torch.stack(tuple(group.logits))
+        targets_tensor = torch.tensor(group.targets, dtype=torch.long, device=device)
+        sample_indices_tensor = torch.tensor(group.sample_indices, dtype=torch.long, device=device)
+        losses = F.cross_entropy(logits_tensor, targets_tensor, reduction='none')
+        sample_loss_sums.index_add_(0, sample_indices_tensor, losses)
+        sample_loss_counts.index_add_(
+            0,
+            sample_indices_tensor,
+            torch.ones_like(losses, dtype=torch.float32),
+        )
+    return (sample_loss_sums / sample_loss_counts.clamp_min(1.0)).mean()
+
+
+def _batched_phase_match_counts(
+    samples: Sequence[CachedMovementTensorSample],
+    predictions: Sequence[torch.Tensor],
+) -> tuple[int, int]:
+    matches = 0
+    decisions = 0
+    for sample, prediction in zip(samples, predictions):
+        for traffic_light_id, incidence in sample.phase_incidences.items():
+            predicted_phase = int(_phase_logits_from_cached_incidence(incidence, prediction).argmax().detach().cpu())
+            matches += int(predicted_phase == sample.teacher_selected_phase_by_tls[traffic_light_id])
+            decisions += 1
+    return matches, decisions
+
+
+def _phase_logits_from_cached_incidence(
+    incidence: StoredPhaseIncidence,
+    movement_scores: torch.Tensor,
+) -> torch.Tensor:
+    incidence_matrix = torch.tensor(incidence.rows, dtype=movement_scores.dtype, device=movement_scores.device)
+    movement_ids = torch.tensor(incidence.movement_ids, dtype=torch.long, device=movement_scores.device)
+    return incidence_matrix @ movement_scores[movement_ids]
 
 
 def _batched_edge_index_dict(
@@ -595,7 +708,7 @@ def _write_indexed_validation_losses(
                 edge_index_dict=sample.edge_index_dict,
             )
             regression_loss = _loss(prediction, sample.target, loss_name)
-            phase_loss = _cached_phase_classification_loss(sample=sample, movement_scores=prediction)
+            phase_loss = _sample_weighted_phase_loss(samples=(sample,), predictions=(prediction,))
             loss_value = float((regression_loss + phase_loss_coefficient * phase_loss).detach().cpu())
             city_losses = losses_by_city.setdefault(sample.city_name, [])
             city_losses.append(loss_value)
@@ -936,26 +1049,6 @@ def _epoch_batches(
     return tuple(
         tuple(shuffled_indices[batch_start : batch_start + samples_per_batch])
         for batch_start in range(0, len(shuffled_indices), samples_per_batch)
-    )
-
-
-def _cached_phase_classification_loss(
-    sample: CachedMovementTensorSample,
-    movement_scores: torch.Tensor,
-) -> torch.Tensor:
-    return _phase_classification_loss(
-        sample=cast(MovementDatasetSample, sample),
-        movement_scores=movement_scores,
-    )
-
-
-def _cached_phase_match_counts(
-    sample: CachedMovementTensorSample,
-    movement_scores: torch.Tensor,
-) -> tuple[int, int]:
-    return _phase_match_counts(
-        sample=cast(MovementDatasetSample, sample),
-        movement_scores=movement_scores,
     )
 
 
