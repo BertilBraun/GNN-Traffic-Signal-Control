@@ -422,6 +422,14 @@ class IndexedBatchLossMetrics:
     phase_loss: torch.Tensor
     phase_matches: int
     phase_decisions: int
+    sample_count: int
+
+
+@dataclass(frozen=True)
+class TimedIndexedBatchLossMetrics:
+    metrics: IndexedBatchLossMetrics
+    forward_elapsed_s: float
+    loss_elapsed_s: float
 
 
 class _NoopExecutor:
@@ -460,6 +468,7 @@ def _train_indexed_epoch(
     loss_elapsed_s = 0.0
     backward_elapsed_s = 0.0
     train_workers = _train_worker_count(config.train_workers, config.samples_per_batch)
+    gradient_workers = _gradient_worker_count(config.gradient_workers, config.samples_per_batch)
     with ThreadPoolExecutor(max_workers=train_workers) if train_workers > 1 else _NoopExecutor() as executor:
         for batch_number, batch_sample_indices in enumerate(batch_indices, start=1):
             load_started_s = time.monotonic()
@@ -470,16 +479,16 @@ def _train_indexed_epoch(
                 device=torch.device(config.device),
             )
             load_elapsed_s += time.monotonic() - load_started_s
-            forward_started_s = time.monotonic()
-            predictions = _batched_predictions(model=model, samples=samples)
-            forward_elapsed_s += time.monotonic() - forward_started_s
-            loss_started_s = time.monotonic()
-            batch_metrics = _indexed_batch_loss_metrics(
+            timed_batch_metrics = _timed_indexed_batch_loss_metrics(
+                model=model,
                 samples=samples,
-                predictions=predictions,
                 loss_name=config.loss,
                 phase_loss_coefficient=config.phase_loss_coefficient,
+                gradient_workers=gradient_workers,
             )
+            batch_metrics = timed_batch_metrics.metrics
+            forward_elapsed_s += timed_batch_metrics.forward_elapsed_s
+            loss_elapsed_s += timed_batch_metrics.loss_elapsed_s
             batch_sample_count = len(samples)
             batch_loss_value = float(batch_metrics.loss.detach().cpu())
             moving_losses.append(batch_loss_value)
@@ -491,7 +500,6 @@ def _train_indexed_epoch(
             total_phase_matches += batch_metrics.phase_matches
             total_phase_decisions += batch_metrics.phase_decisions
             total_trained_samples += batch_sample_count
-            loss_elapsed_s += time.monotonic() - loss_started_s
             backward_started_s = time.monotonic()
             optimizer.zero_grad()
             batch_metrics.loss.backward()
@@ -535,6 +543,12 @@ def _train_worker_count(train_workers: int, samples_per_batch: int) -> int:
     return min(train_workers, samples_per_batch)
 
 
+def _gradient_worker_count(gradient_workers: int, samples_per_batch: int) -> int:
+    if gradient_workers <= 0:
+        raise ValueError('gradient_workers must be positive.')
+    return min(gradient_workers, samples_per_batch)
+
+
 def _load_batch_samples(
     tensor_cache: MovementTensorCache,
     sample_indices: Sequence[int],
@@ -545,6 +559,99 @@ def _load_batch_samples(
         return tuple(tensor_cache.get(sample_index) for sample_index in sample_indices)
     cpu_samples = tuple(executor.map(tensor_cache.get_cpu, sample_indices))
     return tuple(_move_cached_sample(sample, device) for sample in cpu_samples)
+
+
+def _timed_indexed_batch_loss_metrics(
+    model: MovementScorer,
+    samples: Sequence[CachedMovementTensorSample],
+    loss_name: MovementILLoss,
+    phase_loss_coefficient: float,
+    gradient_workers: int,
+) -> TimedIndexedBatchLossMetrics:
+    if gradient_workers == 1:
+        forward_started_s = time.monotonic()
+        predictions = _batched_predictions(model=model, samples=samples)
+        forward_elapsed_s = time.monotonic() - forward_started_s
+        loss_started_s = time.monotonic()
+        metrics = _indexed_batch_loss_metrics(
+            samples=samples,
+            predictions=predictions,
+            loss_name=loss_name,
+            phase_loss_coefficient=phase_loss_coefficient,
+        )
+        return TimedIndexedBatchLossMetrics(
+            metrics=metrics,
+            forward_elapsed_s=forward_elapsed_s,
+            loss_elapsed_s=time.monotonic() - loss_started_s,
+        )
+    chunks = _sample_chunks(samples=samples, chunk_count=gradient_workers)
+    with ThreadPoolExecutor(max_workers=gradient_workers) as executor:
+        chunk_results = tuple(
+            executor.map(
+                lambda chunk: _timed_indexed_batch_loss_metrics(
+                    model=model,
+                    samples=chunk,
+                    loss_name=loss_name,
+                    phase_loss_coefficient=phase_loss_coefficient,
+                    gradient_workers=1,
+                ),
+                chunks,
+            )
+        )
+    return _merge_timed_batch_loss_metrics(chunk_results)
+
+
+def _sample_chunks(
+    samples: Sequence[CachedMovementTensorSample],
+    chunk_count: int,
+) -> tuple[tuple[CachedMovementTensorSample, ...], ...]:
+    chunk_size = max(1, (len(samples) + chunk_count - 1) // chunk_count)
+    return tuple(
+        tuple(samples[start : start + chunk_size])
+        for start in range(0, len(samples), chunk_size)
+        if samples[start : start + chunk_size]
+    )
+
+
+def _merge_timed_batch_loss_metrics(
+    chunk_results: Sequence[TimedIndexedBatchLossMetrics],
+) -> TimedIndexedBatchLossMetrics:
+    sample_counts = tuple(result.metrics.sample_count for result in chunk_results)
+    total_samples = sum(sample_counts)
+    loss = _weighted_tensor_average(
+        tuple(result.metrics.loss for result in chunk_results), sample_counts, total_samples
+    )
+    regression_loss = _weighted_tensor_average(
+        tuple(result.metrics.regression_loss for result in chunk_results),
+        sample_counts,
+        total_samples,
+    )
+    phase_loss = _weighted_tensor_average(
+        tuple(result.metrics.phase_loss for result in chunk_results),
+        sample_counts,
+        total_samples,
+    )
+    return TimedIndexedBatchLossMetrics(
+        metrics=IndexedBatchLossMetrics(
+            loss=loss,
+            regression_loss=regression_loss,
+            phase_loss=phase_loss,
+            phase_matches=sum(result.metrics.phase_matches for result in chunk_results),
+            phase_decisions=sum(result.metrics.phase_decisions for result in chunk_results),
+            sample_count=sum(result.metrics.sample_count for result in chunk_results),
+        ),
+        forward_elapsed_s=max(result.forward_elapsed_s for result in chunk_results),
+        loss_elapsed_s=max(result.loss_elapsed_s for result in chunk_results),
+    )
+
+
+def _weighted_tensor_average(
+    tensors: Sequence[torch.Tensor],
+    weights: Sequence[int],
+    total_weight: int,
+) -> torch.Tensor:
+    weighted_tensors = tuple(tensor * (weight / total_weight) for tensor, weight in zip(tensors, weights))
+    return torch.stack(weighted_tensors).sum()
 
 
 def _batched_predictions(
@@ -588,6 +695,7 @@ def _indexed_batch_loss_metrics(
         phase_loss=phase_loss,
         phase_matches=phase_matches,
         phase_decisions=phase_decisions,
+        sample_count=len(samples),
     )
 
 

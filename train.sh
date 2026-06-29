@@ -14,6 +14,7 @@ IL_CHECKPOINT_EVERY_EPOCHS="${IL_CHECKPOINT_EVERY_EPOCHS:-1}"
 IL_PROGRESS_EVERY_SECONDS="${IL_PROGRESS_EVERY_SECONDS:-60}"
 IL_CACHE_WORKERS="${IL_CACHE_WORKERS:-1}"
 IL_TRAIN_WORKERS="${IL_TRAIN_WORKERS:-1}"
+IL_GRADIENT_WORKERS="${IL_GRADIENT_WORKERS:-1}"
 PPO_PILOT_ITERATIONS="${PPO_PILOT_ITERATIONS:-100}"
 PPO_TOTAL_ITERATIONS="${PPO_TOTAL_ITERATIONS:-1000}"
 TENSORBOARD_PORT="${TENSORBOARD_PORT:-6006}"
@@ -201,6 +202,7 @@ train_imitation_policy() {
         --progress-every-seconds "$IL_PROGRESS_EVERY_SECONDS" \
         --cache-workers "$IL_CACHE_WORKERS" \
         --train-workers "$IL_TRAIN_WORKERS" \
+        --gradient-workers "$IL_GRADIENT_WORKERS" \
         --ckpt-dir "checkpoints/il/$RUN_NAME" \
         --log-dir "runs/il/$RUN_NAME" \
         --eval-every-epochs 0

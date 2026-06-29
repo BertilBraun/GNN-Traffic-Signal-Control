@@ -163,6 +163,12 @@ def parse_args() -> argparse.Namespace:
         help='CPU threads used to load and normalize samples within each training batch',
     )
     parser.add_argument(
+        '--gradient-workers',
+        type=int,
+        default=1,
+        help='Experimental CPU threads used to build chunked forward/loss graphs before one optimizer step',
+    )
+    parser.add_argument(
         '--ckpt-dir',
         type=Path,
         default=None,
@@ -526,6 +532,7 @@ def main() -> None:
         cache_workers=args.cache_workers,
         preload_cache=args.preload_cache,
         train_workers=args.train_workers,
+        gradient_workers=args.gradient_workers,
     )
     batch_planner = _batch_planner(
         config=config,

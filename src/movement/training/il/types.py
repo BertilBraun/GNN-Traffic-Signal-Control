@@ -36,6 +36,7 @@ class MovementILTrainingConfig:
     cache_workers: int = 1
     preload_cache: bool = False
     train_workers: int = 1
+    gradient_workers: int = 1
 
 
 @dataclass(frozen=True)
