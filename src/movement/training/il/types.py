@@ -19,7 +19,7 @@ class MovementILLoss(str, Enum):
 @dataclass(frozen=True)
 class MovementILTrainingConfig:
     epochs: int = 200
-    lr: float = 1e-3
+    lr: float = 5e-3
     hidden_dim: int = 64
     checkpoint_dir: Path | str = Path('checkpoints/il')
     seed: int = 42
@@ -28,17 +28,15 @@ class MovementILTrainingConfig:
     progress_every: int = 0
     num_hops: int = 0
     phase_loss_coefficient: float = 1.0
-    samples_per_batch: int = 16
+    samples_per_batch: int = 1024
     log_dir: Path | str | None = None
     checkpoint_every_epochs: int = 1
     progress_every_batches: int = 0
     progress_every_seconds: int = 60
-    validation_every_epochs: int = 1
-    cache_workers: int = 1
-    preload_cache: bool = False
-    train_workers: int = 1
+    validation_every_epochs: int = 0
+    cache_workers: int = 20
+    train_workers: int = 8
     prefetch_batches: int = 2
-    gradient_workers: int = 1
 
 
 @dataclass(frozen=True)

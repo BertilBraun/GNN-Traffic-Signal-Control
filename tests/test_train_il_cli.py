@@ -34,13 +34,10 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
             '64',
             '--cache-workers',
             '4',
-            '--preload-cache',
             '--train-workers',
             '8',
             '--prefetch-batches',
             '10',
-            '--gradient-workers',
-            '5',
             '--num-hops',
             '1',
             '--ckpt-dir',
@@ -59,10 +56,8 @@ def test_train_il_cli_accepts_dataset_and_checkpoint_args(monkeypatch) -> None:
     assert args.validation_every_epochs == 0
     assert args.max_train_samples == 64
     assert args.cache_workers == 4
-    assert args.preload_cache is True
     assert args.train_workers == 8
     assert args.prefetch_batches == 10
-    assert args.gradient_workers == 5
     assert args.num_hops == 1
     assert args.ckpt_dir == Path('checkpoints/il/unit')
     assert args.experiment_config is None
@@ -149,8 +144,8 @@ def test_train_il_cli_uses_dataset_and_evaluation_defaults(monkeypatch) -> None:
     assert args.samples_per_simulation == 240
     assert args.collection_seed == 42
     assert args.decision_interval == 10
-    assert args.samples_per_batch == 32
-    assert args.eval_every_epochs == 10
+    assert args.samples_per_batch == 1024
+    assert args.eval_every_epochs == 0
     assert args.eval_seeds == [100, 101]
     assert args.determinism_check_samples == 20
     assert args.time_to_teleport == -1

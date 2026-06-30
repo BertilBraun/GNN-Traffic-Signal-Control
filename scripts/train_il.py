@@ -91,9 +91,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--initial-occupancy-min', type=float, default=0.04)
     parser.add_argument('--initial-occupancy-max', type=float, default=0.08)
     parser.add_argument('--epochs', type=int, default=400, help='Training epochs')
-    parser.add_argument('--lr', type=float, default=1e-3, help='Adam learning rate')
+    parser.add_argument('--lr', type=float, default=5e-3, help='Adam learning rate')
     parser.add_argument('--hidden-dim', type=int, default=64, help='MLP hidden dimension')
-    parser.add_argument('--samples-per-batch', type=int, default=32, help='IL samples per optimizer update')
+    parser.add_argument('--samples-per-batch', type=int, default=1024, help='IL samples per optimizer update')
     parser.add_argument(
         '--validation-fraction',
         type=float,
@@ -103,7 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--validation-every-epochs',
         type=int,
-        default=1,
+        default=0,
         help='Write held-out validation loss every N epochs; 0 disables validation loss pass',
     )
     parser.add_argument('--num-hops', type=int, default=1, help='LaneGroup/Movement macro-hops')
@@ -154,31 +154,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--cache-workers',
         type=int,
-        default=1,
-        help='Worker processes used to build the raw tensor cache; 1 disables multiprocessing',
-    )
-    parser.add_argument(
-        '--preload-cache',
-        action='store_true',
-        help='Load all raw tensor cache samples into RAM before training to avoid per-batch disk reads',
+        default=20,
+        help='Worker processes used to build the raw tensor cache; -1 uses all CPUs, 1 disables multiprocessing',
     )
     parser.add_argument(
         '--train-workers',
         type=int,
-        default=1,
-        help='CPU threads used to load and normalize samples within each training batch',
+        default=8,
+        help='DataLoader workers used to build or load packed training batches; -1 uses all CPUs',
     )
     parser.add_argument(
         '--prefetch-batches',
         type=int,
         default=2,
         help='Approximate total training batches prefetched by DataLoader workers',
-    )
-    parser.add_argument(
-        '--gradient-workers',
-        type=int,
-        default=1,
-        help='Experimental CPU threads used to build chunked forward/loss graphs before one optimizer step',
     )
     parser.add_argument(
         '--ckpt-dir',
@@ -195,7 +184,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--eval-every-epochs',
         type=int,
-        default=10,
+        default=0,
         help='Run evaluation every N epochs when --eval-cfg is set (0 disables)',
     )
     parser.add_argument('--eval-steps', type=int, default=600, help='Simulation seconds per evaluation episode')
@@ -543,10 +532,8 @@ def main() -> None:
         progress_every_seconds=args.progress_every_seconds,
         validation_every_epochs=args.validation_every_epochs,
         cache_workers=args.cache_workers,
-        preload_cache=args.preload_cache,
         train_workers=args.train_workers,
         prefetch_batches=args.prefetch_batches,
-        gradient_workers=args.gradient_workers,
     )
     batch_planner = _batch_planner(
         config=config,
