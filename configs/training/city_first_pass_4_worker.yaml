@@ -1,0 +1,62 @@
+name: city_first_pass_4_worker
+
+cities:
+  - name: karlsruhe_oststadt
+    split: train
+    sumo_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg
+    build_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml
+    rollout_workers: 1
+  - name: mannheim_innenstadt
+    split: train
+    sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
+    build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
+    rollout_workers: 1
+  - name: stuttgart_mitte
+    split: train
+    sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
+    build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
+    rollout_workers: 1
+  - name: heidelberg_bergheim
+    split: train
+    sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
+    build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
+    rollout_workers: 1
+  - name: freiburg_altstadt
+    split: held_out
+    sumo_config: configs/freiburg_altstadt/freiburg_altstadt.sumocfg
+    build_config: configs/freiburg_altstadt/freiburg_altstadt.build.yaml
+    rollout_workers: 0
+
+simulation:
+  decision_interval: 10
+  time_to_teleport: -1
+  yellow_duration: 3
+  min_green_steps: 2
+  initial_occupancy_min: 0.05
+  initial_occupancy_max: 0.08
+
+demand:
+  train_scale_min: 0.8
+  train_scale_max: 1.2
+  eval_scales: [0.8, 1.0, 1.2]
+
+imitation_learning:
+  samples_per_city: 9600
+  samples_per_simulation: 80
+  collection_workers: 4
+  epochs: 20
+  samples_per_batch: 128
+  phase_loss_coefficient: 1.0
+
+ppo:
+  iterations: 1000
+  steps_per_rollout: 1200
+  rollouts_per_update: 4
+  rollout_workers: 4
+  eval_every_iterations: 25
+  save_every_iterations: 25
+
+evaluation:
+  policies: [learned, max-pressure, queue]
+  seeds: [100, 101, 102]
+  steps: 1800
