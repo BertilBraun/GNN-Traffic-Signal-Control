@@ -11,16 +11,14 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 from src.movement.dataset import MovementDatasetSample
 from src.movement.dataset import MovementEdgeIndices, StoredPhaseIncidence
 from src.movement.training.il import random_batch_planner, train_movement_il
-from src.movement.training.il.checkpoint import (
-    load_movement_checkpoint,
-    normalizer_from_state,
-)
+from src.movement.training.il.checkpoint import load_movement_checkpoint
 from src.movement.training.il.tensors import (
     edge_tensors_from_sample,
     tensors_from_sample,
 )
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.il.types import MovementILTrainingSnapshot
+from src.movement.training.normalizer_state import normalizer_from_state
 from src.movement.models.bipartite_gnn import MovementScorer
 
 

@@ -11,9 +11,9 @@ from src.movement.models.bipartite_gnn import MovementActorCritic, MovementScore
 from src.movement.training.il.checkpoint import (
     MovementCheckpointMetadata,
     load_movement_checkpoint,
-    normalizer_from_state,
     save_movement_checkpoint,
 )
+from src.movement.training.normalizer_state import normalizer_from_state
 from src.movement.training.ppo.types import MovementPpoCheckpoint
 
 

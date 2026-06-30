@@ -34,14 +34,12 @@ from src.movement.policies import MovementScoringMethod
 from src.movement.policies.graph_scores import compute_graph_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
-from src.movement.training.il.checkpoint import (
-    load_movement_checkpoint,
-    normalizer_from_state,
-)
+from src.movement.training.il.checkpoint import load_movement_checkpoint
 from src.movement.training.il.tensors import (
     edge_tensors_from_sample,
     tensors_from_sample,
 )
+from src.movement.training.normalizer_state import normalizer_from_state
 
 
 class EvaluationPolicy(str, Enum):

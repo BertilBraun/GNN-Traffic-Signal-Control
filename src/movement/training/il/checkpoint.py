@@ -11,15 +11,7 @@ import torch
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 from src.movement.training.il.types import MovementILTrainingConfig
-
-
-@dataclass(frozen=True)
-class NormalizerState:
-    count: int
-    mean: tuple[float, ...]
-    squared_differences: tuple[float, ...]
-    frozen: bool
-    epsilon: float
+from src.movement.training.normalizer_state import NormalizerState, normalizer_state
 
 
 @dataclass(frozen=True)
@@ -116,24 +108,4 @@ def load_movement_checkpoint(
         lane_normalizer=checkpoint.lane_normalizer,
         movement_normalizer=checkpoint.movement_normalizer,
         config=checkpoint.config,
-    )
-
-
-def normalizer_from_state(state: NormalizerState) -> RunningNormalizer:
-    normalizer = RunningNormalizer(epsilon=state.epsilon)
-    normalizer.count = state.count
-    normalizer.mean = state.mean
-    normalizer.m2 = state.squared_differences
-    normalizer.frozen = state.frozen
-    normalizer._dimension = len(normalizer.mean)
-    return normalizer
-
-
-def normalizer_state(normalizer: RunningNormalizer) -> NormalizerState:
-    return NormalizerState(
-        count=normalizer.count,
-        mean=normalizer.mean,
-        squared_differences=normalizer.m2,
-        frozen=normalizer.frozen,
-        epsilon=normalizer.epsilon,
     )

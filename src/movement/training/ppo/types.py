@@ -12,8 +12,8 @@ from src.movement.evaluation import EvaluationPolicy
 from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.features import LaneGroupGeometry
 from src.movement.graph_schema import MovementGraph
-from src.movement.training.il.checkpoint import NormalizerState
 from src.movement.training.il.types import MovementILTrainingConfig
+from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.rollout import MovementRolloutBuffer
 
 

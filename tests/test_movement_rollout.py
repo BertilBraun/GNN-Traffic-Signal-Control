@@ -17,8 +17,8 @@ from src.movement.evaluation.multi_city import (
     MultiCityEvaluationRunRequest,
 )
 from src.movement.experiment_config import CitySplit
-from src.movement.training.il.checkpoint import NormalizerState
 from src.movement.training.il.types import MovementILTrainingConfig
+from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.ppo import validate_config
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
