@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from hashlib import sha256
+import os
 from pathlib import Path
 import sys
 
@@ -22,7 +23,7 @@ from src.movement.training.ppo.types import RolloutCity
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 DEFAULT_ROLLOUTS_PER_UPDATE = 3
-DEFAULT_NUM_WORKERS = 3
+DEFAULT_NUM_WORKERS = -1
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,7 +49,10 @@ def parse_args() -> argparse.Namespace:
         help='Independent rollouts collected per PPO update',
     )
     parser.add_argument(
-        '--num-workers', type=int, default=DEFAULT_NUM_WORKERS, help='Parallel SUMO rollout worker processes'
+        '--num-workers',
+        type=int,
+        default=DEFAULT_NUM_WORKERS,
+        help='Parallel SUMO rollout worker processes; -1 uses all CPUs',
     )
     parser.add_argument('--decision-interval', type=int, default=10, help='Simulation seconds per decision')
     parser.add_argument('--lr', type=float, default=2e-4, help='Adam learning rate')
@@ -299,6 +303,9 @@ def num_workers(
 ) -> int:
     if experiment_configuration is not None and args.num_workers == DEFAULT_NUM_WORKERS:
         return experiment_configuration.proximal_policy_optimization.rollout_workers
+    if args.num_workers == -1:
+        cpu_count = os.cpu_count()
+        return cpu_count if cpu_count is not None else 1
     return args.num_workers
 
 

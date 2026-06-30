@@ -91,6 +91,7 @@ def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
 
 
 def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(train_rl.os, 'cpu_count', lambda: 12)
     monkeypatch.setattr(
         sys,
         'argv',
@@ -126,9 +127,27 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.max_teleports_per_rollout == 999
     assert args.target_kl == 0.03
     assert args.rollouts_per_update == 3
-    assert args.num_workers == 3
+    assert args.num_workers == -1
+    assert train_rl.num_workers(args, None) == 12
     assert args.fixed_rollout_seed is None
     assert args.time_to_teleport == -1
+
+
+def test_train_rl_cli_falls_back_to_one_worker_when_cpu_count_is_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(train_rl.os, 'cpu_count', lambda: None)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--num-workers',
+            '-1',
+        ],
+    )
+
+    assert train_rl.num_workers(train_rl.parse_args(), None) == 1
 
 
 def test_train_rl_cli_maps_fixed_demand_to_min_max(monkeypatch) -> None:
