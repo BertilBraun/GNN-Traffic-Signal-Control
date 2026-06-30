@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 import os
@@ -22,8 +23,28 @@ from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
 from src.movement.training.ppo.types import RolloutCity
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
+DEFAULT_ITERATIONS = 300
+DEFAULT_STEPS_PER_ROLLOUT = 360
 DEFAULT_ROLLOUTS_PER_UPDATE = 3
 DEFAULT_NUM_WORKERS = -1
+DEFAULT_UPDATE_EPOCHS = 4
+DEFAULT_VALUE_WARMUP_ITERATIONS = 20
+DEFAULT_WARMUP_EPOCHS = 8
+DEFAULT_TRANSITIONS_PER_BATCH = 32
+DEFAULT_EVAL_EVERY = 10
+DEFAULT_SAVE_EVERY = 10
+
+
+@dataclass(frozen=True)
+class PpoCommandSettings:
+    iterations: int
+    steps_per_rollout: int
+    update_epochs: int
+    value_warmup_iterations: int
+    warmup_epochs: int
+    transitions_per_batch: int
+    eval_every: int
+    save_every: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,8 +61,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--experiment-config', type=Path, default=None, help='Multi-city experiment YAML path')
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
-    parser.add_argument('--iterations', type=int, default=300, help='Final target PPO iteration')
-    parser.add_argument('--steps-per-rollout', type=int, default=360, help='Decision steps collected per iteration')
+    parser.add_argument('--iterations', type=int, default=DEFAULT_ITERATIONS, help='Final target PPO iteration')
+    parser.add_argument(
+        '--steps-per-rollout',
+        type=int,
+        default=DEFAULT_STEPS_PER_ROLLOUT,
+        help='Decision steps collected per iteration',
+    )
     parser.add_argument(
         '--rollouts-per-update',
         type=int,
@@ -59,13 +85,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--lam', type=float, default=0.95, help='GAE lambda')
     parser.add_argument('--clip', type=float, default=0.1, help='PPO clipping epsilon')
-    parser.add_argument('--epochs', type=int, default=4, help='PPO update epochs')
-    parser.add_argument('--value-warmup-iterations', type=int, default=20, help='Value-only warmup iterations')
-    parser.add_argument('--warmup-epochs', type=int, default=8, help='Update epochs during value warmup')
+    parser.add_argument('--epochs', type=int, default=DEFAULT_UPDATE_EPOCHS, help='PPO update epochs')
+    parser.add_argument(
+        '--value-warmup-iterations',
+        type=int,
+        default=DEFAULT_VALUE_WARMUP_ITERATIONS,
+        help='Value-only warmup iterations',
+    )
+    parser.add_argument(
+        '--warmup-epochs',
+        type=int,
+        default=DEFAULT_WARMUP_EPOCHS,
+        help='Update epochs during value warmup',
+    )
     parser.add_argument('--value-coeff', type=float, default=0.5, help='Value loss coefficient')
     parser.add_argument('--entropy-coeff', type=float, default=0.01, help='Entropy bonus coefficient')
     parser.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clipping norm')
-    parser.add_argument('--transitions-per-batch', type=int, default=32, help='Decision transitions per minibatch')
+    parser.add_argument(
+        '--transitions-per-batch',
+        type=int,
+        default=DEFAULT_TRANSITIONS_PER_BATCH,
+        help='Decision transitions per minibatch',
+    )
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
     parser.add_argument(
@@ -121,7 +162,7 @@ def parse_args() -> argparse.Namespace:
         default=0.08,
         help='Maximum sampled initial network occupancy',
     )
-    parser.add_argument('--eval-every', type=int, default=10, help='Evaluate every N iterations')
+    parser.add_argument('--eval-every', type=int, default=DEFAULT_EVAL_EVERY, help='Evaluate every N iterations')
     parser.add_argument('--eval-steps', type=int, default=600, help='Evaluation simulation seconds')
     parser.add_argument('--eval-seeds', nargs='+', type=int, default=[42], help='Evaluation SUMO seeds')
     parser.add_argument(
@@ -136,7 +177,12 @@ def parse_args() -> argparse.Namespace:
         help='Policies included in periodic evaluation',
     )
     parser.add_argument('--eval-demand-scale', type=float, default=1.0, help='Evaluation demand multiplier')
-    parser.add_argument('--save-every', type=int, default=10, help='Save numbered checkpoint every N iterations')
+    parser.add_argument(
+        '--save-every',
+        type=int,
+        default=DEFAULT_SAVE_EVERY,
+        help='Save numbered checkpoint every N iterations',
+    )
     parser.add_argument('--print-every', type=int, default=1, help='Print every N iterations')
     parser.add_argument('--ckpt-dir', type=Path, default=None, help='Checkpoint directory')
     parser.add_argument('--log-dir', type=Path, default=None, help='TensorBoard log directory')
@@ -160,14 +206,15 @@ def main() -> None:
     checkpoint_dir = args.ckpt_dir or ROOT / 'checkpoints' / 'rl' / run_name
     log_dir = args.log_dir or ROOT / 'runs' / 'rl' / run_name
     rollout_cities = experiment_rollout_cities(experiment_configuration)
+    ppo_settings = ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
     rollout_count = rollouts_per_update(args, experiment_configuration)
     worker_count = num_workers(args, experiment_configuration)
     result = train_movement_ppo(
         MovementPpoConfig(
             cfg_path=cfg_path(args, experiment_configuration),
             il_checkpoint_path=args.il_checkpoint,
-            iterations=args.iterations,
-            steps_per_rollout=args.steps_per_rollout,
+            iterations=ppo_settings.iterations,
+            steps_per_rollout=ppo_settings.steps_per_rollout,
             rollouts_per_update=rollout_count,
             num_workers=worker_count,
             decision_interval=args.decision_interval,
@@ -175,13 +222,13 @@ def main() -> None:
             gamma=args.gamma,
             lam=args.lam,
             clip_epsilon=args.clip,
-            update_epochs=args.epochs,
-            value_warmup_iterations=args.value_warmup_iterations,
-            warmup_epochs=args.warmup_epochs,
+            update_epochs=ppo_settings.update_epochs,
+            value_warmup_iterations=ppo_settings.value_warmup_iterations,
+            warmup_epochs=ppo_settings.warmup_epochs,
             value_coefficient=args.value_coeff,
             entropy_coefficient=args.entropy_coeff,
             max_grad_norm=args.grad_clip,
-            transitions_per_batch=args.transitions_per_batch,
+            transitions_per_batch=ppo_settings.transitions_per_batch,
             yellow_duration=args.yellow_duration,
             min_green_steps=args.min_green_steps,
             demand_scale_min=demand_scale_min,
@@ -196,13 +243,13 @@ def main() -> None:
             gui=args.gui,
             initial_occupancy_min=args.initial_occupancy_min,
             initial_occupancy_max=args.initial_occupancy_max,
-            eval_every=args.eval_every,
+            eval_every=ppo_settings.eval_every,
             eval_steps=args.eval_steps,
             eval_seeds=tuple(args.eval_seeds),
             eval_policies=tuple(EvaluationPolicy(policy) for policy in args.eval_policies),
             eval_demand_scale=args.eval_demand_scale,
             eval_demand_scales=evaluation_demand_scales(args, experiment_configuration),
-            save_every=args.save_every,
+            save_every=ppo_settings.save_every,
             print_every=args.print_every,
             checkpoint_dir=checkpoint_dir,
             log_dir=log_dir,
@@ -269,6 +316,44 @@ def cfg_path(args: argparse.Namespace, experiment_configuration: ExperimentConfi
     return resolve_experiment_path(
         path=experiment_configuration.train_cities[0].sumo_config,
         project_root=ROOT,
+    )
+
+
+def ppo_command_settings(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> PpoCommandSettings:
+    if experiment_configuration is None:
+        return PpoCommandSettings(
+            iterations=args.iterations,
+            steps_per_rollout=args.steps_per_rollout,
+            update_epochs=args.epochs,
+            value_warmup_iterations=args.value_warmup_iterations,
+            warmup_epochs=args.warmup_epochs,
+            transitions_per_batch=args.transitions_per_batch,
+            eval_every=args.eval_every,
+            save_every=args.save_every,
+        )
+    ppo = experiment_configuration.proximal_policy_optimization
+    return PpoCommandSettings(
+        iterations=ppo.iterations if args.iterations == DEFAULT_ITERATIONS else args.iterations,
+        steps_per_rollout=(
+            ppo.steps_per_rollout if args.steps_per_rollout == DEFAULT_STEPS_PER_ROLLOUT else args.steps_per_rollout
+        ),
+        update_epochs=ppo.update_epochs if args.epochs == DEFAULT_UPDATE_EPOCHS else args.epochs,
+        value_warmup_iterations=(
+            ppo.value_warmup_iterations
+            if args.value_warmup_iterations == DEFAULT_VALUE_WARMUP_ITERATIONS
+            else args.value_warmup_iterations
+        ),
+        warmup_epochs=ppo.warmup_epochs if args.warmup_epochs == DEFAULT_WARMUP_EPOCHS else args.warmup_epochs,
+        transitions_per_batch=(
+            ppo.transitions_per_batch
+            if args.transitions_per_batch == DEFAULT_TRANSITIONS_PER_BATCH
+            else args.transitions_per_batch
+        ),
+        eval_every=ppo.evaluate_every_iterations if args.eval_every == DEFAULT_EVAL_EVERY else args.eval_every,
+        save_every=ppo.save_every_iterations if args.save_every == DEFAULT_SAVE_EVERY else args.save_every,
     )
 
 

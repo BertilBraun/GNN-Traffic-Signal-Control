@@ -53,8 +53,12 @@ ppo:
   steps_per_rollout: 1200
   rollouts_per_update: 4
   rollout_workers: 4
-  eval_every_iterations: 25
-  save_every_iterations: 25
+  update_epochs: 2
+  value_warmup_iterations: 2
+  warmup_epochs: 2
+  transitions_per_batch: 256
+  eval_every_iterations: 0
+  save_every_iterations: 10
 
 evaluation:
   policies: [learned, max-pressure, queue]

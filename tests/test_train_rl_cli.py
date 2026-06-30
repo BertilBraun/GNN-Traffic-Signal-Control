@@ -219,6 +219,71 @@ def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
     assert tuple(city.rollout_workers for city in rollout_cities) == (2, 2, 2, 2)
 
 
+def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--experiment-config',
+            'configs/training/city_first_pass_4_worker.yaml',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    experiment_configuration = train_rl.experiment_config(args.experiment_config)
+    assert experiment_configuration is not None
+    settings = train_rl.ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
+
+    assert settings.iterations == 1000
+    assert settings.steps_per_rollout == 1200
+    assert settings.update_epochs == 2
+    assert settings.value_warmup_iterations == 2
+    assert settings.warmup_epochs == 2
+    assert settings.transitions_per_batch == 256
+    assert settings.eval_every == 0
+    assert settings.save_every == 10
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 4
+    assert train_rl.num_workers(args, experiment_configuration) == 4
+    assert tuple(city.rollout_workers for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
+        1,
+        1,
+        1,
+        1,
+    )
+
+
+def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--experiment-config',
+            'configs/training/city_first_pass_4_worker.yaml',
+            '--steps-per-rollout',
+            '120',
+            '--value-warmup-iterations',
+            '1',
+            '--epochs',
+            '1',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    experiment_configuration = train_rl.experiment_config(args.experiment_config)
+    assert experiment_configuration is not None
+    settings = train_rl.ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
+
+    assert settings.steps_per_rollout == 120
+    assert settings.value_warmup_iterations == 1
+    assert settings.update_epochs == 1
+
+
 def test_train_rl_experiment_hash_uses_configuration_text(tmp_path: Path) -> None:
     configuration_path = tmp_path / 'experiment.yaml'
     configuration_text = 'name: unit\n'
