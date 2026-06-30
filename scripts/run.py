@@ -37,14 +37,12 @@ from src.movement.policies import MovementScoringMethod, compute_movement_scores
 from src.movement.policies.graph_scores import compute_graph_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
-from src.movement.training.il.checkpoint import (  # noqa: E402
-    load_movement_checkpoint,
-    normalizer_from_state,
-)
+from src.movement.training.il.checkpoint import load_movement_checkpoint  # noqa: E402
 from src.movement.training.il.tensors import (  # noqa: E402
     edge_tensors_from_sample,
     tensors_from_sample,
 )
+from src.movement.training.normalizer_state import normalizer_from_state  # noqa: E402
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_4x4_dedicated' / 'grid.sumocfg'
 
