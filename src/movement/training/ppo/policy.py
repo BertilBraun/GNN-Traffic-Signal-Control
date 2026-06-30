@@ -21,6 +21,7 @@ from src.movement.normalization import RunningNormalizer
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il.tensors import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.phase_logits import phase_logits_from_sample
 from src.movement.training.ppo.types import PolicyContext, RolloutContext
 
 
@@ -147,19 +148,11 @@ def phase_logits(
     traffic_light_ids: Sequence[str],
     movement_scores: torch.Tensor,
 ) -> tuple[torch.Tensor, ...]:
-    logits = []
-    for traffic_light_id in traffic_light_ids:
-        incidence = sample.phase_incidences[traffic_light_id]
-        phase_scores = []
-        for row in incidence.rows:
-            enabled_scores = [
-                movement_scores[movement_id]
-                for enabled, movement_id in zip(row, incidence.movement_ids)
-                if enabled == 1
-            ]
-            phase_scores.append(torch.stack(tuple(enabled_scores)).sum())
-        logits.append(torch.stack(tuple(phase_scores)))
-    return tuple(logits)
+    return phase_logits_from_sample(
+        sample=sample,
+        traffic_light_ids=traffic_light_ids,
+        movement_scores=movement_scores,
+    )
 
 
 def states_from_actions(

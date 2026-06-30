@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from pydantic import BaseModel, ConfigDict
 from torch.utils.tensorboard import SummaryWriter
 
-from src.movement.dataset import MovementDatasetSample, StoredPhaseIncidence, load_jsonl_samples
+from src.movement.dataset import MovementDatasetSample, load_jsonl_samples
 from src.movement.models.bipartite_gnn import MovementScorer
 from src.movement.normalization import RunningNormalizer
 from src.movement.training.il.checkpoint import movement_checkpoint_payload
@@ -24,6 +24,7 @@ from src.movement.training.il.types import (
     MovementILTrainingResult,
     MovementILTrainingSnapshot,
 )
+from src.movement.training.phase_logits import phase_logits_from_incidence
 
 
 def train_movement_il(
@@ -340,7 +341,7 @@ def _phase_classification_loss(
 ) -> torch.Tensor:
     losses = []
     for traffic_light_id, incidence in sample.phase_incidences.items():
-        logits = _phase_logits(
+        logits = phase_logits_from_incidence(
             incidence=incidence,
             movement_scores=movement_scores,
         )
@@ -360,7 +361,7 @@ def _phase_match_counts(
     matches = 0
     for traffic_light_id, incidence in sample.phase_incidences.items():
         predicted_phase = int(
-            _phase_logits(
+            phase_logits_from_incidence(
                 incidence=incidence,
                 movement_scores=movement_scores,
             )
@@ -370,19 +371,6 @@ def _phase_match_counts(
         )
         matches += int(predicted_phase == sample.teacher_selected_phase_by_tls[traffic_light_id])
     return matches, len(sample.phase_incidences)
-
-
-def _phase_logits(
-    incidence: StoredPhaseIncidence,
-    movement_scores: torch.Tensor,
-) -> torch.Tensor:
-    phase_scores = []
-    for row in incidence.rows:
-        enabled_scores = tuple(
-            movement_scores[movement_id] for enabled, movement_id in zip(row, incidence.movement_ids) if enabled == 1
-        )
-        phase_scores.append(torch.stack(enabled_scores).sum())
-    return torch.stack(tuple(phase_scores))
 
 
 def _should_report_progress(epoch: int, epochs: int, progress_every: int) -> bool:
