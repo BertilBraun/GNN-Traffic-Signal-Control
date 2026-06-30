@@ -77,9 +77,9 @@ def test_indexed_jsonl_training_logs_progress_and_checkpoints(tmp_path: Path, ca
     assert 'epoch_end=1/1' in output
     assert (checkpoint_dir / 'movement_policy_last.pt').exists()
     assert (checkpoint_dir / 'movement_policy_best.pt').exists()
-    assert (checkpoint_dir / 'raw_tensor_cache' / 'sample_00000000.pt').exists()
-    assert (checkpoint_dir / 'raw_tensor_cache' / 'preparation_state.pt').exists()
-    assert (checkpoint_dir / 'raw_tensor_cache' / 'jsonl_index.pt').exists()
+    assert (checkpoint_dir / 'movement_tensor_cache' / 'raw_samples' / 'sample_00000000.pt').exists()
+    assert (checkpoint_dir / 'movement_tensor_cache' / 'raw_samples' / 'preparation_state.pt').exists()
+    assert (checkpoint_dir / 'movement_tensor_cache' / 'jsonl_index.pt').exists()
 
 
 def _samples() -> tuple[MovementDatasetSample, ...]:
