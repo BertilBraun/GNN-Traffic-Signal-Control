@@ -101,23 +101,15 @@ def test_collection_settings_validate_positive_values(
     workers: int,
     expected_message: str,
 ) -> None:
-    configuration = load_experiment_configuration(
-        configuration_path=ROOT / 'configs' / 'training' / 'city_first_pass.yaml',
-        project_root=ROOT,
-    )
-
     with pytest.raises(ValueError, match=expected_message):
-        build_balanced_collection_jobs(
-            configuration=configuration,
-            settings=MultiCityCollectionSettings(
-                project_root=ROOT,
-                output_dir=tmp_path,
-                samples_per_city=samples_per_city,
-                samples_per_simulation=samples_per_simulation,
-                collection_seed=42,
-                sample_stride=sample_stride,
-                workers=workers,
-            ),
+        MultiCityCollectionSettings(
+            project_root=ROOT,
+            output_dir=tmp_path,
+            samples_per_city=samples_per_city,
+            samples_per_simulation=samples_per_simulation,
+            collection_seed=42,
+            sample_stride=sample_stride,
+            workers=workers,
         )
 
 

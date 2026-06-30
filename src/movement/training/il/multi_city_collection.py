@@ -9,7 +9,7 @@ from pathlib import Path
 from random import Random
 import tempfile
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from scripts.collect_il_data import collect_samples
 from src.movement.dataset import MovementDatasetSample, load_jsonl_samples, save_jsonl_samples
@@ -22,8 +22,9 @@ from src.movement.experiment_config import (
 from src.movement.initial_traffic import sample_target_occupancy
 
 
-@dataclass(frozen=True)
-class MultiCityCollectionSettings:
+class MultiCityCollectionSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     project_root: Path
     output_dir: Path
     samples_per_city: int
@@ -31,6 +32,34 @@ class MultiCityCollectionSettings:
     collection_seed: int
     sample_stride: int
     workers: int
+
+    @field_validator('samples_per_city')
+    @classmethod
+    def validate_samples_per_city(cls, samples_per_city: int) -> int:
+        if samples_per_city <= 0:
+            raise ValueError('samples_per_city must be positive')
+        return samples_per_city
+
+    @field_validator('samples_per_simulation')
+    @classmethod
+    def validate_samples_per_simulation(cls, samples_per_simulation: int) -> int:
+        if samples_per_simulation <= 0:
+            raise ValueError('samples_per_simulation must be positive')
+        return samples_per_simulation
+
+    @field_validator('sample_stride')
+    @classmethod
+    def validate_sample_stride(cls, sample_stride: int) -> int:
+        if sample_stride <= 0:
+            raise ValueError('sample_stride must be positive')
+        return sample_stride
+
+    @field_validator('workers')
+    @classmethod
+    def validate_workers(cls, workers: int) -> int:
+        if workers <= 0:
+            raise ValueError('workers must be positive')
+        return workers
 
 
 @dataclass(frozen=True)
@@ -98,22 +127,13 @@ def collect_multi_city_samples(
     job_runner: CollectionJobRunner,
 ) -> MultiCityCollectionResult:
     jobs = build_balanced_collection_jobs(configuration=configuration, settings=settings)
-    if settings.workers == 1:
-        job_results = tuple(job_runner(job) for job in jobs)
-    else:
-        job_results = _run_jobs_in_parallel(jobs=jobs, workers=settings.workers, job_runner=job_runner)
-    return write_multi_city_collection_outputs(
-        output_dir=settings.output_dir,
-        job_results=job_results,
-        sample_stride=settings.sample_stride,
-    )
+    return _collect_jobs_to_outputs(settings=settings, jobs=jobs, job_runner=job_runner)
 
 
 def build_balanced_collection_jobs(
     configuration: ExperimentConfiguration,
     settings: MultiCityCollectionSettings,
 ) -> tuple[MultiCityCollectionJob, ...]:
-    _validate_collection_settings(settings)
     train_cities = configuration.train_cities
     if not train_cities:
         raise ValueError('at least one training city is required for IL collection')
@@ -226,15 +246,23 @@ def collect_multi_city_samples_to_directory(
             replace(job, raw_output_path=temporary_root / job.raw_output_path.name)
             for job in build_balanced_collection_jobs(configuration=configuration, settings=settings)
         )
-        if settings.workers == 1:
-            job_results = tuple(run_collection_job(job) for job in jobs)
-        else:
-            job_results = _run_jobs_in_parallel(jobs=jobs, workers=settings.workers, job_runner=run_collection_job)
-        return write_multi_city_collection_outputs(
-            output_dir=settings.output_dir,
-            job_results=job_results,
-            sample_stride=settings.sample_stride,
-        )
+        return _collect_jobs_to_outputs(settings=settings, jobs=jobs, job_runner=run_collection_job)
+
+
+def _collect_jobs_to_outputs(
+    settings: MultiCityCollectionSettings,
+    jobs: tuple[MultiCityCollectionJob, ...],
+    job_runner: CollectionJobRunner,
+) -> MultiCityCollectionResult:
+    if settings.workers == 1:
+        job_results = tuple(job_runner(job) for job in jobs)
+    else:
+        job_results = _run_jobs_in_parallel(jobs=jobs, workers=settings.workers, job_runner=job_runner)
+    return write_multi_city_collection_outputs(
+        output_dir=settings.output_dir,
+        job_results=job_results,
+        sample_stride=settings.sample_stride,
+    )
 
 
 def _run_jobs_in_parallel(
@@ -290,35 +318,20 @@ def _city_job_targets(samples_per_city: int, samples_per_simulation: int) -> tup
     return tuple(targets)
 
 
-def _validate_collection_settings(settings: MultiCityCollectionSettings) -> None:
-    if settings.samples_per_city <= 0:
-        raise ValueError('samples_per_city must be positive')
-    if settings.samples_per_simulation <= 0:
-        raise ValueError('samples_per_simulation must be positive')
-    if settings.sample_stride <= 0:
-        raise ValueError('sample_stride must be positive')
-    if settings.workers <= 0:
-        raise ValueError('workers must be positive')
-
-
 def _retained_samples(
     samples: Sequence[MovementDatasetSample],
     job: MultiCityCollectionJob,
 ) -> tuple[MovementDatasetSample, ...]:
-    retained_samples = tuple(samples[index] for index in range(0, len(samples), job.sample_stride))
-    return tuple(
-        _with_collection_metadata(
-            sample=sample,
-            city_name=job.city_name,
-            city_split=job.city_split,
-            demand_scale=job.demand_scale,
-            initial_occupancy=job.initial_occupancy,
-            collection_seed=job.seed,
-            sample_stride=job.sample_stride,
-            source_decision_index=source_decision_index,
-        )
-        for source_decision_index, sample in zip(range(0, len(samples), job.sample_stride), retained_samples)
-    )[: job.retained_sample_target]
+    return _retained_samples_with_metadata(
+        samples=samples,
+        city_name=job.city_name,
+        city_split=job.city_split,
+        demand_scale=job.demand_scale,
+        initial_occupancy=job.initial_occupancy,
+        collection_seed=job.seed,
+        sample_stride=job.sample_stride,
+        retained_sample_count=job.retained_sample_target,
+    )
 
 
 def _retained_samples_from_result(
@@ -326,20 +339,42 @@ def _retained_samples_from_result(
     result: MultiCityCollectionJobResult,
     sample_stride: int,
 ) -> tuple[MovementDatasetSample, ...]:
+    return _retained_samples_with_metadata(
+        samples=samples,
+        city_name=result.city_name,
+        city_split=result.city_split,
+        demand_scale=result.demand_scale,
+        initial_occupancy=result.initial_occupancy,
+        collection_seed=result.seed,
+        sample_stride=sample_stride,
+        retained_sample_count=result.retained_sample_count,
+    )
+
+
+def _retained_samples_with_metadata(
+    samples: Sequence[MovementDatasetSample],
+    city_name: str,
+    city_split: CitySplit,
+    demand_scale: float,
+    initial_occupancy: float,
+    collection_seed: int,
+    sample_stride: int,
+    retained_sample_count: int,
+) -> tuple[MovementDatasetSample, ...]:
     retained_samples = tuple(samples[index] for index in range(0, len(samples), sample_stride))
     return tuple(
         _with_collection_metadata(
             sample=sample,
-            city_name=result.city_name,
-            city_split=result.city_split,
-            demand_scale=result.demand_scale,
-            initial_occupancy=result.initial_occupancy,
-            collection_seed=result.seed,
+            city_name=city_name,
+            city_split=city_split,
+            demand_scale=demand_scale,
+            initial_occupancy=initial_occupancy,
+            collection_seed=collection_seed,
             sample_stride=sample_stride,
             source_decision_index=source_decision_index,
         )
         for source_decision_index, sample in zip(range(0, len(samples), sample_stride), retained_samples)
-    )[: result.retained_sample_count]
+    )[:retained_sample_count]
 
 
 def _with_collection_metadata(
