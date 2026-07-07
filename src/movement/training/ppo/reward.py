@@ -18,6 +18,7 @@ def advance_and_reward(
     decision_interval: int,
     global_reward_weight: float,
     speed_change_weight: float,
+    reward_sample_interval: int,
     reward_clip: float,
     teleport_penalty: float,
     speed_change_tracker: 'SpeedChangeTracker',
@@ -26,6 +27,10 @@ def advance_and_reward(
         raise ValueError('teleport_penalty must not be negative.')
     if speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
+    if reward_sample_interval <= 0:
+        raise ValueError('reward_sample_interval must be positive.')
+    if reward_sample_interval > decision_interval:
+        raise ValueError('reward_sample_interval must not exceed decision_interval.')
     local_delay_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     speed_change_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     global_delay_sum = 0.0
@@ -35,42 +40,52 @@ def advance_and_reward(
     reward_lane_query_seconds = 0.0
     reward_vehicle_query_seconds = 0.0
     aggregation_started = perf_counter()
+    previous_reward_sample_step = 0
     for _step in range(decision_interval):
         step_started = perf_counter()
         runtime.step()
         reward_sumo_step_seconds += perf_counter() - step_started
         simulated_steps += 1
         teleport_count += int(traci.simulation.getStartingTeleportNumber())
+        running = runtime.is_running()
+        should_sample_reward = (
+            simulated_steps % reward_sample_interval == 0 or simulated_steps == decision_interval or not running
+        )
+        if not should_sample_reward:
+            continue
+        represented_steps = simulated_steps - previous_reward_sample_step
+        previous_reward_sample_step = simulated_steps
         lane_query_started = perf_counter()
         delay_snapshot = lane_delay_snapshot(
             lane_ids=context.all_incoming_lane_ids,
             speed_limit_by_lane=context.speed_limit_by_lane,
         )
         reward_lane_query_seconds += perf_counter() - lane_query_started
-        if speed_change_weight > 0.0:
-            vehicle_query_started = perf_counter()
-            speed_change_by_lane = speed_change_tracker.observe(
-                lane_ids=context.all_incoming_lane_ids,
-                speed_limit_by_lane=context.speed_limit_by_lane,
-            )
-            reward_vehicle_query_seconds += perf_counter() - vehicle_query_started
-        else:
-            speed_change_by_lane = {lane_id: 0.0 for lane_id in context.all_incoming_lane_ids}
+        speed_change_by_lane = speed_change_tracker.observe_lane_snapshot(
+            snapshot=delay_snapshot,
+            speed_limit_by_lane=context.speed_limit_by_lane,
+        )
         for traffic_light_id in context.traffic_light_ids:
-            local_delay_sums[traffic_light_id] += delay_snapshot.density(
-                lane_ids=context.incoming_lanes_by_traffic_light[traffic_light_id],
-                total_lane_length_m=context.incoming_lane_length_by_traffic_light[traffic_light_id],
+            local_delay_sums[traffic_light_id] += (
+                delay_snapshot.density(
+                    lane_ids=context.incoming_lanes_by_traffic_light[traffic_light_id],
+                    total_lane_length_m=context.incoming_lane_length_by_traffic_light[traffic_light_id],
+                )
+                * represented_steps
             )
             speed_change_sums[traffic_light_id] += speed_change_density(
                 lane_ids=context.incoming_lanes_by_traffic_light[traffic_light_id],
                 speed_change_by_lane=speed_change_by_lane,
                 total_lane_length_m=context.incoming_lane_length_by_traffic_light[traffic_light_id],
             )
-        global_delay_sum += delay_snapshot.density(
-            lane_ids=context.all_incoming_lane_ids,
-            total_lane_length_m=context.all_incoming_lane_length_m,
+        global_delay_sum += (
+            delay_snapshot.density(
+                lane_ids=context.all_incoming_lane_ids,
+                total_lane_length_m=context.all_incoming_lane_length_m,
+            )
+            * represented_steps
         )
-        if not runtime.is_running():
+        if not running:
             break
     reward_aggregation_seconds = perf_counter() - aggregation_started - reward_sumo_step_seconds
     reward_aggregation_seconds -= reward_lane_query_seconds + reward_vehicle_query_seconds
@@ -150,6 +165,8 @@ def speed_deficit_density(
 @dataclass(frozen=True)
 class LaneDelaySnapshot:
     delayed_vehicle_equivalents_by_lane: dict[str, float]
+    vehicle_count_by_lane: dict[str, int]
+    mean_speed_by_lane: dict[str, float]
 
     def density(
         self,
@@ -168,47 +185,50 @@ def lane_delay_snapshot(
     speed_limit_by_lane: Mapping[str, float],
 ) -> LaneDelaySnapshot:
     delayed_vehicle_equivalents_by_lane: dict[str, float] = {}
+    vehicle_count_by_lane: dict[str, int] = {}
+    mean_speed_by_lane: dict[str, float] = {}
     for lane_id in lane_ids:
         vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+        vehicle_count_by_lane[lane_id] = vehicle_count
         if vehicle_count <= 0:
             delayed_vehicle_equivalents_by_lane[lane_id] = 0.0
+            mean_speed_by_lane[lane_id] = 0.0
             continue
         speed_limit = speed_limit_by_lane[lane_id]
         if speed_limit <= 0.0:
             delayed_vehicle_equivalents_by_lane[lane_id] = 0.0
+            mean_speed_by_lane[lane_id] = 0.0
             continue
         mean_speed = max(0.0, float(traci.lane.getLastStepMeanSpeed(lane_id)))
+        mean_speed_by_lane[lane_id] = mean_speed
         speed_deficit = max(0.0, 1.0 - min(mean_speed / speed_limit, 1.0))
         delayed_vehicle_equivalents_by_lane[lane_id] = vehicle_count * speed_deficit
-    return LaneDelaySnapshot(delayed_vehicle_equivalents_by_lane=delayed_vehicle_equivalents_by_lane)
+    return LaneDelaySnapshot(
+        delayed_vehicle_equivalents_by_lane=delayed_vehicle_equivalents_by_lane,
+        vehicle_count_by_lane=vehicle_count_by_lane,
+        mean_speed_by_lane=mean_speed_by_lane,
+    )
 
 
 @dataclass
 class SpeedChangeTracker:
-    previous_speed_by_vehicle: dict[str, float] = field(default_factory=dict)
+    previous_mean_speed_by_lane: dict[str, float] = field(default_factory=dict)
 
-    def observe(
+    def observe_lane_snapshot(
         self,
-        lane_ids: Sequence[str],
+        snapshot: LaneDelaySnapshot,
         speed_limit_by_lane: Mapping[str, float],
     ) -> dict[str, float]:
-        speed_change_by_lane = {lane_id: 0.0 for lane_id in lane_ids}
-        current_speed_by_vehicle: dict[str, float] = {}
-        for lane_id in lane_ids:
+        speed_change_by_lane: dict[str, float] = {}
+        for lane_id, mean_speed in snapshot.mean_speed_by_lane.items():
             speed_limit = speed_limit_by_lane[lane_id]
-            if speed_limit <= 0.0:
+            previous_mean_speed = self.previous_mean_speed_by_lane.get(lane_id)
+            if speed_limit <= 0.0 or previous_mean_speed is None:
+                speed_change_by_lane[lane_id] = 0.0
                 continue
-            for vehicle_id in traci.lane.getLastStepVehicleIDs(lane_id):
-                vehicle_id = str(vehicle_id)
-                try:
-                    speed = max(0.0, float(traci.vehicle.getSpeed(vehicle_id)))
-                except traci.exceptions.TraCIException:
-                    continue
-                previous_speed = self.previous_speed_by_vehicle.get(vehicle_id)
-                if previous_speed is not None:
-                    speed_change_by_lane[lane_id] += abs(speed - previous_speed) / speed_limit
-                current_speed_by_vehicle[vehicle_id] = speed
-        self.previous_speed_by_vehicle = current_speed_by_vehicle
+            vehicle_count = snapshot.vehicle_count_by_lane[lane_id]
+            speed_change_by_lane[lane_id] = vehicle_count * abs(mean_speed - previous_mean_speed) / speed_limit
+        self.previous_mean_speed_by_lane = dict(snapshot.mean_speed_by_lane)
         return speed_change_by_lane
 
 

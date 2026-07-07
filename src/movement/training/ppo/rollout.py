@@ -469,6 +469,7 @@ def collect_decision_transition(
         decision_interval=config.decision_interval,
         global_reward_weight=config.global_reward_weight,
         speed_change_weight=config.speed_change_weight,
+        reward_sample_interval=config.reward_sample_interval,
         reward_clip=config.reward_clip,
         teleport_penalty=config.teleport_penalty,
         speed_change_tracker=speed_change_tracker,

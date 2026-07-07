@@ -52,6 +52,7 @@ class MovementPpoConfig:
     demand_scale_max: float
     global_reward_weight: float
     speed_change_weight: float
+    reward_sample_interval: int
     reward_clip: float
     teleport_penalty: float
     max_teleports_per_rollout: int

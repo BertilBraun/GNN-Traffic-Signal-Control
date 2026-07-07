@@ -23,6 +23,7 @@ from src.movement.training.ppo import validate_config
 from src.movement.training.ppo.batch import ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
+    LaneDelaySnapshot,
     SpeedChangeTracker,
     clip_reward,
     delay_density_reward,
@@ -233,6 +234,17 @@ def test_validate_config_rejects_held_out_rollout_city() -> None:
         validate_config(config)
 
 
+def test_validate_config_rejects_reward_sampling_slower_than_decisions() -> None:
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        decision_interval=5,
+        reward_sample_interval=10,
+    )
+
+    with pytest.raises(ValueError, match='reward_sample_interval must not exceed decision_interval'):
+        validate_config(config)
+
+
 def test_resume_validation_rejects_experiment_hash_mismatch() -> None:
     config = replace(_ppo_config(rollouts_per_update=1, rollout_cities=()), experiment_configuration_sha256='current')
     checkpoint = _ppo_checkpoint(experiment_configuration_sha256='checkpoint')
@@ -396,26 +408,24 @@ def test_speed_deficit_density_counts_slow_moving_vehicles(
     assert density == pytest.approx(3.0 / 300.0)
 
 
-def test_speed_change_density_tracks_vehicle_speed_changes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lane_vehicle_ids = {'lane': ['veh0', 'veh1']}
-    speeds = {'veh0': 5.0, 'veh1': 10.0}
-    monkeypatch.setattr(
-        'src.movement.training.ppo.reward.traci.lane.getLastStepVehicleIDs',
-        lambda lane_id: lane_vehicle_ids[lane_id],
-    )
-    monkeypatch.setattr(
-        'src.movement.training.ppo.reward.traci.vehicle.getSpeed',
-        lambda vehicle_id: speeds[vehicle_id],
-    )
-
+def test_speed_change_density_tracks_lane_mean_speed_changes() -> None:
     tracker = SpeedChangeTracker()
-    assert tracker.observe(lane_ids=('lane',), speed_limit_by_lane={'lane': 10.0}) == {'lane': 0.0}
-    speeds['veh0'] = 8.0
-    speeds['veh1'] = 4.0
+    first_snapshot = LaneDelaySnapshot(
+        delayed_vehicle_equivalents_by_lane={'lane': 0.0},
+        vehicle_count_by_lane={'lane': 2},
+        mean_speed_by_lane={'lane': 5.0},
+    )
+    second_snapshot = LaneDelaySnapshot(
+        delayed_vehicle_equivalents_by_lane={'lane': 0.0},
+        vehicle_count_by_lane={'lane': 2},
+        mean_speed_by_lane={'lane': 9.5},
+    )
+    assert tracker.observe_lane_snapshot(snapshot=first_snapshot, speed_limit_by_lane={'lane': 10.0}) == {'lane': 0.0}
 
-    speed_change_by_lane = tracker.observe(lane_ids=('lane',), speed_limit_by_lane={'lane': 10.0})
+    speed_change_by_lane = tracker.observe_lane_snapshot(
+        snapshot=second_snapshot,
+        speed_limit_by_lane={'lane': 10.0},
+    )
 
     assert speed_change_by_lane == pytest.approx({'lane': 0.9})
     assert speed_change_density(
@@ -701,6 +711,7 @@ def _ppo_config(
         demand_scale_max=1.2,
         global_reward_weight=0.1,
         speed_change_weight=0.02,
+        reward_sample_interval=10,
         reward_clip=1.0,
         teleport_penalty=0.0,
         max_teleports_per_rollout=999,

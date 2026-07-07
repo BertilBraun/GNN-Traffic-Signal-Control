@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -31,6 +33,11 @@ class FakeLane:
         self.vehicle_number_calls = 0
         self.mean_speed_calls = 0
         self.vehicle_ids_calls = 0
+        self.mean_speeds_by_lane = {
+            'lane_a': [5.0, 10.0],
+            'lane_b': [10.0, 5.0],
+        }
+        self.mean_speed_index_by_lane = {'lane_a': 0, 'lane_b': 0}
 
     def getLastStepVehicleNumber(self, lane_id: str) -> int:
         self.vehicle_number_calls += 1
@@ -38,7 +45,9 @@ class FakeLane:
 
     def getLastStepMeanSpeed(self, lane_id: str) -> float:
         self.mean_speed_calls += 1
-        return {'lane_a': 5.0, 'lane_b': 10.0}[lane_id]
+        index = self.mean_speed_index_by_lane[lane_id]
+        self.mean_speed_index_by_lane[lane_id] += 1
+        return self.mean_speeds_by_lane[lane_id][min(index, len(self.mean_speeds_by_lane[lane_id]) - 1)]
 
     def getLastStepVehicleIDs(self, lane_id: str) -> tuple[str, ...]:
         self.vehicle_ids_calls += 1
@@ -71,34 +80,37 @@ def test_advance_and_reward_reuses_lane_delay_snapshot(monkeypatch) -> None:
         decision_interval=3,
         global_reward_weight=0.1,
         speed_change_weight=0.0,
+        reward_sample_interval=3,
         reward_clip=1.0,
         teleport_penalty=0.0,
         speed_change_tracker=SpeedChangeTracker(),
     )
 
-    assert fake_traci.lane.vehicle_number_calls == 6
-    assert fake_traci.lane.mean_speed_calls == 6
+    assert fake_traci.lane.vehicle_number_calls == 2
+    assert fake_traci.lane.mean_speed_calls == 2
     assert fake_traci.lane.vehicle_ids_calls == 0
     assert fake_traci.vehicle.speed_calls == 0
 
 
-def test_advance_and_reward_collects_vehicle_speeds_only_when_weighted(monkeypatch) -> None:
+def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries(monkeypatch) -> None:
     fake_traci = FakeTraci()
     monkeypatch.setattr('src.movement.training.ppo.reward.traci', fake_traci)
 
-    advance_and_reward(
+    result = advance_and_reward(
         runtime=FakeRuntime(),
         context=_context(),
         decision_interval=2,
         global_reward_weight=0.1,
         speed_change_weight=0.02,
+        reward_sample_interval=1,
         reward_clip=1.0,
         teleport_penalty=0.0,
         speed_change_tracker=SpeedChangeTracker(),
     )
 
-    assert fake_traci.lane.vehicle_ids_calls == 4
-    assert fake_traci.vehicle.speed_calls == 4
+    assert fake_traci.lane.vehicle_ids_calls == 0
+    assert fake_traci.vehicle.speed_calls == 0
+    assert result.speed_change_densities == pytest.approx((0.005, 0.0025))
 
 
 def _context() -> RolloutContext:

@@ -98,6 +98,7 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     warmup_epochs: int = Field(gt=0, default=8)
     transitions_per_batch: int = Field(gt=0, default=32)
     update_batch_workers: int = Field(ge=0, default=0)
+    reward_sample_interval: int = Field(gt=0, default=5)
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')
     save_every_iterations: int = Field(gt=0)
 
@@ -131,6 +132,8 @@ class ExperimentConfiguration(BaseModel):
         held_out_cities = tuple(city.name for city in self.cities if city.split == CitySplit.HELD_OUT)
         if len(held_out_cities) != 1:
             raise ValueError(f'exactly one held-out city is required, found {len(held_out_cities)}')
+        if self.proximal_policy_optimization.reward_sample_interval > self.simulation.decision_interval:
+            raise ValueError('ppo.reward_sample_interval must not exceed simulation.decision_interval')
         return self
 
     @property

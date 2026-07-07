@@ -113,6 +113,10 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('max_teleports_per_rollout must not be negative.')
     if config.speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
+    if config.reward_sample_interval <= 0:
+        raise ValueError('reward_sample_interval must be positive.')
+    if config.reward_sample_interval > config.decision_interval:
+        raise ValueError('reward_sample_interval must not exceed decision_interval.')
     if config.target_kl <= 0.0:
         raise ValueError('target_kl must be positive.')
     if config.rollouts_per_update <= 0:

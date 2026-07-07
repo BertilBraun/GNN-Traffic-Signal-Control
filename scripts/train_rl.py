@@ -32,6 +32,7 @@ DEFAULT_VALUE_WARMUP_ITERATIONS = 20
 DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
 DEFAULT_UPDATE_BATCH_WORKERS = 0
+DEFAULT_REWARD_SAMPLE_INTERVAL = 5
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_SAVE_EVERY = 10
 
@@ -140,7 +141,13 @@ def parse_args() -> argparse.Namespace:
         '--speed-change-weight',
         type=float,
         default=0.02,
-        help='Auxiliary penalty weight for per-vehicle speed changes on incoming lanes',
+        help='Auxiliary penalty weight for lane mean-speed changes on incoming lanes',
+    )
+    parser.add_argument(
+        '--reward-sample-interval',
+        type=int,
+        default=DEFAULT_REWARD_SAMPLE_INTERVAL,
+        help='SUMO simulation steps between reward TraCI lane/vehicle queries',
     )
     parser.add_argument('--reward-clip', type=float, default=1.0, help='Absolute per-decision reward limit')
     parser.add_argument('--teleport-penalty', type=float, default=0.0, help='Global reward penalty per teleport')
@@ -244,6 +251,7 @@ def main() -> None:
             demand_scale_max=demand_scale_max,
             global_reward_weight=args.global_reward_weight,
             speed_change_weight=args.speed_change_weight,
+            reward_sample_interval=reward_sample_interval(args, experiment_configuration),
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
             max_teleports_per_rollout=args.max_teleports_per_rollout,
@@ -395,6 +403,15 @@ def rollouts_per_update(
     if experiment_configuration is not None and args.rollouts_per_update == DEFAULT_ROLLOUTS_PER_UPDATE:
         return experiment_configuration.proximal_policy_optimization.rollouts_per_update
     return args.rollouts_per_update
+
+
+def reward_sample_interval(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if experiment_configuration is not None and args.reward_sample_interval == DEFAULT_REWARD_SAMPLE_INTERVAL:
+        return experiment_configuration.proximal_policy_optimization.reward_sample_interval
+    return args.reward_sample_interval
 
 
 def num_workers(

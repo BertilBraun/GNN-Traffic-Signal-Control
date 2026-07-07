@@ -46,6 +46,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '-1',
             '--speed-change-weight',
             '0.03',
+            '--reward-sample-interval',
+            '5',
         ],
     )
 
@@ -68,6 +70,7 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.resume_checkpoint is None
     assert args.time_to_teleport == -1
     assert args.speed_change_weight == 0.03
+    assert args.reward_sample_interval == 5
 
 
 def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
@@ -122,6 +125,7 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1
     assert args.speed_change_weight == 0.02
+    assert args.reward_sample_interval == 5
     assert args.reward_clip == 1.0
     assert args.teleport_penalty == 0.0
     assert args.max_teleports_per_rollout == 999
@@ -207,6 +211,7 @@ def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
 
     assert train_rl.rollouts_per_update(args, experiment_configuration) == 8
     assert train_rl.num_workers(args, experiment_configuration) == 8
+    assert train_rl.reward_sample_interval(args, experiment_configuration) == 5
     assert train_rl.demand_scale_bounds(args, experiment_configuration) == (0.8, 1.2)
     assert train_rl.evaluation_demand_scales(args, experiment_configuration) == (0.8, 1.0, 1.2)
     assert tuple(city.city_name for city in rollout_cities) == (
