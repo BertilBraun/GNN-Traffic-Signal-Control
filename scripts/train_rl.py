@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 import os
 from pathlib import Path
 import sys
+from typing import TextIO
 
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -41,6 +43,7 @@ DEFAULT_REWARD_SAMPLE_INTERVAL = 5
 DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_SAVE_EVERY = 10
+ORIGINAL_PRINT = builtins.print
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,21 @@ class PpoCommandSettings:
     update_batch_workers: int
     eval_every: int
     save_every: int
+
+
+def install_timestamped_prints() -> None:
+    builtins.print = timestamped_print
+
+
+def timestamped_print(
+    *values: object,
+    sep: str | None = ' ',
+    end: str | None = '\n',
+    file: TextIO | None = None,
+    flush: bool = False,
+) -> None:
+    timestamp = datetime.now().astimezone().isoformat(timespec='seconds')
+    ORIGINAL_PRINT(f'[{timestamp}]', *values, sep=sep, end=end, file=file, flush=flush)
 
 
 def parse_args() -> argparse.Namespace:
@@ -221,6 +239,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    install_timestamped_prints()
     args = parse_args()
     experiment_configuration = experiment_config(args.experiment_config)
     demand_scale_min, demand_scale_max = demand_scale_bounds(args, experiment_configuration)
