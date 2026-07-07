@@ -31,6 +31,7 @@ DEFAULT_UPDATE_EPOCHS = 4
 DEFAULT_VALUE_WARMUP_ITERATIONS = 20
 DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
+DEFAULT_UPDATE_BATCH_WORKERS = 0
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_SAVE_EVERY = 10
 
@@ -43,6 +44,7 @@ class PpoCommandSettings:
     value_warmup_iterations: int
     warmup_epochs: int
     transitions_per_batch: int
+    update_batch_workers: int
     eval_every: int
     save_every: int
 
@@ -106,6 +108,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_TRANSITIONS_PER_BATCH,
         help='Decision transitions per minibatch',
+    )
+    parser.add_argument(
+        '--update-batch-workers',
+        type=int,
+        default=DEFAULT_UPDATE_BATCH_WORKERS,
+        help='PyTorch DataLoader workers for packing PPO update minibatches',
     )
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
@@ -229,6 +237,7 @@ def main() -> None:
             entropy_coefficient=args.entropy_coeff,
             max_grad_norm=args.grad_clip,
             transitions_per_batch=ppo_settings.transitions_per_batch,
+            update_batch_workers=ppo_settings.update_batch_workers,
             yellow_duration=args.yellow_duration,
             min_green_steps=args.min_green_steps,
             demand_scale_min=demand_scale_min,
@@ -331,6 +340,7 @@ def ppo_command_settings(
             value_warmup_iterations=args.value_warmup_iterations,
             warmup_epochs=args.warmup_epochs,
             transitions_per_batch=args.transitions_per_batch,
+            update_batch_workers=args.update_batch_workers,
             eval_every=args.eval_every,
             save_every=args.save_every,
         )
@@ -351,6 +361,11 @@ def ppo_command_settings(
             ppo.transitions_per_batch
             if args.transitions_per_batch == DEFAULT_TRANSITIONS_PER_BATCH
             else args.transitions_per_batch
+        ),
+        update_batch_workers=(
+            ppo.update_batch_workers
+            if args.update_batch_workers == DEFAULT_UPDATE_BATCH_WORKERS
+            else args.update_batch_workers
         ),
         eval_every=ppo.evaluate_every_iterations if args.eval_every == DEFAULT_EVAL_EVERY else args.eval_every,
         save_every=ppo.save_every_iterations if args.save_every == DEFAULT_SAVE_EVERY else args.save_every,

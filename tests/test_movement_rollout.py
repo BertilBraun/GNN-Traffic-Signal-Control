@@ -20,6 +20,7 @@ from src.movement.experiment_config import CitySplit
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.ppo import validate_config
+from src.movement.training.ppo.batch import ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
     SpeedChangeTracker,
@@ -39,6 +40,7 @@ from src.movement.training.ppo.state import validate_resume_experiment_configura
 from src.movement.training.ppo.types import MovementPpoCheckpoint, MovementPpoConfig, RolloutCity
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
+from src.movement.training.movement_batch import MovementTensorSample, movement_tensor_sample_from_dataset_sample
 from src.movement.training.rollout import MovementRolloutBuffer
 from src.movement.training.rollout.types import MovementTransition
 
@@ -61,8 +63,52 @@ def _sample() -> MovementDatasetSample:
             )
         },
         teacher_movement_scores=(0.0,),
-        teacher_selected_phase_by_tls={},
+        teacher_selected_phase_by_tls={'J0': 0},
         metadata={},
+    )
+
+
+def _tensor_sample() -> MovementTensorSample:
+    return movement_tensor_sample_from_dataset_sample(
+        sample=_sample(),
+        city_name='unit',
+        device=torch.device('cpu'),
+    )
+
+
+def _two_traffic_light_tensor_sample() -> MovementTensorSample:
+    return MovementTensorSample(
+        x_lane=torch.tensor(((1.0,),), dtype=torch.float32),
+        x_movement=torch.tensor(
+            (
+                (0.0, 1.0, 1.0, 0.0, 0.0),
+                (1.0, 0.0, 1.0, 0.0, 0.0),
+            ),
+            dtype=torch.float32,
+        ),
+        target=torch.tensor((0.0, 0.0), dtype=torch.float32),
+        edge_index_dict={
+            'input_lane_to_movement': torch.empty((2, 0), dtype=torch.long),
+            'output_lane_to_movement': torch.empty((2, 0), dtype=torch.long),
+            'movement_to_input_lane': torch.empty((2, 0), dtype=torch.long),
+            'movement_to_output_lane': torch.empty((2, 0), dtype=torch.long),
+            'lane_to_lane': torch.empty((2, 0), dtype=torch.long),
+            'lane_to_lane_weight': torch.empty((0,), dtype=torch.float32),
+        },
+        phase_incidences={
+            'J0': StoredPhaseIncidence(
+                sumo_phase_indices=(0,),
+                movement_ids=(0,),
+                rows=((1,),),
+            ),
+            'J1': StoredPhaseIncidence(
+                sumo_phase_indices=(0, 1),
+                movement_ids=(1,),
+                rows=((1,), (0,)),
+            ),
+        },
+        teacher_selected_phase_by_tls={'J0': 0, 'J1': 0},
+        city_name='unit',
     )
 
 
@@ -74,7 +120,7 @@ def test_rollout_buffer_computes_discounted_returns_for_value_warmup() -> None:
     )
     buffer.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -85,7 +131,7 @@ def test_rollout_buffer_computes_discounted_returns_for_value_warmup() -> None:
     )
     buffer.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -413,7 +459,7 @@ def test_diagnostics_report_reward_and_return_scale() -> None:
     for reward, value, done in ((1.0, 0.25, False), (2.0, 0.5, True)):
         buffer.add(
             MovementTransition(
-                sample=_sample(),
+                tensor_sample=_tensor_sample(),
                 actions=(0,),
                 old_log_probs=(0.0,),
                 action_masks=((True,),),
@@ -450,7 +496,7 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
     buffer = MovementRolloutBuffer(traffic_light_count=1, gamma=0.99, lam=0.95)
     buffer.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -464,7 +510,16 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
         bootstrap_values=(0.0,),
     )
 
-    batch = next(buffer.iterate_minibatches(transitions_per_batch=1, device='cpu'))
+    assert buffer.advantages is not None
+    assert buffer.returns is not None
+    loader = ppo_batch_data_loader(
+        transitions=buffer.transitions,
+        advantages=buffer.advantages,
+        returns=buffer.returns,
+        transitions_per_batch=1,
+        update_batch_workers=0,
+    )
+    batch = next(iter(loader))
 
     assert batch.policy_mask.tolist() == [False]
     assert batch.advantages.tolist() == [0.0]
@@ -475,7 +530,7 @@ def test_rollout_bootstraps_truncated_returns_from_next_state_value() -> None:
     for reward, value in ((1.0, 0.25), (2.0, 0.5)):
         buffer.add(
             MovementTransition(
-                sample=_sample(),
+                tensor_sample=_tensor_sample(),
                 actions=(0,),
                 old_log_probs=(0.0,),
                 action_masks=((True,),),
@@ -500,7 +555,7 @@ def test_rollout_ignores_bootstrap_after_true_terminal_state() -> None:
     buffer = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
     buffer.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_two_traffic_light_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -525,7 +580,7 @@ def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bo
     first = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
     first.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -541,7 +596,7 @@ def test_rollout_buffer_concatenates_precomputed_rollouts_without_recomputing_bo
     second = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
     second.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -568,7 +623,7 @@ def test_rollout_buffer_concatenates_different_traffic_light_counts() -> None:
     first = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
     first.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_tensor_sample(),
             actions=(0,),
             old_log_probs=(0.0,),
             action_masks=((True,),),
@@ -584,7 +639,7 @@ def test_rollout_buffer_concatenates_different_traffic_light_counts() -> None:
     second = MovementRolloutBuffer(traffic_light_count=2, gamma=0.5, lam=1.0)
     second.add(
         MovementTransition(
-            sample=_sample(),
+            tensor_sample=_two_traffic_light_tensor_sample(),
             actions=(0, 1),
             old_log_probs=(0.0, -0.5),
             action_masks=((True,), (True, True)),
@@ -599,7 +654,16 @@ def test_rollout_buffer_concatenates_different_traffic_light_counts() -> None:
     )
 
     combined = MovementRolloutBuffer.concatenate_computed((first, second))
-    batch = next(combined.iterate_minibatches(transitions_per_batch=2, device='cpu'))
+    assert combined.advantages is not None
+    assert combined.returns is not None
+    loader = ppo_batch_data_loader(
+        transitions=combined.transitions,
+        advantages=combined.advantages,
+        returns=combined.returns,
+        transitions_per_batch=2,
+        update_batch_workers=0,
+    )
+    batch = next(iter(loader))
 
     assert len(combined) == 2
     assert batch.old_log_probs.shape == (3,)
@@ -630,6 +694,7 @@ def _ppo_config(
         entropy_coefficient=0.01,
         max_grad_norm=0.5,
         transitions_per_batch=32,
+        update_batch_workers=0,
         yellow_duration=3,
         min_green_steps=2,
         demand_scale_min=0.8,

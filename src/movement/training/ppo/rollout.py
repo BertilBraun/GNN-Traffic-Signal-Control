@@ -33,8 +33,9 @@ from src.movement.training.il.checkpoint import MovementCheckpointMetadata
 from src.movement.training.normalizer_state import NormalizerState, normalizer_from_state
 from src.movement.training.ppo.policy import (
     allowed_action_masks,
+    cached_policy_tensor_sample,
     current_sample,
-    forward_policy,
+    forward_tensor_policy,
     masked_phase_logits,
     rollout_context,
     states_from_actions,
@@ -256,12 +257,14 @@ def collect_rollout(
         maximum_occupancy=config.initial_occupancy_max,
         seed=rollout_seed,
     )
+    initial_population_started = perf_counter()
     initial_population = generate_initial_traffic_population(
         cfg_path=rollout_city.sumo_config_path,
         net_path=net_path,
         target_occupancy=target_occupancy,
         seed=rollout_seed,
     )
+    initial_population_seconds = perf_counter() - initial_population_started
     runtime = MovementControlRuntime(
         cfg_path=rollout_city.sumo_config_path,
         gui=config.gui,
@@ -273,12 +276,16 @@ def collect_rollout(
     )
     simulation_started = perf_counter()
     try:
+        runtime_start_started = perf_counter()
         runtime.start()
         runtime.step()
+        runtime_start_seconds = perf_counter() - runtime_start_started
+        context_started = perf_counter()
         context = rollout_context(
             cfg_path=rollout_city.sumo_config_path,
             programs=runtime.programs,
         )
+        context_build_seconds = perf_counter() - context_started
         print_initial_population(
             rollout_seed=rollout_seed,
             city_name=rollout_city.city_name,
@@ -295,6 +302,10 @@ def collect_rollout(
             device=device,
             simulation_started=simulation_started,
             demand_scale=demand_scale,
+            initial_population_seconds=initial_population_seconds,
+            runtime_start_seconds=runtime_start_seconds,
+            context_build_seconds=context_build_seconds,
+            city_name=rollout_city.city_name,
         )
         return rollout
     finally:
@@ -313,6 +324,10 @@ def collect_runtime_rollout(
     device: torch.device,
     simulation_started: float,
     demand_scale: float,
+    initial_population_seconds: float,
+    runtime_start_seconds: float,
+    context_build_seconds: float,
+    city_name: str,
 ) -> RolloutRunResult:
     vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
     lane_flow_tracker = LaneGroupFlowTracker(
@@ -328,6 +343,11 @@ def collect_runtime_rollout(
         lam=config.lam,
     )
     metrics = RolloutMetrics()
+    metrics.observe_setup(
+        initial_population_seconds=initial_population_seconds,
+        runtime_start_seconds=runtime_start_seconds,
+        context_build_seconds=context_build_seconds,
+    )
     speed_change_tracker = SpeedChangeTracker()
     model.eval()
     for _decision_step in range(config.steps_per_rollout):
@@ -347,7 +367,9 @@ def collect_runtime_rollout(
             buffer=buffer,
             metrics=metrics,
             speed_change_tracker=speed_change_tracker,
+            city_name=city_name,
         )
+    bootstrap_started = perf_counter()
     next_values = bootstrap_values(
         runtime=runtime,
         context=context,
@@ -358,7 +380,9 @@ def collect_runtime_rollout(
         lane_normalizer=lane_normalizer,
         movement_normalizer=movement_normalizer,
         device=device,
+        city_name=city_name,
     )
+    metrics.observe_bootstrap(perf_counter() - bootstrap_started)
     return RolloutRunResult(
         buffer=buffer,
         stats=metrics.stats(
@@ -383,7 +407,9 @@ def collect_decision_transition(
     buffer: MovementRolloutBuffer,
     metrics: RolloutMetrics,
     speed_change_tracker: SpeedChangeTracker,
+    city_name: str,
 ) -> MovementControlState:
+    sample_started = perf_counter()
     sample = current_sample(
         context=context,
         programs=runtime.programs,
@@ -391,15 +417,25 @@ def collect_decision_transition(
         lane_flow_tracker=lane_flow_tracker,
         control_state=control_state,
     )
+    sample_seconds = perf_counter() - sample_started
+    tensor_started = perf_counter()
+    tensor_sample = cached_policy_tensor_sample(
+        sample=sample,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        city_name=city_name,
+    )
+    tensor_seconds = perf_counter() - tensor_started
     with torch.no_grad():
-        _movement_scores, values, phase_logits = forward_policy(
+        model_started = perf_counter()
+        _movement_scores, values, phase_logits = forward_tensor_policy(
             model=model,
-            sample=sample,
+            tensor_sample=tensor_sample,
             context=context,
-            lane_normalizer=lane_normalizer,
-            movement_normalizer=movement_normalizer,
             device=device,
         )
+        model_seconds = perf_counter() - model_started + tensor_seconds
+        action_started = perf_counter()
         action_masks = allowed_action_masks(
             runtime=runtime,
             context=context,
@@ -413,6 +449,8 @@ def collect_decision_transition(
             float(distribution.log_prob(torch.tensor(action, device=device)).detach().cpu())
             for distribution, action in zip(distributions, actions)
         )
+        action_seconds = perf_counter() - action_started
+    apply_started = perf_counter()
     accepted_states = request_runtime_targets(
         runtime=runtime,
         context=context,
@@ -423,6 +461,8 @@ def collect_decision_transition(
         programs=runtime.programs,
         target_states=accepted_states,
     )
+    apply_seconds = perf_counter() - apply_started
+    reward_started = perf_counter()
     interval_reward = advance_and_reward(
         runtime=runtime,
         context=context,
@@ -433,10 +473,18 @@ def collect_decision_transition(
         teleport_penalty=config.teleport_penalty,
         speed_change_tracker=speed_change_tracker,
     )
+    reward_seconds = perf_counter() - reward_started
     metrics.observe_reward(interval_reward)
+    metrics.observe_decision(
+        sample_seconds=sample_seconds,
+        model_seconds=model_seconds,
+        action_seconds=action_seconds,
+        apply_seconds=apply_seconds,
+        reward_seconds=reward_seconds,
+    )
     buffer.add(
         MovementTransition(
-            sample=sample,
+            tensor_sample=tensor_sample,
             actions=actions,
             old_log_probs=old_log_probs,
             action_masks=action_masks,
@@ -476,6 +524,7 @@ def bootstrap_values(
     lane_normalizer: RunningNormalizer,
     movement_normalizer: RunningNormalizer,
     device: torch.device,
+    city_name: str,
 ) -> tuple[float, ...]:
     if not runtime.is_running():
         return tuple(0.0 for _traffic_light_id in context.traffic_light_ids)
@@ -486,13 +535,17 @@ def bootstrap_values(
         lane_flow_tracker=lane_flow_tracker,
         control_state=control_state,
     )
+    tensor_sample = cached_policy_tensor_sample(
+        sample=sample,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        city_name=city_name,
+    )
     with torch.no_grad():
-        _movement_scores, values, _phase_logits = forward_policy(
+        _movement_scores, values, _phase_logits = forward_tensor_policy(
             model=model,
-            sample=sample,
+            tensor_sample=tensor_sample,
             context=context,
-            lane_normalizer=lane_normalizer,
-            movement_normalizer=movement_normalizer,
             device=device,
         )
     return tuple(float(value) for value in values.detach().cpu())

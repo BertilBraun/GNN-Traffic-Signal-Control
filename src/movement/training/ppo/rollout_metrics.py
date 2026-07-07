@@ -24,6 +24,21 @@ class RolloutMetrics:
     policy_decision_count: int
     total_decision_count: int
     teleport_count: int
+    initial_population_seconds: float
+    runtime_start_seconds: float
+    context_build_seconds: float
+    decision_sample_seconds: float
+    decision_model_seconds: float
+    decision_action_seconds: float
+    decision_apply_seconds: float
+    reward_seconds: float
+    reward_sumo_step_seconds: float
+    reward_lane_query_seconds: float
+    reward_vehicle_query_seconds: float
+    reward_aggregation_seconds: float
+    bootstrap_seconds: float
+    decision_step_count: int
+    simulated_step_count: int
 
     def __init__(self) -> None:
         self.rewards = []
@@ -36,6 +51,31 @@ class RolloutMetrics:
         self.policy_decision_count = 0
         self.total_decision_count = 0
         self.teleport_count = 0
+        self.initial_population_seconds = 0.0
+        self.runtime_start_seconds = 0.0
+        self.context_build_seconds = 0.0
+        self.decision_sample_seconds = 0.0
+        self.decision_model_seconds = 0.0
+        self.decision_action_seconds = 0.0
+        self.decision_apply_seconds = 0.0
+        self.reward_seconds = 0.0
+        self.reward_sumo_step_seconds = 0.0
+        self.reward_lane_query_seconds = 0.0
+        self.reward_vehicle_query_seconds = 0.0
+        self.reward_aggregation_seconds = 0.0
+        self.bootstrap_seconds = 0.0
+        self.decision_step_count = 0
+        self.simulated_step_count = 0
+
+    def observe_setup(
+        self,
+        initial_population_seconds: float,
+        runtime_start_seconds: float,
+        context_build_seconds: float,
+    ) -> None:
+        self.initial_population_seconds += initial_population_seconds
+        self.runtime_start_seconds += runtime_start_seconds
+        self.context_build_seconds += context_build_seconds
 
     def observe_policy(self, distributions: Sequence[Categorical], action_masks: Sequence[Sequence[bool]]) -> None:
         for distribution, action_mask in zip(distributions, action_masks):
@@ -53,6 +93,29 @@ class RolloutMetrics:
         self.local_delay_densities.extend(interval_reward.local_delay_densities)
         self.global_delay_densities.append(interval_reward.global_delay_density)
         self.speed_change_densities.extend(interval_reward.speed_change_densities)
+        self.reward_sumo_step_seconds += interval_reward.reward_sumo_step_seconds
+        self.reward_lane_query_seconds += interval_reward.reward_lane_query_seconds
+        self.reward_vehicle_query_seconds += interval_reward.reward_vehicle_query_seconds
+        self.reward_aggregation_seconds += interval_reward.reward_aggregation_seconds
+        self.simulated_step_count += interval_reward.simulated_steps
+
+    def observe_decision(
+        self,
+        sample_seconds: float,
+        model_seconds: float,
+        action_seconds: float,
+        apply_seconds: float,
+        reward_seconds: float,
+    ) -> None:
+        self.decision_sample_seconds += sample_seconds
+        self.decision_model_seconds += model_seconds
+        self.decision_action_seconds += action_seconds
+        self.decision_apply_seconds += apply_seconds
+        self.reward_seconds += reward_seconds
+        self.decision_step_count += 1
+
+    def observe_bootstrap(self, bootstrap_seconds: float) -> None:
+        self.bootstrap_seconds += bootstrap_seconds
 
     def stats(self, simulation_elapsed_s: float, demand_scale: float) -> RolloutStats:
         return RolloutStats(
@@ -77,4 +140,19 @@ class RolloutMetrics:
             minimum_demand_scale=demand_scale,
             maximum_demand_scale=demand_scale,
             simulation_elapsed_s=simulation_elapsed_s,
+            initial_population_seconds=self.initial_population_seconds,
+            runtime_start_seconds=self.runtime_start_seconds,
+            context_build_seconds=self.context_build_seconds,
+            decision_sample_seconds=self.decision_sample_seconds,
+            decision_model_seconds=self.decision_model_seconds,
+            decision_action_seconds=self.decision_action_seconds,
+            decision_apply_seconds=self.decision_apply_seconds,
+            reward_seconds=self.reward_seconds,
+            reward_sumo_step_seconds=self.reward_sumo_step_seconds,
+            reward_lane_query_seconds=self.reward_lane_query_seconds,
+            reward_vehicle_query_seconds=self.reward_vehicle_query_seconds,
+            reward_aggregation_seconds=self.reward_aggregation_seconds,
+            bootstrap_seconds=self.bootstrap_seconds,
+            decision_step_count=self.decision_step_count,
+            simulated_step_count=self.simulated_step_count,
         )

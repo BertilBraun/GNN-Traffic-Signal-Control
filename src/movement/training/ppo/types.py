@@ -45,6 +45,7 @@ class MovementPpoConfig:
     entropy_coefficient: float
     max_grad_norm: float
     transitions_per_batch: int
+    update_batch_workers: int
     yellow_duration: int
     min_green_steps: int
     demand_scale_min: float
@@ -147,6 +148,21 @@ class RolloutStats:
     minimum_demand_scale: float
     maximum_demand_scale: float
     simulation_elapsed_s: float
+    initial_population_seconds: float = 0.0
+    runtime_start_seconds: float = 0.0
+    context_build_seconds: float = 0.0
+    decision_sample_seconds: float = 0.0
+    decision_model_seconds: float = 0.0
+    decision_action_seconds: float = 0.0
+    decision_apply_seconds: float = 0.0
+    reward_seconds: float = 0.0
+    reward_sumo_step_seconds: float = 0.0
+    reward_lane_query_seconds: float = 0.0
+    reward_vehicle_query_seconds: float = 0.0
+    reward_aggregation_seconds: float = 0.0
+    bootstrap_seconds: float = 0.0
+    decision_step_count: int = 0
+    simulated_step_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -189,3 +205,8 @@ class IntervalRewardResult:
     global_delay_density: float
     speed_change_densities: tuple[float, ...]
     teleport_count: int
+    simulated_steps: int = 0
+    reward_sumo_step_seconds: float = 0.0
+    reward_lane_query_seconds: float = 0.0
+    reward_vehicle_query_seconds: float = 0.0
+    reward_aggregation_seconds: float = 0.0

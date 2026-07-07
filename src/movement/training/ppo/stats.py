@@ -42,6 +42,21 @@ def combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
         minimum_demand_scale=min(stat.minimum_demand_scale for stat in stats),
         maximum_demand_scale=max(stat.maximum_demand_scale for stat in stats),
         simulation_elapsed_s=max(stat.simulation_elapsed_s for stat in stats),
+        initial_population_seconds=max(stat.initial_population_seconds for stat in stats),
+        runtime_start_seconds=max(stat.runtime_start_seconds for stat in stats),
+        context_build_seconds=max(stat.context_build_seconds for stat in stats),
+        decision_sample_seconds=sum(stat.decision_sample_seconds for stat in stats),
+        decision_model_seconds=sum(stat.decision_model_seconds for stat in stats),
+        decision_action_seconds=sum(stat.decision_action_seconds for stat in stats),
+        decision_apply_seconds=sum(stat.decision_apply_seconds for stat in stats),
+        reward_seconds=sum(stat.reward_seconds for stat in stats),
+        reward_sumo_step_seconds=sum(stat.reward_sumo_step_seconds for stat in stats),
+        reward_lane_query_seconds=sum(stat.reward_lane_query_seconds for stat in stats),
+        reward_vehicle_query_seconds=sum(stat.reward_vehicle_query_seconds for stat in stats),
+        reward_aggregation_seconds=sum(stat.reward_aggregation_seconds for stat in stats),
+        bootstrap_seconds=sum(stat.bootstrap_seconds for stat in stats),
+        decision_step_count=sum(stat.decision_step_count for stat in stats),
+        simulated_step_count=sum(stat.simulated_step_count for stat in stats),
     )
 
 

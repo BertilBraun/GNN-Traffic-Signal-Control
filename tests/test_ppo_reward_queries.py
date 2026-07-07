@@ -1,0 +1,139 @@
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
+from src.movement.training.ppo.types import RolloutContext
+from src.movement.graph_schema import MovementGraph, TypedMovementEdges
+
+
+class FakeRuntime:
+    def __init__(self) -> None:
+        self.step_count = 0
+
+    def step(self) -> dict[str, str]:
+        self.step_count += 1
+        return {}
+
+    def is_running(self) -> bool:
+        return True
+
+
+class FakeSimulation:
+    def getStartingTeleportNumber(self) -> int:
+        return 0
+
+
+class FakeLane:
+    def __init__(self) -> None:
+        self.vehicle_number_calls = 0
+        self.mean_speed_calls = 0
+        self.vehicle_ids_calls = 0
+
+    def getLastStepVehicleNumber(self, lane_id: str) -> int:
+        self.vehicle_number_calls += 1
+        return {'lane_a': 2, 'lane_b': 1}[lane_id]
+
+    def getLastStepMeanSpeed(self, lane_id: str) -> float:
+        self.mean_speed_calls += 1
+        return {'lane_a': 5.0, 'lane_b': 10.0}[lane_id]
+
+    def getLastStepVehicleIDs(self, lane_id: str) -> tuple[str, ...]:
+        self.vehicle_ids_calls += 1
+        return (f'{lane_id}_vehicle',)
+
+
+class FakeVehicle:
+    def __init__(self) -> None:
+        self.speed_calls = 0
+
+    def getSpeed(self, vehicle_id: str) -> float:
+        self.speed_calls += 1
+        return 5.0
+
+
+class FakeTraci:
+    def __init__(self) -> None:
+        self.simulation = FakeSimulation()
+        self.lane = FakeLane()
+        self.vehicle = FakeVehicle()
+
+
+def test_advance_and_reward_reuses_lane_delay_snapshot(monkeypatch) -> None:
+    fake_traci = FakeTraci()
+    monkeypatch.setattr('src.movement.training.ppo.reward.traci', fake_traci)
+
+    advance_and_reward(
+        runtime=FakeRuntime(),
+        context=_context(),
+        decision_interval=3,
+        global_reward_weight=0.1,
+        speed_change_weight=0.0,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        speed_change_tracker=SpeedChangeTracker(),
+    )
+
+    assert fake_traci.lane.vehicle_number_calls == 6
+    assert fake_traci.lane.mean_speed_calls == 6
+    assert fake_traci.lane.vehicle_ids_calls == 0
+    assert fake_traci.vehicle.speed_calls == 0
+
+
+def test_advance_and_reward_collects_vehicle_speeds_only_when_weighted(monkeypatch) -> None:
+    fake_traci = FakeTraci()
+    monkeypatch.setattr('src.movement.training.ppo.reward.traci', fake_traci)
+
+    advance_and_reward(
+        runtime=FakeRuntime(),
+        context=_context(),
+        decision_interval=2,
+        global_reward_weight=0.1,
+        speed_change_weight=0.02,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        speed_change_tracker=SpeedChangeTracker(),
+    )
+
+    assert fake_traci.lane.vehicle_ids_calls == 4
+    assert fake_traci.vehicle.speed_calls == 4
+
+
+def _context() -> RolloutContext:
+    return RolloutContext(
+        graph=MovementGraph(
+            lane_groups=(),
+            movements=(),
+            edges=TypedMovementEdges(
+                input_lane_to_movement=(),
+                output_lane_to_movement=(),
+                movement_to_input_lane=(),
+                movement_to_output_lane=(),
+            ),
+            lane_lane_connectors=(),
+            lane_movement_metadata=(),
+            phase_incidences={},
+            lane_group_id_by_edge={},
+            movement_id_by_key={},
+        ),
+        traffic_light_ids=('tls_a', 'tls_b'),
+        movement_ids_by_traffic_light=(),
+        lane_ids_by_edge={},
+        lane_geometries={},
+        incoming_lanes_by_traffic_light={
+            'tls_a': ('lane_a',),
+            'tls_b': ('lane_b',),
+        },
+        incoming_lane_length_by_traffic_light={
+            'tls_a': 100.0,
+            'tls_b': 100.0,
+        },
+        speed_limit_by_lane={
+            'lane_a': 10.0,
+            'lane_b': 10.0,
+        },
+        all_incoming_lane_ids=('lane_a', 'lane_b'),
+        all_incoming_lane_length_m=200.0,
+    )

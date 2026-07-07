@@ -119,6 +119,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('rollouts_per_update must be positive.')
     if config.num_workers <= 0:
         raise ValueError('num_workers must be positive.')
+    if config.update_batch_workers < 0:
+        raise ValueError('update_batch_workers must not be negative.')
     if not config.eval_demand_scales:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:
@@ -292,8 +294,6 @@ def update_iteration_model(
         model=state.model,
         optimizer=state.optimizer,
         buffer=buffer,
-        lane_normalizer=state.lane_normalizer,
-        movement_normalizer=state.movement_normalizer,
         device=device,
         config=config,
         warming_up=warming_up,
@@ -324,6 +324,7 @@ def write_iteration_outputs(
     writer.add_scalar('diagnostics/update_skipped', float(update_skipped), iteration)
     writer.add_scalar('timing/update_seconds', timing.update_finished - timing.rollout_finished, iteration)
     writer.add_scalar('timing/iteration_seconds', timing.update_finished - timing.iteration_started, iteration)
+    write_rollout_timing_scalars(writer=writer, iteration=iteration, rollout_stats=rollout_stats)
     if config.print_every > 0 and (iteration == 1 or iteration % config.print_every == 0):
         print_iteration_summary(
             config=config,
@@ -352,6 +353,34 @@ def write_city_rollout_scalars(
         writer.add_scalar(f'{tag_prefix}/mean_local_delay_density', stats.mean_local_delay_density, iteration)
         writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', stats.mean_local_delay_density, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_demand_scale', stats.mean_demand_scale, iteration)
+
+
+def write_rollout_timing_scalars(writer: SummaryWriter, iteration: int, rollout_stats: RolloutStats) -> None:
+    writer.add_scalar('timing/initial_population_seconds', rollout_stats.initial_population_seconds, iteration)
+    writer.add_scalar('timing/runtime_start_seconds', rollout_stats.runtime_start_seconds, iteration)
+    writer.add_scalar('timing/context_build_seconds', rollout_stats.context_build_seconds, iteration)
+    writer.add_scalar('timing/bootstrap_seconds', rollout_stats.bootstrap_seconds, iteration)
+    writer.add_scalar('timing/decision_sample_seconds', rollout_stats.decision_sample_seconds, iteration)
+    writer.add_scalar('timing/decision_model_seconds', rollout_stats.decision_model_seconds, iteration)
+    writer.add_scalar('timing/decision_action_seconds', rollout_stats.decision_action_seconds, iteration)
+    writer.add_scalar('timing/decision_apply_seconds', rollout_stats.decision_apply_seconds, iteration)
+    writer.add_scalar('timing/reward_seconds', rollout_stats.reward_seconds, iteration)
+    writer.add_scalar('timing/reward_sumo_step_seconds', rollout_stats.reward_sumo_step_seconds, iteration)
+    writer.add_scalar('timing/reward_lane_query_seconds', rollout_stats.reward_lane_query_seconds, iteration)
+    writer.add_scalar('timing/reward_vehicle_query_seconds', rollout_stats.reward_vehicle_query_seconds, iteration)
+    writer.add_scalar('timing/reward_aggregation_seconds', rollout_stats.reward_aggregation_seconds, iteration)
+    writer.add_scalar('timing/decision_step_count', rollout_stats.decision_step_count, iteration)
+    writer.add_scalar('timing/simulated_step_count', rollout_stats.simulated_step_count, iteration)
+    writer.add_scalar(
+        'timing/seconds_per_decision',
+        rollout_stats.simulation_elapsed_s / max(1, rollout_stats.decision_step_count),
+        iteration,
+    )
+    writer.add_scalar(
+        'timing/reward_seconds_per_sumo_step',
+        rollout_stats.reward_seconds / max(1, rollout_stats.simulated_step_count),
+        iteration,
+    )
 
 
 def print_iteration_summary(
@@ -385,8 +414,22 @@ def print_iteration_summary(
         f'grad={update_stats.backbone_gradient_norm:.3f}/'
         f'{update_stats.value_head_gradient_norm:.3f} '
         f'teleports={rollout_stats.teleport_count} '
+        f'setup={rollout_stats.initial_population_seconds + rollout_stats.runtime_start_seconds + rollout_stats.context_build_seconds:.1f}s '
+        f'sample={rollout_stats.decision_sample_seconds:.1f}s '
+        f'reward={rollout_stats.reward_seconds:.1f}s '
+        f'step={rollout_stats.reward_sumo_step_seconds:.1f}s '
+        f'laneq={rollout_stats.reward_lane_query_seconds:.1f}s '
+        f'vehq={rollout_stats.reward_vehicle_query_seconds:.1f}s '
         f'rollout={timing.rollout_finished - timing.iteration_started:.1f}s '
         f'update={timing.update_finished - timing.rollout_finished:.1f}s '
+        f'upd_batches={update_stats.profile.batch_count} '
+        f'upd_data={update_stats.profile.data_seconds:.1f}s '
+        f'upd_loss={update_stats.profile.batch_loss_seconds:.1f}s '
+        f'upd_fwd={update_stats.profile.model_forward_seconds:.1f}s '
+        f'upd_value={update_stats.profile.value_seconds:.1f}s '
+        f'upd_phase={update_stats.profile.phase_log_prob_seconds:.1f}s '
+        f'upd_back={update_stats.profile.backward_seconds:.1f}s '
+        f'upd_opt={update_stats.profile.optimizer_seconds:.1f}s '
         f'elapsed={perf_counter() - started:.1f}s'
     )
 

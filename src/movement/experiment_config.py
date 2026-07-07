@@ -97,6 +97,7 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     value_warmup_iterations: int = Field(ge=0, default=20)
     warmup_epochs: int = Field(gt=0, default=8)
     transitions_per_batch: int = Field(gt=0, default=32)
+    update_batch_workers: int = Field(ge=0, default=0)
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')
     save_every_iterations: int = Field(gt=0)
 

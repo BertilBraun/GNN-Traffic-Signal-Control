@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 
 import torch
 
-from src.movement.training.rollout.math import compute_rollout_targets, normalize_advantages
-from src.movement.training.rollout.types import MovementPpoBatch, MovementTransition
+from src.movement.training.rollout.math import compute_rollout_targets
+from src.movement.training.rollout.types import MovementTransition
 
 
 class MovementRolloutBuffer:
@@ -73,49 +73,6 @@ class MovementRolloutBuffer:
         )
         self.advantages = tuple(targets.advantages[step_index] for step_index in range(targets.advantages.shape[0]))
         self.returns = tuple(targets.returns[step_index] for step_index in range(targets.returns.shape[0]))
-
-    def iterate_minibatches(
-        self,
-        transitions_per_batch: int,
-        device: torch.device | str,
-    ) -> Iterator[MovementPpoBatch]:
-        if self.advantages is None or self.returns is None:
-            raise ValueError('compute_returns_and_advantages must be called before minibatching.')
-        torch_device = torch.device(device)
-        indices = torch.randperm(len(self.transitions))
-        batch_size = max(1, transitions_per_batch)
-        for start in range(0, len(self.transitions), batch_size):
-            batch_indices = indices[start : start + batch_size]
-            transitions = tuple(self.transitions[int(index)] for index in batch_indices)
-            old_log_probs = torch.cat(
-                tuple(
-                    torch.tensor(transition.old_log_probs, dtype=torch.float32, device=torch_device)
-                    for transition in transitions
-                )
-            )
-            advantages = torch.cat(tuple(self.advantages[int(index)].to(torch_device) for index in batch_indices))
-            returns = torch.cat(tuple(self.returns[int(index)].to(torch_device) for index in batch_indices))
-            policy_mask = torch.cat(
-                tuple(
-                    torch.tensor(
-                        tuple(sum(action_mask) > 1 for action_mask in transition.action_masks),
-                        dtype=torch.bool,
-                        device=torch_device,
-                    )
-                    for transition in transitions
-                )
-            )
-            normalized_advantages = normalize_advantages(
-                advantages=advantages,
-                policy_mask=policy_mask,
-            )
-            yield MovementPpoBatch(
-                transitions=transitions,
-                old_log_probs=old_log_probs,
-                advantages=normalized_advantages,
-                returns=returns,
-                policy_mask=policy_mask,
-            )
 
     def __len__(self) -> int:
         return len(self.transitions)

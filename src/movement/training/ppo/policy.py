@@ -21,6 +21,12 @@ from src.movement.normalization import RunningNormalizer
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
 from src.movement.training.il.tensors import edge_tensors_from_sample, tensors_from_sample
+from src.movement.training.movement_batch import (
+    MovementTensorSample,
+    move_movement_tensor_sample,
+    movement_tensor_sample_from_dataset_sample,
+    normalise_movement_tensor_sample,
+)
 from src.movement.training.phase_logits import phase_logits_from_sample
 from src.movement.training.ppo.types import PolicyContext, RolloutContext
 
@@ -143,8 +149,51 @@ def forward_policy(
     )
 
 
-def phase_logits(
+def cached_policy_tensor_sample(
     sample: MovementDatasetSample,
+    lane_normalizer: RunningNormalizer,
+    movement_normalizer: RunningNormalizer,
+    city_name: str,
+) -> MovementTensorSample:
+    cpu_sample = movement_tensor_sample_from_dataset_sample(
+        sample=sample,
+        city_name=city_name,
+        device=torch.device('cpu'),
+    )
+    return normalise_movement_tensor_sample(
+        sample=cpu_sample,
+        lane_normalizer=lane_normalizer,
+        movement_normalizer=movement_normalizer,
+        device=torch.device('cpu'),
+    )
+
+
+def forward_tensor_policy(
+    model: MovementActorCritic,
+    tensor_sample: MovementTensorSample,
+    context: RolloutContext | PolicyContext,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
+    device_sample = move_movement_tensor_sample(sample=tensor_sample, device=device)
+    movement_scores, values = model.forward_actor_critic(
+        x_lane=device_sample.x_lane,
+        x_movement=device_sample.x_movement,
+        edge_index_dict=device_sample.edge_index_dict,
+        movement_ids_by_traffic_light=context.movement_ids_by_traffic_light,
+    )
+    return (
+        movement_scores,
+        values,
+        phase_logits(
+            sample=device_sample,
+            traffic_light_ids=context.traffic_light_ids,
+            movement_scores=movement_scores,
+        ),
+    )
+
+
+def phase_logits(
+    sample: MovementDatasetSample | MovementTensorSample,
     traffic_light_ids: Sequence[str],
     movement_scores: torch.Tensor,
 ) -> tuple[torch.Tensor, ...]:
