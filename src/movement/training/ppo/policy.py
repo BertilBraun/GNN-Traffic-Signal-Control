@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import torch
 
@@ -14,6 +16,7 @@ from src.movement.features import (
     MovementControlState,
     VehicleSnapshotCollector,
     build_feature_frame,
+    build_vehicle_feature_index,
 )
 from src.movement.graph import build_movement_graph
 from src.movement.models.bipartite_gnn import MovementActorCritic
@@ -29,6 +32,16 @@ from src.movement.training.movement_batch import (
 )
 from src.movement.training.phase_logits import phase_logits_from_sample
 from src.movement.training.ppo.types import PolicyContext, RolloutContext
+
+
+@dataclass(frozen=True)
+class CurrentSampleResult:
+    sample: MovementDatasetSample
+    capture_seconds: float
+    index_seconds: float
+    flow_seconds: float
+    feature_frame_seconds: float
+    dataset_sample_seconds: float
 
 
 def rollout_context(
@@ -100,21 +113,62 @@ def current_sample(
     lane_flow_tracker: LaneGroupFlowTracker,
     control_state: MovementControlState,
 ) -> MovementDatasetSample:
+    return timed_current_sample(
+        context=context,
+        programs=programs,
+        vehicle_snapshot_collector=vehicle_snapshot_collector,
+        lane_flow_tracker=lane_flow_tracker,
+        control_state=control_state,
+    ).sample
+
+
+def timed_current_sample(
+    context: RolloutContext,
+    programs: Mapping[str, TrafficLightProgram],
+    vehicle_snapshot_collector: VehicleSnapshotCollector,
+    lane_flow_tracker: LaneGroupFlowTracker,
+    control_state: MovementControlState,
+) -> CurrentSampleResult:
+    capture_started = perf_counter()
     vehicles = vehicle_snapshot_collector.capture()
+    capture_seconds = perf_counter() - capture_started
+    index_started = perf_counter()
+    vehicle_index = build_vehicle_feature_index(
+        graph=context.graph,
+        lane_ids_by_edge=context.lane_ids_by_edge,
+        lane_geometries=context.lane_geometries,
+        vehicles=vehicles,
+    )
+    index_seconds = perf_counter() - index_started
+    flow_started = perf_counter()
+    lane_flow_rates = lane_flow_tracker.observe(vehicle_index)
+    flow_seconds = perf_counter() - flow_started
+    feature_frame_started = perf_counter()
     feature_frame = build_feature_frame(
         graph=context.graph,
         lane_ids_by_edge=context.lane_ids_by_edge,
         lane_geometries=context.lane_geometries,
         control_state=control_state,
         vehicles=vehicles,
-        lane_flow_rates=lane_flow_tracker.observe(vehicles),
+        lane_flow_rates=lane_flow_rates,
+        vehicle_index=vehicle_index,
     )
-    return build_dataset_sample(
+    feature_frame_seconds = perf_counter() - feature_frame_started
+    dataset_sample_started = perf_counter()
+    sample = build_dataset_sample(
         graph=context.graph,
         feature_frame=feature_frame,
         programs=programs,
         teacher_controlled_scores={traffic_light_id: {} for traffic_light_id in programs},
         metadata={},
+    )
+    return CurrentSampleResult(
+        sample=sample,
+        capture_seconds=capture_seconds,
+        index_seconds=index_seconds,
+        flow_seconds=flow_seconds,
+        feature_frame_seconds=feature_frame_seconds,
+        dataset_sample_seconds=perf_counter() - dataset_sample_started,
     )
 
 

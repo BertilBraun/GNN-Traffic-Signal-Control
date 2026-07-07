@@ -21,6 +21,7 @@ from src.movement.features import (  # noqa: E402
     MovementControlState,
     VehicleSnapshotCollector,
     build_feature_frame,
+    build_vehicle_feature_index,
     detector_length,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
@@ -88,13 +89,20 @@ def inspect_detection(
         for step in range(steps + 1):
             if step % sample_every == 0:
                 vehicles = vehicle_snapshot_collector.capture()
+                vehicle_index = build_vehicle_feature_index(
+                    graph=graph,
+                    lane_ids_by_edge=lane_ids_by_edge,
+                    lane_geometries=lane_geometries,
+                    vehicles=vehicles,
+                )
                 feature_frame = build_feature_frame(
                     graph=graph,
                     lane_ids_by_edge=lane_ids_by_edge,
                     lane_geometries=lane_geometries,
                     control_state=MovementControlState(),
                     vehicles=vehicles,
-                    lane_flow_rates=flow_tracker.observe(vehicles),
+                    lane_flow_rates=flow_tracker.observe(vehicle_index),
+                    vehicle_index=vehicle_index,
                 )
                 comparisons = _compare_lane_groups(
                     graph=graph,

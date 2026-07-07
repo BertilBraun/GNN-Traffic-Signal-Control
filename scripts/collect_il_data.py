@@ -23,6 +23,7 @@ from src.movement.features import (  # noqa: E402
     MovementControlState,
     VehicleSnapshotCollector,
     build_feature_frame,
+    build_vehicle_feature_index,
     movement_control_state_from_targets,
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
@@ -147,6 +148,12 @@ def collect_samples(
         for step in range(steps):
             if step % decision_interval == 0:
                 vehicles = vehicle_snapshot_collector.capture()
+                vehicle_index = build_vehicle_feature_index(
+                    graph=graph,
+                    lane_ids_by_edge=lane_ids_by_edge,
+                    lane_geometries=lane_geometries,
+                    vehicles=vehicles,
+                )
                 vehicle_counts.append(len(vehicles))
                 feature_frame = build_feature_frame(
                     graph=graph,
@@ -154,7 +161,8 @@ def collect_samples(
                     lane_geometries=lane_geometries,
                     control_state=control_state,
                     vehicles=vehicles,
-                    lane_flow_rates=flow_tracker.observe(vehicles),
+                    lane_flow_rates=flow_tracker.observe(vehicle_index),
+                    vehicle_index=vehicle_index,
                 )
                 sample = build_dataset_sample(
                     graph=graph,
@@ -293,13 +301,20 @@ def _max_pressure_trajectory(
             if not runtime.is_running():
                 break
             vehicles = vehicle_snapshot_collector.capture()
+            vehicle_index = build_vehicle_feature_index(
+                graph=graph,
+                lane_ids_by_edge=lane_ids_by_edge,
+                lane_geometries=lane_geometries,
+                vehicles=vehicles,
+            )
             feature_frame = build_feature_frame(
                 graph=graph,
                 lane_ids_by_edge=lane_ids_by_edge,
                 lane_geometries=lane_geometries,
                 control_state=control_state,
                 vehicles=vehicles,
-                lane_flow_rates=flow_tracker.observe(vehicles),
+                lane_flow_rates=flow_tracker.observe(vehicle_index),
+                vehicle_index=vehicle_index,
             )
             sample = build_dataset_sample(
                 graph=graph,

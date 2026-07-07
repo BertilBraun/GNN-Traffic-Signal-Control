@@ -365,6 +365,11 @@ def write_rollout_timing_scalars(writer: SummaryWriter, iteration: int, rollout_
     writer.add_scalar('timing/context_build_seconds', rollout_stats.context_build_seconds, iteration)
     writer.add_scalar('timing/bootstrap_seconds', rollout_stats.bootstrap_seconds, iteration)
     writer.add_scalar('timing/decision_sample_seconds', rollout_stats.decision_sample_seconds, iteration)
+    writer.add_scalar('timing/sample_capture_seconds', rollout_stats.sample_capture_seconds, iteration)
+    writer.add_scalar('timing/sample_index_seconds', rollout_stats.sample_index_seconds, iteration)
+    writer.add_scalar('timing/sample_flow_seconds', rollout_stats.sample_flow_seconds, iteration)
+    writer.add_scalar('timing/sample_feature_frame_seconds', rollout_stats.sample_feature_frame_seconds, iteration)
+    writer.add_scalar('timing/sample_dataset_seconds', rollout_stats.sample_dataset_seconds, iteration)
     writer.add_scalar('timing/decision_model_seconds', rollout_stats.decision_model_seconds, iteration)
     writer.add_scalar('timing/decision_action_seconds', rollout_stats.decision_action_seconds, iteration)
     writer.add_scalar('timing/decision_apply_seconds', rollout_stats.decision_apply_seconds, iteration)
@@ -420,6 +425,8 @@ def print_iteration_summary(
         f'teleports={rollout_stats.teleport_count} '
         f'setup={rollout_stats.initial_population_seconds + rollout_stats.runtime_start_seconds + rollout_stats.context_build_seconds:.1f}s '
         f'sample={rollout_stats.decision_sample_seconds:.1f}s '
+        f'sidx={rollout_stats.sample_index_seconds:.1f}s '
+        f'sfeat={rollout_stats.sample_feature_frame_seconds:.1f}s '
         f'reward={rollout_stats.reward_seconds:.1f}s '
         f'step={rollout_stats.reward_sumo_step_seconds:.1f}s '
         f'laneq={rollout_stats.reward_lane_query_seconds:.1f}s '

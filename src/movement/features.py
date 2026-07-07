@@ -130,6 +130,25 @@ class VehicleSnapshot:
     route_edge_ids_ahead: tuple[EdgeId, ...] = ()
 
 
+@dataclass(frozen=True)
+class PositionedVehicleSnapshot:
+    vehicle: VehicleSnapshot
+    position_m: float
+
+
+@dataclass(frozen=True)
+class LaneGroupDetectorContext:
+    edge_offsets_m: dict[EdgeId, float]
+    detector_start_m: float
+    total_length_m: float
+
+
+@dataclass(frozen=True)
+class VehicleFeatureIndex:
+    detector_vehicles_by_lane_group: dict[LaneGroupId, tuple[PositionedVehicleSnapshot, ...]]
+    movement_demand_by_lane_group_pair: dict[tuple[LaneGroupId, LaneGroupId], float]
+
+
 class VehicleSnapshotCollector:
     """Collect vehicle state through persistent TraCI subscriptions."""
 
@@ -211,20 +230,12 @@ class LaneGroupFlowTracker:
             lane_group.lane_group_id: deque(maxlen=4) for lane_group in graph.lane_groups
         }
 
-    def observe(
-        self,
-        vehicles: Sequence[VehicleSnapshot],
-    ) -> dict[LaneGroupId, LaneGroupFlowRates]:
+    def observe(self, vehicle_index: VehicleFeatureIndex) -> dict[LaneGroupId, LaneGroupFlowRates]:
         """Update detector membership and return 15/60-second flow rates."""
         current_vehicle_ids = {
             lane_group.lane_group_id: {
-                vehicle.vehicle_id
-                for vehicle, _position_m in _lane_group_detector_vehicles(
-                    edge_ids=lane_group.edge_ids,
-                    lane_ids_by_edge=self._lane_ids_by_edge,
-                    lane_geometries=self._lane_geometries,
-                    vehicles=vehicles,
-                )
+                positioned.vehicle.vehicle_id
+                for positioned in vehicle_index.detector_vehicles_by_lane_group[lane_group.lane_group_id]
             }
             for lane_group in self._graph.lane_groups
         }
@@ -304,6 +315,7 @@ def build_feature_frame(
     control_state: MovementControlState,
     vehicles: Sequence[VehicleSnapshot],
     lane_flow_rates: Mapping[LaneGroupId, LaneGroupFlowRates] | None = None,
+    vehicle_index: VehicleFeatureIndex | None = None,
 ) -> MovementFeatureFrame:
     """Extract lane-group and movement feature rows aligned with graph IDs."""
     geometries = {EdgeId(str(edge_id)): geometry for edge_id, geometry in lane_geometries.items()}
@@ -311,6 +323,16 @@ def build_feature_frame(
         EdgeId(str(edge_id)): tuple(LaneId(str(lane_id)) for lane_id in lane_ids)
         for edge_id, lane_ids in lane_ids_by_edge.items()
     }
+    feature_index = (
+        vehicle_index
+        if vehicle_index is not None
+        else build_vehicle_feature_index(
+            graph=graph,
+            lane_ids_by_edge=lanes_by_edge,
+            lane_geometries=geometries,
+            vehicles=vehicles,
+        )
+    )
 
     lane_rows = tuple(
         _lane_group_row(
@@ -318,7 +340,7 @@ def build_feature_frame(
             edge_ids=lane_group.edge_ids,
             lane_ids_by_edge=lanes_by_edge,
             lane_geometries=geometries,
-            vehicles=vehicles,
+            positioned_detector_vehicles=feature_index.detector_vehicles_by_lane_group[lane_group.lane_group_id],
             flow_rates=(lane_flow_rates.get(lane_group.lane_group_id) if lane_flow_rates is not None else None),
         )
         for lane_group in graph.lane_groups
@@ -332,7 +354,7 @@ def build_feature_frame(
             output_lane_group_id=movement.output_lane_group_id,
             num_controlled_links=len(movement.controlled_movement_indices),
             control_state=control_state,
-            vehicles=vehicles,
+            movement_demand_by_lane_group_pair=feature_index.movement_demand_by_lane_group_pair,
             lane_capacity_by_group=lane_capacity_by_group,
         )
         for movement in graph.movements
@@ -343,12 +365,77 @@ def build_feature_frame(
     )
 
 
+def build_vehicle_feature_index(
+    graph: MovementGraph,
+    lane_ids_by_edge: Mapping[EdgeId | str, Sequence[LaneId | str]],
+    lane_geometries: Mapping[EdgeId | str, LaneGroupGeometry],
+    vehicles: Sequence[VehicleSnapshot],
+) -> VehicleFeatureIndex:
+    lanes_by_edge = {
+        EdgeId(str(edge_id)): tuple(LaneId(str(lane_id)) for lane_id in lane_ids)
+        for edge_id, lane_ids in lane_ids_by_edge.items()
+    }
+    geometries = {EdgeId(str(edge_id)): geometry for edge_id, geometry in lane_geometries.items()}
+    lane_to_edge = {lane_id: edge_id for edge_id, lane_ids in lanes_by_edge.items() for lane_id in lane_ids}
+    detector_context_by_lane_group = _detector_context_by_lane_group(graph=graph, lane_geometries=geometries)
+    detector_vehicles: dict[LaneGroupId, list[PositionedVehicleSnapshot]] = {
+        lane_group.lane_group_id: [] for lane_group in graph.lane_groups
+    }
+    movement_demand_by_lane_group_pair: dict[tuple[LaneGroupId, LaneGroupId], float] = {}
+    for vehicle in vehicles:
+        edge_id = lane_to_edge.get(LaneId(str(vehicle.lane_id)), _lane_edge(vehicle.lane_id))
+        lane_group_id = graph.lane_group_id_by_edge.get(edge_id)
+        if lane_group_id is None:
+            continue
+        context = detector_context_by_lane_group[lane_group_id]
+        edge_offset_m = context.edge_offsets_m.get(edge_id)
+        if edge_offset_m is not None:
+            position_m = edge_offset_m + vehicle.lane_position_m
+            if context.detector_start_m <= position_m <= context.total_length_m:
+                detector_vehicles[lane_group_id].append(
+                    PositionedVehicleSnapshot(vehicle=vehicle, position_m=position_m)
+                )
+        next_lane_group_id = _next_lane_group_id(graph=graph, vehicle=vehicle, current_lane_group_id=lane_group_id)
+        if next_lane_group_id is not None:
+            key = (lane_group_id, next_lane_group_id)
+            movement_demand_by_lane_group_pair[key] = movement_demand_by_lane_group_pair.get(key, 0.0) + 1.0
+    return VehicleFeatureIndex(
+        detector_vehicles_by_lane_group={
+            lane_group_id: tuple(positioned_vehicles)
+            for lane_group_id, positioned_vehicles in detector_vehicles.items()
+        },
+        movement_demand_by_lane_group_pair=movement_demand_by_lane_group_pair,
+    )
+
+
+def _detector_context_by_lane_group(
+    graph: MovementGraph,
+    lane_geometries: Mapping[EdgeId, LaneGroupGeometry],
+) -> dict[LaneGroupId, LaneGroupDetectorContext]:
+    contexts: dict[LaneGroupId, LaneGroupDetectorContext] = {}
+    for lane_group in graph.lane_groups:
+        edge_offsets: dict[EdgeId, float] = {}
+        total_length_m = 0.0
+        for edge_id in lane_group.edge_ids:
+            edge_offsets[edge_id] = total_length_m
+            total_length_m += lane_geometries.get(
+                edge_id,
+                LaneGroupGeometry(length_m=0.0, num_lanes=1),
+            ).length_m
+        contexts[lane_group.lane_group_id] = LaneGroupDetectorContext(
+            edge_offsets_m=edge_offsets,
+            detector_start_m=max(0.0, total_length_m - detector_length(total_length_m)),
+            total_length_m=total_length_m,
+        )
+    return contexts
+
+
 def _lane_group_row(
     lane_group_id: LaneGroupId,
     edge_ids: tuple[EdgeId, ...],
     lane_ids_by_edge: Mapping[EdgeId, tuple[LaneId, ...]],
     lane_geometries: Mapping[EdgeId, LaneGroupGeometry],
-    vehicles: Sequence[VehicleSnapshot],
+    positioned_detector_vehicles: Sequence[PositionedVehicleSnapshot],
     flow_rates: LaneGroupFlowRates | None,
 ) -> LaneGroupFeatureRow:
     segment_geometries = tuple(
@@ -371,18 +458,12 @@ def _lane_group_row(
     detector_length_m = detector_length(length_m)
     detector_lane_length_m = _detector_lane_length_m(segment_geometries, detector_length_m)
     capacity = detector_lane_length_m / EFFECTIVE_VEHICLE_SPACING_M
-    positioned_detector_vehicles = _lane_group_detector_vehicles(
-        edge_ids=edge_ids,
-        lane_ids_by_edge=lane_ids_by_edge,
-        lane_geometries=lane_geometries,
-        vehicles=vehicles,
-    )
-    detector_vehicles = tuple(vehicle for vehicle, _position_m in positioned_detector_vehicles)
+    detector_vehicles = tuple(positioned.vehicle for positioned in positioned_detector_vehicles)
     moving_vehicles = tuple(vehicle for vehicle in detector_vehicles if vehicle.speed_mps > HALTING_SPEED_THRESHOLD_MPS)
     halting_positions = tuple(
-        position_m
-        for vehicle, position_m in positioned_detector_vehicles
-        if vehicle.speed_mps <= HALTING_SPEED_THRESHOLD_MPS
+        positioned.position_m
+        for positioned in positioned_detector_vehicles
+        if positioned.vehicle.speed_mps <= HALTING_SPEED_THRESHOLD_MPS
     )
     vehicle_count = float(len(detector_vehicles))
     moving_count = float(len(moving_vehicles))
@@ -456,15 +537,11 @@ def _movement_row(
     output_lane_group_id: LaneGroupId,
     num_controlled_links: int,
     control_state: MovementControlState,
-    vehicles: Sequence[VehicleSnapshot],
+    movement_demand_by_lane_group_pair: Mapping[tuple[LaneGroupId, LaneGroupId], float],
     lane_capacity_by_group: Mapping[LaneGroupId, float],
 ) -> MovementFeatureRow:
-    demand = _oracle_movement_demand(
-        graph=graph,
-        input_lane_group_id=input_lane_group_id,
-        output_lane_group_id=output_lane_group_id,
-        vehicles=vehicles,
-    )
+    del graph
+    demand = movement_demand_by_lane_group_pair.get((input_lane_group_id, output_lane_group_id), 0.0)
     capacity = lane_capacity_by_group.get(input_lane_group_id, 0.0)
     green_last_decision = set(control_state.green_movement_ids_last_decision)
     static = StaticMovementFeatures(
@@ -483,22 +560,6 @@ def _movement_row(
         movement_id=movement_id,
         static=static,
         dynamic=dynamic,
-    )
-
-
-def _oracle_movement_demand(
-    graph: MovementGraph,
-    input_lane_group_id: LaneGroupId,
-    output_lane_group_id: LaneGroupId,
-    vehicles: Sequence[VehicleSnapshot],
-) -> float:
-    return float(
-        sum(
-            1
-            for vehicle in vehicles
-            if graph.lane_group_id_by_edge.get(_lane_edge(vehicle.lane_id)) == input_lane_group_id
-            and _next_lane_group_id(graph, vehicle, input_lane_group_id) == output_lane_group_id
-        )
     )
 
 
@@ -523,35 +584,6 @@ def _lane_edge(lane_id: LaneId | str) -> EdgeId:
     if separator and lane_index.isdigit() and edge_text:
         return EdgeId(edge_text)
     return EdgeId(text)
-
-
-def _lane_group_detector_vehicles(
-    edge_ids: tuple[EdgeId, ...],
-    lane_ids_by_edge: Mapping[EdgeId, tuple[LaneId, ...]],
-    lane_geometries: Mapping[EdgeId, LaneGroupGeometry],
-    vehicles: Sequence[VehicleSnapshot],
-) -> tuple[tuple[VehicleSnapshot, float], ...]:
-    edge_offsets: dict[EdgeId, float] = {}
-    lane_to_edge: dict[LaneId, EdgeId] = {}
-    total_length_m = 0.0
-    for edge_id in edge_ids:
-        edge_offsets[edge_id] = total_length_m
-        total_length_m += lane_geometries.get(
-            edge_id,
-            LaneGroupGeometry(length_m=0.0, num_lanes=1),
-        ).length_m
-        lane_to_edge.update({lane_id: edge_id for lane_id in lane_ids_by_edge.get(edge_id, ())})
-    detector_start_m = max(0.0, total_length_m - detector_length(total_length_m))
-    positioned: list[tuple[VehicleSnapshot, float]] = []
-    edge_id_set = set(edge_ids)
-    for vehicle in vehicles:
-        edge_id = lane_to_edge.get(LaneId(str(vehicle.lane_id)), _lane_edge(vehicle.lane_id))
-        if edge_id not in edge_id_set:
-            continue
-        position_m = edge_offsets[edge_id] + vehicle.lane_position_m
-        if detector_start_m <= position_m <= total_length_m:
-            positioned.append((vehicle, position_m))
-    return tuple(positioned)
 
 
 def _detector_lane_length_m(
@@ -580,14 +612,15 @@ def _queue_tail_position_m(
 
 
 def _queue_tail_etas(
-    positioned_detector_vehicles: Sequence[tuple[VehicleSnapshot, float]],
+    positioned_detector_vehicles: Sequence[PositionedVehicleSnapshot],
     queue_tail_position_m: float,
 ) -> tuple[tuple[VehicleSnapshot, float], ...]:
     etas: list[tuple[VehicleSnapshot, float]] = []
-    for vehicle, position_m in positioned_detector_vehicles:
+    for positioned in positioned_detector_vehicles:
+        vehicle = positioned.vehicle
         if vehicle.speed_mps <= HALTING_SPEED_THRESHOLD_MPS:
             continue
-        distance_to_queue_tail_m = queue_tail_position_m - position_m
+        distance_to_queue_tail_m = queue_tail_position_m - positioned.position_m
         if distance_to_queue_tail_m <= 0.0:
             continue
         etas.append((vehicle, distance_to_queue_tail_m / vehicle.speed_mps))

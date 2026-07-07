@@ -28,6 +28,11 @@ class RolloutMetrics:
     runtime_start_seconds: float
     context_build_seconds: float
     decision_sample_seconds: float
+    sample_capture_seconds: float
+    sample_index_seconds: float
+    sample_flow_seconds: float
+    sample_feature_frame_seconds: float
+    sample_dataset_seconds: float
     decision_model_seconds: float
     decision_action_seconds: float
     decision_apply_seconds: float
@@ -55,6 +60,11 @@ class RolloutMetrics:
         self.runtime_start_seconds = 0.0
         self.context_build_seconds = 0.0
         self.decision_sample_seconds = 0.0
+        self.sample_capture_seconds = 0.0
+        self.sample_index_seconds = 0.0
+        self.sample_flow_seconds = 0.0
+        self.sample_feature_frame_seconds = 0.0
+        self.sample_dataset_seconds = 0.0
         self.decision_model_seconds = 0.0
         self.decision_action_seconds = 0.0
         self.decision_apply_seconds = 0.0
@@ -114,6 +124,20 @@ class RolloutMetrics:
         self.reward_seconds += reward_seconds
         self.decision_step_count += 1
 
+    def observe_sample(
+        self,
+        capture_seconds: float,
+        index_seconds: float,
+        flow_seconds: float,
+        feature_frame_seconds: float,
+        dataset_sample_seconds: float,
+    ) -> None:
+        self.sample_capture_seconds += capture_seconds
+        self.sample_index_seconds += index_seconds
+        self.sample_flow_seconds += flow_seconds
+        self.sample_feature_frame_seconds += feature_frame_seconds
+        self.sample_dataset_seconds += dataset_sample_seconds
+
     def observe_bootstrap(self, bootstrap_seconds: float) -> None:
         self.bootstrap_seconds += bootstrap_seconds
 
@@ -144,6 +168,11 @@ class RolloutMetrics:
             runtime_start_seconds=self.runtime_start_seconds,
             context_build_seconds=self.context_build_seconds,
             decision_sample_seconds=self.decision_sample_seconds,
+            sample_capture_seconds=self.sample_capture_seconds,
+            sample_index_seconds=self.sample_index_seconds,
+            sample_flow_seconds=self.sample_flow_seconds,
+            sample_feature_frame_seconds=self.sample_feature_frame_seconds,
+            sample_dataset_seconds=self.sample_dataset_seconds,
             decision_model_seconds=self.decision_model_seconds,
             decision_action_seconds=self.decision_action_seconds,
             decision_apply_seconds=self.decision_apply_seconds,

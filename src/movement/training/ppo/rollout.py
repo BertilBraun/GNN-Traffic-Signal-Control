@@ -39,6 +39,7 @@ from src.movement.training.ppo.policy import (
     masked_phase_logits,
     rollout_context,
     states_from_actions,
+    timed_current_sample,
 )
 from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
 from src.movement.training.ppo.rollout_metrics import RolloutMetrics
@@ -410,14 +411,22 @@ def collect_decision_transition(
     city_name: str,
 ) -> MovementControlState:
     sample_started = perf_counter()
-    sample = current_sample(
+    sample_result = timed_current_sample(
         context=context,
         programs=runtime.programs,
         vehicle_snapshot_collector=vehicle_snapshot_collector,
         lane_flow_tracker=lane_flow_tracker,
         control_state=control_state,
     )
+    sample = sample_result.sample
     sample_seconds = perf_counter() - sample_started
+    metrics.observe_sample(
+        capture_seconds=sample_result.capture_seconds,
+        index_seconds=sample_result.index_seconds,
+        flow_seconds=sample_result.flow_seconds,
+        feature_frame_seconds=sample_result.feature_frame_seconds,
+        dataset_sample_seconds=sample_result.dataset_sample_seconds,
+    )
     tensor_started = perf_counter()
     tensor_sample = cached_policy_tensor_sample(
         sample=sample,

@@ -23,6 +23,7 @@ from src.movement.features import (
     MovementControlState,
     VehicleSnapshotCollector,
     build_feature_frame,
+    build_vehicle_feature_index,
     movement_control_state_from_targets,
 )
 from src.movement.graph import build_movement_graph
@@ -434,6 +435,12 @@ def _learned_states(
     control_state: MovementControlState,
 ) -> dict[str, str]:
     vehicles = learned_context.vehicle_snapshot_collector.capture()
+    vehicle_index = build_vehicle_feature_index(
+        graph=learned_context.graph,
+        lane_ids_by_edge=learned_context.lane_ids_by_edge,
+        lane_geometries=learned_context.lane_geometries,
+        vehicles=vehicles,
+    )
     sample = build_dataset_sample(
         graph=learned_context.graph,
         feature_frame=build_feature_frame(
@@ -442,7 +449,8 @@ def _learned_states(
             lane_geometries=learned_context.lane_geometries,
             control_state=control_state,
             vehicles=vehicles,
-            lane_flow_rates=learned_context.lane_flow_tracker.observe(vehicles),
+            lane_flow_rates=learned_context.lane_flow_tracker.observe(vehicle_index),
+            vehicle_index=vehicle_index,
         ),
         programs=programs,
         teacher_controlled_scores={traffic_light_id: {} for traffic_light_id in programs},

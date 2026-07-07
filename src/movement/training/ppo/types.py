@@ -153,6 +153,11 @@ class RolloutStats:
     runtime_start_seconds: float = 0.0
     context_build_seconds: float = 0.0
     decision_sample_seconds: float = 0.0
+    sample_capture_seconds: float = 0.0
+    sample_index_seconds: float = 0.0
+    sample_flow_seconds: float = 0.0
+    sample_feature_frame_seconds: float = 0.0
+    sample_dataset_seconds: float = 0.0
     decision_model_seconds: float = 0.0
     decision_action_seconds: float = 0.0
     decision_apply_seconds: float = 0.0

@@ -11,12 +11,14 @@ from src.movement.features import (
     LaneGroupFlowTracker,
     MovementControlState,
     VehicleSnapshot,
+    VehicleFeatureIndex,
     build_feature_frame,
+    build_vehicle_feature_index,
     detector_capacity,
     detector_length,
 )
 from src.movement.graph import build_movement_graph
-from src.movement.graph_schema import LaneGroupNode
+from src.movement.graph_schema import LaneGroupNode, MovementGraph
 
 
 def test_detector_helpers_use_lane_group_length_cap() -> None:
@@ -173,13 +175,27 @@ def test_lane_group_flow_tracker_reports_recent_detector_crossings() -> None:
     )
     north_id = graph.lane_group_id_by_edge['north_in']
 
-    first_rates = tracker.observe(())
-    second_rates = tracker.observe((VehicleSnapshot('v0', 'north_in_0', 'south_out', 180.0, 10.0, 5.0),))
-    third_rates = tracker.observe(())
+    first_rates = tracker.observe(_vehicle_index(graph=graph, vehicles=()))
+    second_rates = tracker.observe(
+        _vehicle_index(graph=graph, vehicles=(VehicleSnapshot('v0', 'north_in_0', 'south_out', 180.0, 10.0, 5.0),))
+    )
+    third_rates = tracker.observe(_vehicle_index(graph=graph, vehicles=()))
 
     assert first_rates[north_id].arrival_rate_15s == 0.0
     assert second_rates[north_id].arrival_rate_15s == 1.0 / 15.0
     assert third_rates[north_id].departure_rate_15s == 1.0 / 15.0
+
+
+def _vehicle_index(graph: MovementGraph, vehicles: tuple[VehicleSnapshot, ...]) -> VehicleFeatureIndex:
+    return build_vehicle_feature_index(
+        graph=graph,
+        lane_ids_by_edge={'north_in': ('north_in_0',), 'south_out': ('south_out_0',)},
+        lane_geometries={
+            'north_in': LaneGroupGeometry(length_m=200.0, num_lanes=1),
+            'south_out': LaneGroupGeometry(length_m=200.0, num_lanes=1),
+        },
+        vehicles=vehicles,
+    )
 
 
 def test_feature_frame_aggregates_contracted_corridor_geometry() -> None:
