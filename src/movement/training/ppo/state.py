@@ -84,8 +84,12 @@ def initialize_from_ppo_checkpoint(
     )
     torch.set_rng_state(resume_checkpoint.torch_random_state.cpu())
     if torch.cuda.is_available() and resume_checkpoint.cuda_random_states:
-        torch.cuda.set_rng_state_all(list(resume_checkpoint.cuda_random_states))
+        torch.cuda.set_rng_state_all(cuda_random_states_for_restore(resume_checkpoint.cuda_random_states))
     return model, metadata, resume_checkpoint.iteration, resume_checkpoint.best_checkpoint_score
+
+
+def cuda_random_states_for_restore(cuda_random_states: tuple[torch.Tensor, ...]) -> list[torch.Tensor]:
+    return [state.detach().cpu().to(dtype=torch.uint8) for state in cuda_random_states]
 
 
 def validate_resume_experiment_configuration(

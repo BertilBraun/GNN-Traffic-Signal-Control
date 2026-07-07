@@ -41,7 +41,7 @@ from src.movement.training.ppo.rollout import (
     save_serialized_rollout,
 )
 from src.movement.training.ppo.run_metadata import build_run_metadata, write_run_metadata
-from src.movement.training.ppo.state import validate_resume_experiment_configuration
+from src.movement.training.ppo.state import cuda_random_states_for_restore, validate_resume_experiment_configuration
 from src.movement.training.ppo.types import (
     CollectedRollout,
     MovementPpoCheckpoint,
@@ -287,6 +287,19 @@ def test_resume_validation_rejects_experiment_hash_mismatch() -> None:
 
     with pytest.raises(ValueError, match='resume experiment configuration hash mismatch'):
         validate_resume_experiment_configuration(config=config, checkpoint=checkpoint)
+
+
+def test_cuda_random_states_for_restore_are_cpu_byte_tensors() -> None:
+    states = cuda_random_states_for_restore(
+        (
+            torch.tensor((1, 2, 3), dtype=torch.int64),
+            torch.tensor((4, 5), dtype=torch.float32),
+        )
+    )
+
+    assert all(state.device.type == 'cpu' for state in states)
+    assert all(state.dtype == torch.uint8 for state in states)
+    assert tuple(int(value) for value in states[0]) == (1, 2, 3)
 
 
 def test_held_out_learned_score_ignores_train_city_aggregates() -> None:
