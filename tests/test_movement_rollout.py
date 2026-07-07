@@ -34,13 +34,21 @@ from src.movement.training.ppo.reward import (
 )
 from src.movement.training.ppo.rollout import (
     effective_rollout_cities,
+    load_serialized_rollout,
     rollout_schedule,
     rollout_seed,
     sample_demand_scale,
+    save_serialized_rollout,
 )
 from src.movement.training.ppo.run_metadata import build_run_metadata, write_run_metadata
 from src.movement.training.ppo.state import validate_resume_experiment_configuration
-from src.movement.training.ppo.types import MovementPpoCheckpoint, MovementPpoConfig, RolloutCity
+from src.movement.training.ppo.types import (
+    CollectedRollout,
+    MovementPpoCheckpoint,
+    MovementPpoConfig,
+    RolloutCity,
+    RolloutStats,
+)
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
 from src.movement.training.movement_batch import MovementTensorSample, movement_tensor_sample_from_dataset_sample
@@ -334,6 +342,45 @@ def test_file_cached_episode_runner_caches_baselines_only(tmp_path: Path) -> Non
 
     assert calls.count(EvaluationPolicy.MAX_PRESSURE) == 1
     assert calls.count(EvaluationPolicy.LEARNED) == 2
+
+
+def test_serialized_rollout_round_trip_removes_handoff_file(tmp_path: Path) -> None:
+    buffer = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
+    buffer.add(
+        MovementTransition(
+            tensor_sample=_tensor_sample(),
+            actions=(0,),
+            old_log_probs=(0.0,),
+            action_masks=((True,),),
+            rewards=(1.0,),
+            values=(0.0,),
+            done=True,
+        )
+    )
+    buffer.compute_returns_and_advantages(
+        use_discounted_return_targets=True,
+        bootstrap_values=(0.0,),
+    )
+    rollout = CollectedRollout(
+        buffer=buffer,
+        stats=_rollout_stats(),
+        seed=123,
+        city_name='karlsruhe_oststadt',
+        city_split=CitySplit.TRAIN,
+    )
+
+    serialized_rollout = save_serialized_rollout(
+        rollout=rollout,
+        handoff_directory=tmp_path,
+    )
+    loaded_rollout = load_serialized_rollout(serialized_rollout)
+
+    assert not serialized_rollout.path.exists()
+    assert loaded_rollout.seed == 123
+    assert loaded_rollout.city_name == 'karlsruhe_oststadt'
+    assert len(loaded_rollout.buffer) == 1
+    assert loaded_rollout.buffer.returns is not None
+    assert float(loaded_rollout.buffer.returns[0][0]) == 1.0
 
 
 def test_run_metadata_writes_checkpoint_and_log_records(tmp_path: Path) -> None:
@@ -868,4 +915,28 @@ def _evaluation_metrics(
         per_junction_wait_density_s_per_m={},
         per_junction_max_queue_length_vehicles={},
         per_junction_phase_counts={},
+    )
+
+
+def _rollout_stats() -> RolloutStats:
+    return RolloutStats(
+        mean_reward=1.0,
+        reward_standard_deviation=0.0,
+        minimum_reward=1.0,
+        maximum_reward=1.0,
+        raw_reward_standard_deviation=0.0,
+        minimum_raw_reward=1.0,
+        maximum_raw_reward=1.0,
+        reward_clip_fraction=0.0,
+        mean_local_delay_density=0.0,
+        mean_global_delay_density=0.0,
+        mean_speed_change_density=0.0,
+        normalized_entropy=1.0,
+        mean_top_action_probability=1.0,
+        policy_decision_fraction=1.0,
+        teleport_count=0,
+        mean_demand_scale=1.0,
+        minimum_demand_scale=1.0,
+        maximum_demand_scale=1.0,
+        simulation_elapsed_s=1.0,
     )

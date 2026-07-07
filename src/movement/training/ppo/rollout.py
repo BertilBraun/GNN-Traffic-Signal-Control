@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from random import Random
+from tempfile import NamedTemporaryFile
 from time import perf_counter
 
 import torch
@@ -89,6 +91,11 @@ class RolloutRunResult:
     bootstrap_values: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class SerializedRollout:
+    path: Path
+
+
 def collect_computed_rollouts(request: RolloutCollectionRequest) -> tuple[CollectedRollout, ...]:
     assignments = rollout_schedule(
         config=request.config,
@@ -109,12 +116,18 @@ def collect_computed_rollouts(request: RolloutCollectionRequest) -> tuple[Collec
             for assignment in assignments
         )
     worker_requests = tuple(worker_request(request=request, assignment=assignment) for assignment in assignments)
-    futures = {request.pool.submit(collect_computed_rollout_worker, worker): worker for worker in worker_requests}
+    handoff_directory = request.config.checkpoint_dir / 'rollout_handoff'
+    handoff_directory.mkdir(parents=True, exist_ok=True)
+    futures = {
+        request.pool.submit(collect_serialized_rollout_worker, worker, handoff_directory): worker
+        for worker in worker_requests
+    }
     collected_rollouts: dict[int, CollectedRollout] = {}
     for future in as_completed(futures):
         worker = futures[future]
         try:
-            collected_rollouts[worker.rollout_index] = future.result()
+            serialized_rollout = future.result()
+            collected_rollouts[worker.rollout_index] = load_serialized_rollout(serialized_rollout)
         except Exception as exc:
             raise RuntimeError(
                 f'PPO rollout failed for city={worker.rollout_city.city_name} seed={worker.rollout_seed}'
@@ -181,6 +194,14 @@ def rollout_seed(
     return training_seed + iteration * rollouts_per_update + rollout_index
 
 
+def collect_serialized_rollout_worker(
+    request: RolloutWorkerRequest,
+    handoff_directory: Path,
+) -> SerializedRollout:
+    rollout = collect_computed_rollout_worker(request)
+    return save_serialized_rollout(rollout=rollout, handoff_directory=handoff_directory)
+
+
 def collect_computed_rollout_worker(request: RolloutWorkerRequest) -> CollectedRollout:
     model = MovementActorCritic(
         lane_feature_dim=request.lane_feature_dim,
@@ -199,6 +220,33 @@ def collect_computed_rollout_worker(request: RolloutWorkerRequest) -> CollectedR
         rollout_city=request.rollout_city,
         warming_up=request.warming_up,
     )
+
+
+def save_serialized_rollout(
+    rollout: CollectedRollout,
+    handoff_directory: Path,
+) -> SerializedRollout:
+    with NamedTemporaryFile(
+        prefix=f'rollout_{rollout.city_name}_{rollout.seed}_',
+        suffix='.pt',
+        dir=handoff_directory,
+        delete=False,
+    ) as handle:
+        path = Path(handle.name)
+    torch.save(rollout, path)
+    return SerializedRollout(path=path)
+
+
+def load_serialized_rollout(serialized_rollout: SerializedRollout) -> CollectedRollout:
+    try:
+        rollout: CollectedRollout = torch.load(
+            serialized_rollout.path,
+            map_location='cpu',
+            weights_only=False,
+        )
+        return rollout
+    finally:
+        serialized_rollout.path.unlink(missing_ok=True)
 
 
 def collect_computed_rollout(

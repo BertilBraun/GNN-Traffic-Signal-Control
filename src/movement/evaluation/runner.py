@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 import sumolib
 import torch
-import traci
+from traci.exceptions import TraCIException
 
 from src.movement.dataset import build_dataset_sample
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
@@ -35,6 +35,7 @@ from src.movement.policies import MovementScoringMethod
 from src.movement.policies.graph_scores import compute_graph_movement_scores
 from src.movement.runtime import MovementControlRuntime
 from src.movement.schema import TrafficLightProgram
+from src.movement.sumo_backend import LaneApi, SimulationApi, SumoBackendKind, VehicleApi
 from src.movement.training.il.checkpoint import load_movement_checkpoint
 from src.movement.training.il.tensors import (
     edge_tensors_from_sample,
@@ -89,6 +90,7 @@ def run_evaluation_episode(
     initial_occupancy_min: float,
     initial_occupancy_max: float,
     time_to_teleport: int | None = None,
+    backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
     net_path = resolve_sumocfg_net_path(cfg_path)
@@ -131,6 +133,7 @@ def run_evaluation_episode(
         min_green_steps=min_green_steps,
         time_to_teleport=time_to_teleport,
         additional_sumo_args=additional_sumo_args,
+        backend_kind=backend_kind,
     )
     queue_sum = 0.0
     max_queue = 0.0
@@ -148,6 +151,9 @@ def run_evaluation_episode(
 
     try:
         runtime.start()
+        lane_api = runtime.lane_api
+        simulation_api = runtime.simulation_api
+        vehicle_api = runtime.vehicle_api
         per_junction_wait_density_sum = {traffic_light_id: 0.0 for traffic_light_id in runtime.programs}
         per_junction_max_queue = {traffic_light_id: 0.0 for traffic_light_id in runtime.programs}
         per_junction_phase_counts = {
@@ -157,19 +163,24 @@ def run_evaluation_episode(
         incoming_lanes_by_junction = _incoming_lanes_by_junction(runtime.programs)
         runtime.step()
         simulated_steps = 1
-        departed_vehicle_count += int(traci.simulation.getDepartedNumber())
-        teleport_count += int(traci.simulation.getStartingTeleportNumber())
-        queue_values = tuple(float(traci.lane.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
+        departed_vehicle_count += int(simulation_api.getDepartedNumber())
+        teleport_count += int(simulation_api.getStartingTeleportNumber())
+        queue_values = tuple(float(lane_api.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
         if queue_values:
             queue_sum += sum(queue_values) / len(queue_values)
             max_queue = max(max_queue, max(queue_values))
-        wait_density_sum += _wait_density(lane_ids, total_lane_length_m)
+        wait_density_sum += _wait_density(lane_api, lane_ids, total_lane_length_m)
         _update_per_junction_metrics(
+            lane_api=lane_api,
             incoming_lanes_by_junction=incoming_lanes_by_junction,
             per_junction_wait_density_sum=per_junction_wait_density_sum,
             per_junction_max_queue=per_junction_max_queue,
         )
-        _update_progression_tracker(progression_tracker)
+        _update_progression_tracker(
+            tracker=progression_tracker,
+            simulation_api=simulation_api,
+            vehicle_api=vehicle_api,
+        )
         learned_context = _learned_context(
             policy=policy,
             learned_policy_config=learned_policy_config,
@@ -178,6 +189,7 @@ def run_evaluation_episode(
             lane_geometries=lane_geometries,
             decision_interval=decision_interval,
             net_path=net_path,
+            vehicle_api=vehicle_api,
         )
         baseline_context = _baseline_context(
             policy=policy,
@@ -185,6 +197,7 @@ def run_evaluation_episode(
             lane_ids_by_edge=lane_ids_by_edge,
             lane_geometries=lane_geometries,
             net_path=net_path,
+            vehicle_api=vehicle_api,
         )
         for step in range(1, steps):
             if (step - 1) % decision_interval == 0:
@@ -206,22 +219,27 @@ def run_evaluation_episode(
 
             runtime.step()
             simulated_steps += 1
-            departed_vehicle_count += int(traci.simulation.getDepartedNumber())
-            teleport_count += int(traci.simulation.getStartingTeleportNumber())
-            queue_values = tuple(float(traci.lane.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
+            departed_vehicle_count += int(simulation_api.getDepartedNumber())
+            teleport_count += int(simulation_api.getStartingTeleportNumber())
+            queue_values = tuple(float(lane_api.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
             if queue_values:
                 queue_sum += sum(queue_values) / len(queue_values)
                 max_queue = max(max_queue, max(queue_values))
-            wait_density_sum += _wait_density(lane_ids, total_lane_length_m)
+            wait_density_sum += _wait_density(lane_api, lane_ids, total_lane_length_m)
             _update_per_junction_metrics(
+                lane_api=lane_api,
                 incoming_lanes_by_junction=incoming_lanes_by_junction,
                 per_junction_wait_density_sum=per_junction_wait_density_sum,
                 per_junction_max_queue=per_junction_max_queue,
             )
-            _update_progression_tracker(progression_tracker)
+            _update_progression_tracker(
+                tracker=progression_tracker,
+                simulation_api=simulation_api,
+                vehicle_api=vehicle_api,
+            )
             if not runtime.is_running():
                 break
-        vehicles_remaining = len(traci.vehicle.getIDList())
+        vehicles_remaining = len(vehicle_api.getIDList())
     finally:
         runtime.close()
         initial_population.cleanup()
@@ -382,6 +400,7 @@ def _baseline_context(
     lane_ids_by_edge: dict[str, tuple[str, ...]],
     lane_geometries: dict[str, LaneGroupGeometry],
     net_path: Path,
+    vehicle_api: VehicleApi,
 ) -> BaselinePolicyContext | None:
     if policy == EvaluationPolicy.LEARNED:
         return None
@@ -389,7 +408,7 @@ def _baseline_context(
         graph=build_movement_graph(programs, net_path=net_path),
         lane_ids_by_edge=lane_ids_by_edge,
         lane_geometries=lane_geometries,
-        vehicle_snapshot_collector=VehicleSnapshotCollector(traci.vehicle),
+        vehicle_snapshot_collector=VehicleSnapshotCollector(vehicle_api),
     )
 
 
@@ -401,6 +420,7 @@ def _learned_context(
     lane_geometries: dict[str, LaneGroupGeometry],
     decision_interval: int,
     net_path: Path,
+    vehicle_api: VehicleApi,
 ) -> LearnedPolicyContext | None:
     if policy != EvaluationPolicy.LEARNED:
         return None
@@ -418,7 +438,7 @@ def _learned_context(
         lane_geometries=lane_geometries,
         lane_normalizer=normalizer_from_state(metadata.lane_normalizer),
         movement_normalizer=normalizer_from_state(metadata.movement_normalizer),
-        vehicle_snapshot_collector=VehicleSnapshotCollector(traci.vehicle),
+        vehicle_snapshot_collector=VehicleSnapshotCollector(vehicle_api),
         lane_flow_tracker=LaneGroupFlowTracker(
             graph=graph,
             lane_ids_by_edge=lane_ids_by_edge,
@@ -530,14 +550,15 @@ def _incoming_lanes_by_junction(
 
 
 def _update_per_junction_metrics(
+    lane_api: LaneApi,
     incoming_lanes_by_junction: Mapping[str, tuple[str, ...]],
     per_junction_wait_density_sum: dict[str, float],
     per_junction_max_queue: dict[str, float],
 ) -> None:
     for traffic_light_id, lane_ids in incoming_lanes_by_junction.items():
-        total_lane_length = sum(float(traci.lane.getLength(lane_id)) for lane_id in lane_ids)
-        per_junction_wait_density_sum[traffic_light_id] += _wait_density(lane_ids, total_lane_length)
-        queue_values = tuple(float(traci.lane.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
+        total_lane_length = sum(float(lane_api.getLength(lane_id)) for lane_id in lane_ids)
+        per_junction_wait_density_sum[traffic_light_id] += _wait_density(lane_api, lane_ids, total_lane_length)
+        queue_values = tuple(float(lane_api.getLastStepHaltingNumber(lane_id)) for lane_id in lane_ids)
         if queue_values:
             per_junction_max_queue[traffic_light_id] = max(
                 per_junction_max_queue[traffic_light_id],
@@ -549,10 +570,10 @@ def _total_lane_length(lane_geometries: Mapping[str, LaneGroupGeometry]) -> floa
     return sum(geometry.length_m * geometry.num_lanes for geometry in lane_geometries.values())
 
 
-def _wait_density(lane_ids: Sequence[str], total_lane_length_m: float) -> float:
+def _wait_density(lane_api: LaneApi, lane_ids: Sequence[str], total_lane_length_m: float) -> float:
     if total_lane_length_m <= 0.0:
         return 0.0
-    total_waiting_time_s = sum(float(traci.lane.getWaitingTime(lane_id)) for lane_id in lane_ids)
+    total_waiting_time_s = sum(float(lane_api.getWaitingTime(lane_id)) for lane_id in lane_ids)
     return total_waiting_time_s / total_lane_length_m
 
 
@@ -577,19 +598,23 @@ def _switch_frequency(
     return float(switch_count) / float(traffic_light_count) / (float(simulated_steps) / 60.0)
 
 
-def _update_progression_tracker(tracker: GreenWaveTracker) -> None:
-    vehicle_ids = tuple(str(vehicle_id) for vehicle_id in traci.vehicle.getIDList())
+def _update_progression_tracker(
+    tracker: GreenWaveTracker,
+    simulation_api: SimulationApi,
+    vehicle_api: VehicleApi,
+) -> None:
+    vehicle_ids = tuple(str(vehicle_id) for vehicle_id in vehicle_api.getIDList())
     next_tls_by_vehicle: dict[str, tuple[object, ...]] = {}
     speed_by_vehicle: dict[str, float] = {}
     for vehicle_id in vehicle_ids:
         try:
-            next_tls_by_vehicle[vehicle_id] = tuple(traci.vehicle.getNextTLS(vehicle_id))
-            speed_by_vehicle[vehicle_id] = float(traci.vehicle.getSpeed(vehicle_id))
-        except traci.exceptions.TraCIException:
+            next_tls_by_vehicle[vehicle_id] = tuple(vehicle_api.getNextTLS(vehicle_id))
+            speed_by_vehicle[vehicle_id] = float(vehicle_api.getSpeed(vehicle_id))
+        except TraCIException:
             continue
     tracker.update(
         vehicle_ids=vehicle_ids,
         next_tls_by_vehicle=next_tls_by_vehicle,
         speed_by_vehicle=speed_by_vehicle,
-        arrived_vehicle_ids=tuple(str(vehicle_id) for vehicle_id in traci.simulation.getArrivedIDList()),
+        arrived_vehicle_ids=tuple(str(vehicle_id) for vehicle_id in simulation_api.getArrivedIDList()),
     )

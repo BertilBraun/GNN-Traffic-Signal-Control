@@ -82,6 +82,11 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
     started = perf_counter()
     last_checkpoint_path = config.checkpoint_dir / 'movement_ppo_latest.pt'
     try:
+        maybe_evaluate_initial_policy(
+            config=config,
+            state=state,
+            writer=writer,
+        )
         run_training_iterations(
             config=config,
             state=state,
@@ -102,6 +107,21 @@ def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
     return MovementPpoTrainingResult(
         checkpoint_path=last_checkpoint_path,
         iterations=state.completed_iteration,
+    )
+
+
+def maybe_evaluate_initial_policy(
+    config: MovementPpoConfig,
+    state: PpoTrainingState,
+    writer: SummaryWriter,
+) -> None:
+    if state.completed_iteration != 0:
+        return
+    maybe_evaluate_iteration(
+        config=config,
+        state=state,
+        writer=writer,
+        iteration=0,
     )
 
 

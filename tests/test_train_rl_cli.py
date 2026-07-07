@@ -6,6 +6,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts import train_rl
+from src.movement.evaluation import EvaluationPolicy
 from src.movement.experiment_config import CitySplit
 
 
@@ -123,7 +124,12 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.demand_scale == 1.0
     assert args.demand_scale_min is None
     assert args.demand_scale_max is None
-    assert args.eval_demand_scale == 1.0
+    assert args.eval_demand_scale is None
+    assert train_rl.evaluation_demand_scale(args) == 1.0
+    assert args.eval_steps is None
+    assert args.eval_seeds is None
+    assert args.eval_policies is None
+    assert args.eval_every is None
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1
@@ -218,6 +224,13 @@ def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
     assert train_rl.reward_sample_interval(args, experiment_configuration) == 5
     assert train_rl.demand_scale_bounds(args, experiment_configuration) == (0.8, 1.2)
     assert train_rl.evaluation_demand_scales(args, experiment_configuration) == (0.8, 1.0, 1.2)
+    assert train_rl.evaluation_steps(args, experiment_configuration) == 1800
+    assert train_rl.evaluation_seeds(args, experiment_configuration) == (100, 101, 102)
+    assert train_rl.evaluation_policies(args, experiment_configuration) == (
+        EvaluationPolicy.LEARNED,
+        EvaluationPolicy.MAX_PRESSURE,
+        EvaluationPolicy.QUEUE,
+    )
     assert tuple(city.city_name for city in rollout_cities) == (
         'karlsruhe_oststadt',
         'mannheim_innenstadt',
@@ -280,6 +293,18 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
             '1',
             '--epochs',
             '1',
+            '--eval-every',
+            '10',
+            '--eval-steps',
+            '300',
+            '--eval-seeds',
+            '7',
+            '8',
+            '--eval-policies',
+            'max-pressure',
+            'queue',
+            '--eval-demand-scale',
+            '1.0',
         ],
     )
 
@@ -291,6 +316,14 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.steps_per_rollout == 120
     assert settings.value_warmup_iterations == 1
     assert settings.update_epochs == 1
+    assert settings.eval_every == 10
+    assert train_rl.evaluation_steps(args, experiment_configuration) == 300
+    assert train_rl.evaluation_seeds(args, experiment_configuration) == (7, 8)
+    assert train_rl.evaluation_policies(args, experiment_configuration) == (
+        EvaluationPolicy.MAX_PRESSURE,
+        EvaluationPolicy.QUEUE,
+    )
+    assert train_rl.evaluation_demand_scales(args, experiment_configuration) == (1.0,)
 
 
 def test_train_rl_experiment_hash_uses_configuration_text(tmp_path: Path) -> None:

@@ -189,21 +189,17 @@ def parse_args() -> argparse.Namespace:
         default=0.08,
         help='Maximum sampled initial network occupancy',
     )
-    parser.add_argument('--eval-every', type=int, default=DEFAULT_EVAL_EVERY, help='Evaluate every N iterations')
-    parser.add_argument('--eval-steps', type=int, default=600, help='Evaluation simulation seconds')
-    parser.add_argument('--eval-seeds', nargs='+', type=int, default=[42], help='Evaluation SUMO seeds')
+    parser.add_argument('--eval-every', type=int, default=None, help='Evaluate every N iterations')
+    parser.add_argument('--eval-steps', type=int, default=None, help='Evaluation simulation seconds')
+    parser.add_argument('--eval-seeds', nargs='+', type=int, default=None, help='Evaluation SUMO seeds')
     parser.add_argument(
         '--eval-policies',
         nargs='+',
         choices=tuple(policy.value for policy in EvaluationPolicy),
-        default=[
-            EvaluationPolicy.MAX_PRESSURE.value,
-            EvaluationPolicy.QUEUE.value,
-            EvaluationPolicy.LEARNED.value,
-        ],
+        default=None,
         help='Policies included in periodic evaluation',
     )
-    parser.add_argument('--eval-demand-scale', type=float, default=1.0, help='Evaluation demand multiplier')
+    parser.add_argument('--eval-demand-scale', type=float, default=None, help='Evaluation demand multiplier')
     parser.add_argument(
         '--save-every',
         type=int,
@@ -274,10 +270,10 @@ def main() -> None:
             initial_occupancy_min=args.initial_occupancy_min,
             initial_occupancy_max=args.initial_occupancy_max,
             eval_every=ppo_settings.eval_every,
-            eval_steps=args.eval_steps,
-            eval_seeds=tuple(args.eval_seeds),
-            eval_policies=tuple(EvaluationPolicy(policy) for policy in args.eval_policies),
-            eval_demand_scale=args.eval_demand_scale,
+            eval_steps=evaluation_steps(args, experiment_configuration),
+            eval_seeds=evaluation_seeds(args, experiment_configuration),
+            eval_policies=evaluation_policies(args, experiment_configuration),
+            eval_demand_scale=evaluation_demand_scale(args),
             eval_demand_scales=evaluation_demand_scales(args, experiment_configuration),
             save_every=ppo_settings.save_every,
             print_every=args.print_every,
@@ -362,7 +358,7 @@ def ppo_command_settings(
             warmup_epochs=args.warmup_epochs,
             transitions_per_batch=args.transitions_per_batch,
             update_batch_workers=args.update_batch_workers,
-            eval_every=args.eval_every,
+            eval_every=args.eval_every if args.eval_every is not None else DEFAULT_EVAL_EVERY,
             save_every=args.save_every,
         )
     ppo = experiment_configuration.proximal_policy_optimization
@@ -388,7 +384,7 @@ def ppo_command_settings(
             if args.update_batch_workers == DEFAULT_UPDATE_BATCH_WORKERS
             else args.update_batch_workers
         ),
-        eval_every=ppo.evaluate_every_iterations if args.eval_every == DEFAULT_EVAL_EVERY else args.eval_every,
+        eval_every=ppo.evaluate_every_iterations if args.eval_every is None else args.eval_every,
         save_every=ppo.save_every_iterations if args.save_every == DEFAULT_SAVE_EVERY else args.save_every,
     )
 
@@ -443,9 +439,52 @@ def evaluation_demand_scales(
     args: argparse.Namespace,
     experiment_configuration: ExperimentConfiguration | None,
 ) -> tuple[float, ...]:
-    if experiment_configuration is not None and args.eval_demand_scale == 1.0:
+    if experiment_configuration is not None and args.eval_demand_scale is None:
         return experiment_configuration.demand.evaluation_scales
-    return (args.eval_demand_scale,)
+    return (evaluation_demand_scale(args),)
+
+
+def evaluation_demand_scale(args: argparse.Namespace) -> float:
+    if args.eval_demand_scale is None:
+        return 1.0
+    return args.eval_demand_scale
+
+
+def evaluation_steps(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if args.eval_steps is not None:
+        return args.eval_steps
+    if experiment_configuration is not None:
+        return experiment_configuration.evaluation.steps
+    return 600
+
+
+def evaluation_seeds(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> tuple[int, ...]:
+    if args.eval_seeds is not None:
+        return tuple(args.eval_seeds)
+    if experiment_configuration is not None:
+        return experiment_configuration.evaluation.seeds
+    return (42,)
+
+
+def evaluation_policies(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> tuple[EvaluationPolicy, ...]:
+    if args.eval_policies is not None:
+        return tuple(EvaluationPolicy(policy) for policy in args.eval_policies)
+    if experiment_configuration is not None:
+        return tuple(EvaluationPolicy(policy.value) for policy in experiment_configuration.evaluation.policies)
+    return (
+        EvaluationPolicy.MAX_PRESSURE,
+        EvaluationPolicy.QUEUE,
+        EvaluationPolicy.LEARNED,
+    )
 
 
 if __name__ == '__main__':

@@ -34,6 +34,7 @@ from src.movement.evaluation.multi_city import (
 )
 from src.movement.experiment_config import CitySplit
 from src.movement.models.bipartite_gnn import MovementActorCritic
+from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.checkpoint import MovementCheckpointMetadata
 from src.movement.training.ppo.checkpoint import save_actor_checkpoint
 from src.movement.training.ppo.types import (
@@ -178,6 +179,7 @@ def run_multi_city_training_evaluation(
             cache_dir=config.project_root / '.cache' / 'evaluation',
             episode_runner=default_episode_runner,
         ),
+        backend_kind=config.sumo_backend,
     )
     write_multi_city_evaluation_scalars(
         writer=writer,
@@ -393,6 +395,7 @@ def _evaluation_records(
                         initial_occupancy_min=config.initial_occupancy_min,
                         initial_occupancy_max=config.initial_occupancy_max,
                         time_to_teleport=config.time_to_teleport,
+                        backend_kind=config.sumo_backend,
                     ),
                 )
             )
@@ -416,6 +419,7 @@ def cached_baseline_record(
         initial_occupancy_min=config.initial_occupancy_min,
         initial_occupancy_max=config.initial_occupancy_max,
         time_to_teleport=config.time_to_teleport,
+        backend_kind=config.sumo_backend,
     )
 
 
@@ -432,6 +436,7 @@ def _cached_baseline_record(
     initial_occupancy_min: float,
     initial_occupancy_max: float,
     time_to_teleport: int | None,
+    backend_kind: SumoBackendKind,
 ) -> EvaluationRecord:
     return EvaluationRecord(
         policy=policy.value,
@@ -449,5 +454,6 @@ def _cached_baseline_record(
             initial_occupancy_min=initial_occupancy_min,
             initial_occupancy_max=initial_occupancy_max,
             time_to_teleport=time_to_teleport,
+            backend_kind=backend_kind,
         ),
     )

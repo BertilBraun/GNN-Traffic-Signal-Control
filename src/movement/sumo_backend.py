@@ -78,6 +78,8 @@ class VehicleApi(Protocol):
 
     def getLanePosition(self, vehicle_id: str) -> float: ...
 
+    def getNextTLS(self, vehicle_id: str) -> tuple[object, ...]: ...
+
 
 class SumoModule(Protocol):
     lane: LaneApi

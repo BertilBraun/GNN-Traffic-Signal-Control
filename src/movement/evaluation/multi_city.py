@@ -25,6 +25,7 @@ from src.movement.experiment_config import (
     ExperimentConfiguration,
     resolve_experiment_path,
 )
+from src.movement.sumo_backend import SumoBackendKind
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class MultiCityEvaluationRunRequest:
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
+    backend_kind: SumoBackendKind = SumoBackendKind.TRACI
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
+    backend_kind: str
 
     @classmethod
     def from_request(cls, request: MultiCityEvaluationRunRequest) -> 'MultiCityEvaluationCacheKey':
@@ -137,6 +140,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
             minimum_initial_occupancy=request.minimum_initial_occupancy,
             maximum_initial_occupancy=request.maximum_initial_occupancy,
             time_to_teleport=request.time_to_teleport,
+            backend_kind=request.backend_kind.value,
         )
 
     def sha256(self) -> str:
@@ -218,6 +222,7 @@ def run_multi_city_evaluation(
     demand_scales: tuple[float, ...],
     learned_policy_config: LearnedPolicyConfig | None,
     episode_runner: EpisodeRunner,
+    backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
 ) -> MultiCityEvaluationResult:
     if not policies:
         raise ValueError('at least one evaluation policy is required')
@@ -235,6 +240,7 @@ def run_multi_city_evaluation(
         seeds=seeds,
         steps=steps,
         demand_scales=demand_scales,
+        backend_kind=backend_kind,
     )
     records: list[MultiCityEvaluationRecord] = []
     total_runs = len(requests)
@@ -291,6 +297,7 @@ def default_episode_runner(
         initial_occupancy_min=request.minimum_initial_occupancy,
         initial_occupancy_max=request.maximum_initial_occupancy,
         time_to_teleport=request.time_to_teleport,
+        backend_kind=request.backend_kind,
     )
 
 
@@ -425,6 +432,7 @@ def _build_run_requests(
     seeds: tuple[int, ...],
     steps: int,
     demand_scales: tuple[float, ...],
+    backend_kind: SumoBackendKind,
 ) -> tuple[MultiCityEvaluationRunRequest, ...]:
     requests: list[MultiCityEvaluationRunRequest] = []
     for city in configuration.cities:
@@ -440,6 +448,7 @@ def _build_run_requests(
                             seed=seed,
                             steps=steps,
                             demand_scale=demand_scale,
+                            backend_kind=backend_kind,
                         )
                     )
     return tuple(requests)
@@ -453,6 +462,7 @@ def _run_request(
     seed: int,
     steps: int,
     demand_scale: float,
+    backend_kind: SumoBackendKind,
 ) -> MultiCityEvaluationRunRequest:
     return MultiCityEvaluationRunRequest(
         city_name=city.name,
@@ -468,6 +478,7 @@ def _run_request(
         minimum_initial_occupancy=configuration.simulation.minimum_initial_occupancy,
         maximum_initial_occupancy=configuration.simulation.maximum_initial_occupancy,
         time_to_teleport=configuration.simulation.time_to_teleport,
+        backend_kind=backend_kind,
     )
 
 
