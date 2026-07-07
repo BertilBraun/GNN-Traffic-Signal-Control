@@ -48,6 +48,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '0.03',
             '--reward-sample-interval',
             '5',
+            '--sumo-backend',
+            'libsumo',
         ],
     )
 
@@ -71,6 +73,7 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.time_to_teleport == -1
     assert args.speed_change_weight == 0.03
     assert args.reward_sample_interval == 5
+    assert args.sumo_backend == 'libsumo'
 
 
 def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
@@ -135,6 +138,7 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert train_rl.num_workers(args, None) == 12
     assert args.fixed_rollout_seed is None
     assert args.time_to_teleport == -1
+    assert args.sumo_backend == 'libsumo'
 
 
 def test_train_rl_cli_falls_back_to_one_worker_when_cpu_count_is_unavailable(monkeypatch) -> None:

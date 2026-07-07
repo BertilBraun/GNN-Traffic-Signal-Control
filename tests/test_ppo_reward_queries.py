@@ -70,12 +70,13 @@ class FakeTraci:
         self.vehicle = FakeVehicle()
 
 
-def test_advance_and_reward_reuses_lane_delay_snapshot(monkeypatch) -> None:
+def test_advance_and_reward_reuses_lane_delay_snapshot() -> None:
     fake_traci = FakeTraci()
-    monkeypatch.setattr('src.movement.training.ppo.reward.traci', fake_traci)
 
     advance_and_reward(
         runtime=FakeRuntime(),
+        lane_api=fake_traci.lane,
+        simulation_api=fake_traci.simulation,
         context=_context(),
         decision_interval=3,
         global_reward_weight=0.1,
@@ -92,12 +93,13 @@ def test_advance_and_reward_reuses_lane_delay_snapshot(monkeypatch) -> None:
     assert fake_traci.vehicle.speed_calls == 0
 
 
-def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries(monkeypatch) -> None:
+def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() -> None:
     fake_traci = FakeTraci()
-    monkeypatch.setattr('src.movement.training.ppo.reward.traci', fake_traci)
 
     result = advance_and_reward(
         runtime=FakeRuntime(),
+        lane_api=fake_traci.lane,
+        simulation_api=fake_traci.simulation,
         context=_context(),
         decision_interval=2,
         global_reward_weight=0.1,

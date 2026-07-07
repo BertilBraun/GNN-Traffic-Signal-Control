@@ -33,6 +33,7 @@ class PpoRunMetadata(BaseModel):
     completed_iteration_at_start: int
     rollouts_per_update: int
     rollout_workers: int
+    sumo_backend: str
     steps_per_rollout: int
     demand_scale_min: float
     demand_scale_max: float
@@ -64,6 +65,7 @@ def build_run_metadata(
         completed_iteration_at_start=completed_iteration_at_start,
         rollouts_per_update=config.rollouts_per_update,
         rollout_workers=config.num_workers,
+        sumo_backend=config.sumo_backend.value,
         steps_per_rollout=config.steps_per_rollout,
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from time import perf_counter
 
@@ -11,6 +12,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from src.movement.experiment_config import CitySplit
+from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo.checkpoint import (
     load_movement_ppo_checkpoint,
     save_actor_checkpoint,
@@ -62,6 +64,7 @@ class IterationTiming:
 def train_movement_ppo(config: MovementPpoConfig) -> MovementPpoTrainingResult:
     """Fine-tune a movement scorer with PPO."""
     validate_config(config)
+    configure_sumo_backend_environment(config)
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     state = initialize_training_state(config)
@@ -129,6 +132,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:
         raise ValueError('SUMO-GUI rollout collection is only supported with one worker.')
+    if config.gui and config.sumo_backend is SumoBackendKind.LIBSUMO:
+        raise ValueError('SUMO-GUI rollout collection requires the traci backend.')
     if config.rollout_cities:
         rollout_worker_count = sum(city.rollout_workers for city in config.rollout_cities)
         if rollout_worker_count != config.rollouts_per_update:
@@ -141,6 +146,14 @@ def validate_config(config: MovementPpoConfig) -> None:
         )
         if held_out_city_names:
             raise ValueError(f'rollout_cities must not include held-out cities: {", ".join(held_out_city_names)}')
+
+
+def configure_sumo_backend_environment(config: MovementPpoConfig) -> None:
+    if config.sumo_backend is not SumoBackendKind.LIBSUMO:
+        return
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['OPENBLAS_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
 
 
 def run_training_iterations(

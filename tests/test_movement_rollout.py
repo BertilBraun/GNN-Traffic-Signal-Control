@@ -1,4 +1,5 @@
 from dataclasses import replace
+import os
 from pathlib import Path
 import sys
 
@@ -17,9 +18,10 @@ from src.movement.evaluation.multi_city import (
     MultiCityEvaluationRunRequest,
 )
 from src.movement.experiment_config import CitySplit
+from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
-from src.movement.training.ppo import validate_config
+from src.movement.training.ppo import configure_sumo_backend_environment, validate_config
 from src.movement.training.ppo.batch import ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
@@ -245,6 +247,32 @@ def test_validate_config_rejects_reward_sampling_slower_than_decisions() -> None
         validate_config(config)
 
 
+def test_validate_config_rejects_libsumo_gui() -> None:
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        gui=True,
+        sumo_backend=SumoBackendKind.LIBSUMO,
+    )
+
+    with pytest.raises(ValueError, match='SUMO-GUI rollout collection requires the traci backend'):
+        validate_config(config)
+
+
+def test_libsumo_environment_limits_worker_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+        monkeypatch.delenv(variable, raising=False)
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        sumo_backend=SumoBackendKind.LIBSUMO,
+    )
+
+    configure_sumo_backend_environment(config)
+
+    assert os.environ['OMP_NUM_THREADS'] == '1'
+    assert os.environ['OPENBLAS_NUM_THREADS'] == '1'
+    assert os.environ['MKL_NUM_THREADS'] == '1'
+
+
 def test_resume_validation_rejects_experiment_hash_mismatch() -> None:
     config = replace(_ppo_config(rollouts_per_update=1, rollout_cities=()), experiment_configuration_sha256='current')
     checkpoint = _ppo_checkpoint(experiment_configuration_sha256='checkpoint')
@@ -385,21 +413,13 @@ def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
     ) == pytest.approx(-1.216)
 
 
-def test_speed_deficit_density_counts_slow_moving_vehicles(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_speed_deficit_density_counts_slow_moving_vehicles() -> None:
     vehicle_counts = {'stopped': 2, 'slow': 2, 'free': 2}
     mean_speeds = {'stopped': 0.0, 'slow': 5.0, 'free': 10.0}
-    monkeypatch.setattr(
-        'src.movement.training.ppo.reward.traci.lane.getLastStepVehicleNumber',
-        lambda lane_id: vehicle_counts[lane_id],
-    )
-    monkeypatch.setattr(
-        'src.movement.training.ppo.reward.traci.lane.getLastStepMeanSpeed',
-        lambda lane_id: mean_speeds[lane_id],
-    )
+    lane_api = FakeLaneApi(vehicle_counts=vehicle_counts, mean_speeds=mean_speeds)
 
     density = speed_deficit_density(
+        lane_api=lane_api,
         lane_ids=('stopped', 'slow', 'free'),
         speed_limit_by_lane={'stopped': 10.0, 'slow': 10.0, 'free': 10.0},
         total_lane_length_m=300.0,
@@ -718,6 +738,7 @@ def _ppo_config(
         time_to_teleport=-1,
         target_kl=0.03,
         gui=False,
+        sumo_backend=SumoBackendKind.TRACI,
         initial_occupancy_min=0.05,
         initial_occupancy_max=0.08,
         eval_every=10,
@@ -741,6 +762,18 @@ def _ppo_config(
         experiment_configuration_sha256=None,
         project_root=ROOT,
     )
+
+
+class FakeLaneApi:
+    def __init__(self, vehicle_counts: dict[str, int], mean_speeds: dict[str, float]) -> None:
+        self._vehicle_counts = vehicle_counts
+        self._mean_speeds = mean_speeds
+
+    def getLastStepVehicleNumber(self, lane_id: str) -> int:
+        return self._vehicle_counts[lane_id]
+
+    def getLastStepMeanSpeed(self, lane_id: str) -> float:
+        return self._mean_speeds[lane_id]
 
 
 def _ppo_checkpoint(experiment_configuration_sha256: str | None) -> MovementPpoCheckpoint:

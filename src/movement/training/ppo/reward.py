@@ -6,14 +6,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
 
-import traci
-
 from src.movement.runtime import MovementControlRuntime
+from src.movement.sumo_backend import LaneApi, SimulationApi
 from src.movement.training.ppo.types import IntervalRewardResult, RolloutContext
 
 
 def advance_and_reward(
     runtime: MovementControlRuntime,
+    lane_api: LaneApi,
+    simulation_api: SimulationApi,
     context: RolloutContext,
     decision_interval: int,
     global_reward_weight: float,
@@ -46,7 +47,7 @@ def advance_and_reward(
         runtime.step()
         reward_sumo_step_seconds += perf_counter() - step_started
         simulated_steps += 1
-        teleport_count += int(traci.simulation.getStartingTeleportNumber())
+        teleport_count += int(simulation_api.getStartingTeleportNumber())
         running = runtime.is_running()
         should_sample_reward = (
             simulated_steps % reward_sample_interval == 0 or simulated_steps == decision_interval or not running
@@ -57,6 +58,7 @@ def advance_and_reward(
         previous_reward_sample_step = simulated_steps
         lane_query_started = perf_counter()
         delay_snapshot = lane_delay_snapshot(
+            lane_api=lane_api,
             lane_ids=context.all_incoming_lane_ids,
             speed_limit_by_lane=context.speed_limit_by_lane,
         )
@@ -142,6 +144,7 @@ def delay_density_reward(
 
 
 def speed_deficit_density(
+    lane_api: LaneApi,
     lane_ids: Sequence[str],
     speed_limit_by_lane: Mapping[str, float],
     total_lane_length_m: float,
@@ -150,13 +153,13 @@ def speed_deficit_density(
         return 0.0
     delayed_vehicle_equivalents = 0.0
     for lane_id in lane_ids:
-        vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+        vehicle_count = int(lane_api.getLastStepVehicleNumber(lane_id))
         if vehicle_count <= 0:
             continue
         speed_limit = speed_limit_by_lane[lane_id]
         if speed_limit <= 0.0:
             continue
-        mean_speed = max(0.0, float(traci.lane.getLastStepMeanSpeed(lane_id)))
+        mean_speed = max(0.0, float(lane_api.getLastStepMeanSpeed(lane_id)))
         speed_deficit = max(0.0, 1.0 - min(mean_speed / speed_limit, 1.0))
         delayed_vehicle_equivalents += vehicle_count * speed_deficit
     return delayed_vehicle_equivalents / total_lane_length_m
@@ -181,6 +184,7 @@ class LaneDelaySnapshot:
 
 
 def lane_delay_snapshot(
+    lane_api: LaneApi,
     lane_ids: Sequence[str],
     speed_limit_by_lane: Mapping[str, float],
 ) -> LaneDelaySnapshot:
@@ -188,7 +192,7 @@ def lane_delay_snapshot(
     vehicle_count_by_lane: dict[str, int] = {}
     mean_speed_by_lane: dict[str, float] = {}
     for lane_id in lane_ids:
-        vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+        vehicle_count = int(lane_api.getLastStepVehicleNumber(lane_id))
         vehicle_count_by_lane[lane_id] = vehicle_count
         if vehicle_count <= 0:
             delayed_vehicle_equivalents_by_lane[lane_id] = 0.0
@@ -199,7 +203,7 @@ def lane_delay_snapshot(
             delayed_vehicle_equivalents_by_lane[lane_id] = 0.0
             mean_speed_by_lane[lane_id] = 0.0
             continue
-        mean_speed = max(0.0, float(traci.lane.getLastStepMeanSpeed(lane_id)))
+        mean_speed = max(0.0, float(lane_api.getLastStepMeanSpeed(lane_id)))
         mean_speed_by_lane[lane_id] = mean_speed
         speed_deficit = max(0.0, 1.0 - min(mean_speed / speed_limit, 1.0))
         delayed_vehicle_equivalents_by_lane[lane_id] = vehicle_count * speed_deficit

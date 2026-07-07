@@ -10,6 +10,10 @@ import os
 from pathlib import Path
 import sys
 
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -19,6 +23,7 @@ from src.movement.experiment_config import (
     load_experiment_configuration,
     resolve_experiment_path,
 )
+from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
 from src.movement.training.ppo.types import RolloutCity
 
@@ -33,6 +38,7 @@ DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
 DEFAULT_UPDATE_BATCH_WORKERS = 0
 DEFAULT_REWARD_SAMPLE_INTERVAL = 5
+DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_SAVE_EVERY = 10
 
@@ -166,6 +172,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--target-kl', type=float, default=0.03, help='Stop PPO epochs above this approximate KL')
     parser.add_argument('--gui', action='store_true', help='Run PPO rollout collection in SUMO-GUI')
     parser.add_argument(
+        '--sumo-backend',
+        choices=tuple(backend.value for backend in SumoBackendKind),
+        default=DEFAULT_SUMO_BACKEND.value,
+        help='TraCI-compatible backend used for PPO rollout collection',
+    )
+    parser.add_argument(
         '--initial-occupancy-min',
         type=float,
         default=0.05,
@@ -258,6 +270,7 @@ def main() -> None:
             time_to_teleport=args.time_to_teleport,
             target_kl=args.target_kl,
             gui=args.gui,
+            sumo_backend=SumoBackendKind(args.sumo_backend),
             initial_occupancy_min=args.initial_occupancy_min,
             initial_occupancy_max=args.initial_occupancy_max,
             eval_every=ppo_settings.eval_every,

@@ -12,6 +12,7 @@ from src.movement.evaluation import EvaluationPolicy
 from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.features import LaneGroupGeometry
 from src.movement.graph_schema import MovementGraph
+from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.rollout import MovementRolloutBuffer
@@ -59,6 +60,7 @@ class MovementPpoConfig:
     time_to_teleport: int | None
     target_kl: float
     gui: bool
+    sumo_backend: SumoBackendKind
     initial_occupancy_min: float
     initial_occupancy_max: float
     eval_every: int

@@ -7,11 +7,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from traci._vehicle import VehicleDomain
-import traci.constants as tc
-
 from .graph_schema import GraphMovementId, LaneGroupId, MovementGraph
 from .schema import EdgeId, LaneId, TrafficLightProgram
+from .sumo_backend import (
+    VehicleApi,
+    subscription_lane_id_key,
+    subscription_lane_position_key,
+    subscription_length_key,
+    subscription_route_index_key,
+    subscription_speed_key,
+    vehicle_subscription_variables,
+)
 
 DEFAULT_DETECTOR_LENGTH_M = 200.0
 EFFECTIVE_VEHICLE_SPACING_M = 8.0
@@ -152,7 +158,7 @@ class VehicleFeatureIndex:
 class VehicleSnapshotCollector:
     """Collect vehicle state through persistent TraCI subscriptions."""
 
-    def __init__(self, vehicle_api: VehicleDomain) -> None:
+    def __init__(self, vehicle_api: VehicleApi) -> None:
         self._vehicle_api = vehicle_api
         self._subscribed_vehicle_ids: set[str] = set()
         self._route_by_vehicle_id: dict[str, tuple[str, ...]] = {}
@@ -172,31 +178,30 @@ class VehicleSnapshotCollector:
             )
             self._vehicle_api.subscribe(
                 vehicle_id,
-                (
-                    tc.VAR_LANE_ID,
-                    tc.VAR_LANEPOSITION,
-                    tc.VAR_SPEED,
-                    tc.VAR_LENGTH,
-                    tc.VAR_ROUTE_INDEX,
-                ),
+                vehicle_subscription_variables(),
             )
             self._subscribed_vehicle_ids.add(vehicle_id)
 
         subscription_results = self._vehicle_api.getAllSubscriptionResults()
+        lane_id_key = subscription_lane_id_key()
+        lane_position_key = subscription_lane_position_key()
+        speed_key = subscription_speed_key()
+        length_key = subscription_length_key()
+        route_index_key = subscription_route_index_key()
         snapshots: list[VehicleSnapshot] = []
         for vehicle_id in vehicle_ids:
             result = subscription_results[vehicle_id]
             route = self._route_by_vehicle_id[vehicle_id]
-            route_index = int(result[tc.VAR_ROUTE_INDEX])
+            route_index = int(result[route_index_key])
             next_edge = route[route_index + 1] if route_index + 1 < len(route) else None
             snapshots.append(
                 VehicleSnapshot(
                     vehicle_id=vehicle_id,
-                    lane_id=LaneId(str(result[tc.VAR_LANE_ID])),
+                    lane_id=LaneId(str(result[lane_id_key])),
                     next_edge_id=EdgeId(next_edge) if next_edge is not None else None,
-                    lane_position_m=float(result[tc.VAR_LANEPOSITION]),
-                    speed_mps=float(result[tc.VAR_SPEED]),
-                    length_m=float(result[tc.VAR_LENGTH]),
+                    lane_position_m=float(result[lane_position_key]),
+                    speed_mps=float(result[speed_key]),
+                    length_m=float(result[length_key]),
                     route_edge_ids_ahead=tuple(EdgeId(edge_id) for edge_id in route[route_index + 1 :]),
                 )
             )

@@ -10,7 +10,6 @@ from time import perf_counter
 
 import torch
 from torch.distributions import Categorical
-import traci
 
 from scripts.collect_il_data import resolve_sumocfg_net_path
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
@@ -274,6 +273,7 @@ def collect_rollout(
         min_green_steps=config.min_green_steps,
         time_to_teleport=config.time_to_teleport,
         additional_sumo_args=route_file_sumo_args((*demand_route_files.route_files, initial_population.route_file)),
+        backend_kind=config.sumo_backend,
     )
     simulation_started = perf_counter()
     try:
@@ -330,7 +330,7 @@ def collect_runtime_rollout(
     context_build_seconds: float,
     city_name: str,
 ) -> RolloutRunResult:
-    vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
+    vehicle_snapshot_collector = VehicleSnapshotCollector(runtime.vehicle_api)
     lane_flow_tracker = LaneGroupFlowTracker(
         graph=context.graph,
         lane_ids_by_edge=context.lane_ids_by_edge,
@@ -474,6 +474,8 @@ def collect_decision_transition(
     reward_started = perf_counter()
     interval_reward = advance_and_reward(
         runtime=runtime,
+        lane_api=runtime.lane_api,
+        simulation_api=runtime.simulation_api,
         context=context,
         decision_interval=config.decision_interval,
         global_reward_weight=config.global_reward_weight,
