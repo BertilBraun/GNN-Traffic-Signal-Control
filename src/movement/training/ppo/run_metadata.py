@@ -16,6 +16,8 @@ class PpoRunCityMetadata(BaseModel):
     city_name: str
     city_split: str
     sumo_config_path: str
+    rollout_jobs_per_iteration: int
+    rollout_priority: int
     rollout_workers: int
 
 
@@ -31,7 +33,9 @@ class PpoRunMetadata(BaseModel):
     log_dir: str
     iterations: int
     completed_iteration_at_start: int
+    rollout_jobs_per_update: int
     rollouts_per_update: int
+    rollout_process_workers: int
     rollout_workers: int
     sumo_backend: str
     steps_per_rollout: int
@@ -63,7 +67,9 @@ def build_run_metadata(
         log_dir=str(config.log_dir),
         iterations=config.iterations,
         completed_iteration_at_start=completed_iteration_at_start,
+        rollout_jobs_per_update=config.rollouts_per_update,
         rollouts_per_update=config.rollouts_per_update,
+        rollout_process_workers=config.num_workers,
         rollout_workers=config.num_workers,
         sumo_backend=config.sumo_backend.value,
         steps_per_rollout=config.steps_per_rollout,
@@ -83,6 +89,8 @@ def city_metadata(city: RolloutCity) -> PpoRunCityMetadata:
         city_name=city.city_name,
         city_split=city.city_split.value,
         sumo_config_path=str(city.sumo_config_path),
+        rollout_jobs_per_iteration=city.rollout_jobs_per_iteration,
+        rollout_priority=city.rollout_priority,
         rollout_workers=city.rollout_workers,
     )
 

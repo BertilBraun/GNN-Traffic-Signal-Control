@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 import yaml
 
 
@@ -27,17 +27,25 @@ class ExperimentCityConfiguration(BaseModel):
     split: CitySplit
     sumo_config: Path
     build_config: Path
-    rollout_workers: int = Field(ge=0)
+    rollout_jobs_per_iteration: int = Field(
+        ge=0,
+        validation_alias=AliasChoices('rollout_jobs_per_iteration', 'rollout_workers'),
+    )
+    rollout_priority: int = Field(ge=0, default=0)
+
+    @property
+    def rollout_workers(self) -> int:
+        return self.rollout_jobs_per_iteration
 
     @model_validator(mode='after')
     def validate_rollout_workers_for_split(self) -> 'ExperimentCityConfiguration':
         match self.split:
             case CitySplit.TRAIN:
-                if self.rollout_workers <= 0:
-                    raise ValueError(f'train city {self.name} must define a positive rollout_workers value')
+                if self.rollout_jobs_per_iteration <= 0:
+                    raise ValueError(f'train city {self.name} must define a positive rollout_jobs_per_iteration value')
             case CitySplit.HELD_OUT:
-                if self.rollout_workers != 0:
-                    raise ValueError(f'held-out city {self.name} must define rollout_workers: 0')
+                if self.rollout_jobs_per_iteration != 0:
+                    raise ValueError(f'held-out city {self.name} must define rollout_jobs_per_iteration: 0')
         return self
 
 

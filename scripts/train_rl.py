@@ -10,7 +10,7 @@ from hashlib import sha256
 import os
 from pathlib import Path
 import sys
-from typing import TextIO
+from typing import Sequence, TextIO
 
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -235,7 +235,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help='Use the same SUMO demand and initial population for every rollout',
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.rollouts_per_update_explicit = cli_option_was_passed(
+        option_name='--rollouts-per-update',
+        arguments=sys.argv[1:],
+    )
+    return args
+
+
+def cli_option_was_passed(option_name: str, arguments: Sequence[str]) -> bool:
+    option_prefix = f'{option_name}='
+    return any(argument == option_name or argument.startswith(option_prefix) for argument in arguments)
 
 
 def main() -> None:
@@ -418,7 +428,8 @@ def experiment_rollout_cities(
             city_name=city.name,
             city_split=city.split,
             sumo_config_path=resolve_experiment_path(path=city.sumo_config, project_root=ROOT),
-            rollout_workers=city.rollout_workers,
+            rollout_workers=city.rollout_jobs_per_iteration,
+            rollout_priority=city.rollout_priority,
         )
         for city in experiment_configuration.train_cities
     )
@@ -428,9 +439,16 @@ def rollouts_per_update(
     args: argparse.Namespace,
     experiment_configuration: ExperimentConfiguration | None,
 ) -> int:
-    if experiment_configuration is not None and args.rollouts_per_update == DEFAULT_ROLLOUTS_PER_UPDATE:
-        return experiment_configuration.proximal_policy_optimization.rollouts_per_update
+    if experiment_configuration is not None and not args.rollouts_per_update_explicit:
+        return experiment_rollout_jobs_per_iteration(experiment_configuration)
     return args.rollouts_per_update
+
+
+def experiment_rollout_jobs_per_iteration(experiment_configuration: ExperimentConfiguration) -> int:
+    rollout_jobs = sum(city.rollout_jobs_per_iteration for city in experiment_configuration.train_cities)
+    if rollout_jobs <= 0:
+        raise ValueError('experiment train cities must define at least one rollout job per PPO iteration')
+    return rollout_jobs
 
 
 def reward_sample_interval(

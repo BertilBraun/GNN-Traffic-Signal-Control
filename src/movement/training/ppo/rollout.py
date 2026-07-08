@@ -142,17 +142,17 @@ class ScheduledRollout:
     rollout_city: RolloutCity
 
 
+@dataclass(frozen=True)
+class CityRolloutJobAllocation:
+    rollout_city: RolloutCity
+    rollout_jobs: int
+
+
 def rollout_schedule(
     config: MovementPpoConfig,
     iteration: int,
 ) -> tuple[ScheduledRollout, ...]:
-    rollout_cities = effective_rollout_cities(config)
-    expanded_cities = tuple(city for city in rollout_cities for _worker_index in range(city.rollout_workers))
-    if len(expanded_cities) != config.rollouts_per_update:
-        raise ValueError(
-            'rollout city worker counts must equal rollouts_per_update: '
-            f'{len(expanded_cities)} != {config.rollouts_per_update}'
-        )
+    expanded_cities = expanded_rollout_cities(config)
     return tuple(
         ScheduledRollout(
             rollout_index=rollout_index,
@@ -169,6 +169,80 @@ def rollout_schedule(
     )
 
 
+def expanded_rollout_cities(config: MovementPpoConfig) -> tuple[RolloutCity, ...]:
+    allocations = prioritized_city_rollout_job_allocations(city_rollout_job_allocations(config))
+    return tuple(
+        allocation.rollout_city for allocation in allocations for _rollout_job in range(allocation.rollout_jobs)
+    )
+
+
+def prioritized_city_rollout_job_allocations(
+    allocations: tuple[CityRolloutJobAllocation, ...],
+) -> tuple[CityRolloutJobAllocation, ...]:
+    indexed_allocations = tuple(enumerate(allocations))
+    return tuple(
+        allocation
+        for _city_index, allocation in sorted(
+            indexed_allocations,
+            key=lambda indexed_allocation: (
+                -indexed_allocation[1].rollout_city.rollout_priority,
+                -indexed_allocation[1].rollout_jobs,
+                indexed_allocation[0],
+            ),
+        )
+    )
+
+
+def city_rollout_job_allocations(config: MovementPpoConfig) -> tuple[CityRolloutJobAllocation, ...]:
+    rollout_cities = effective_rollout_cities(config)
+    configured_rollout_jobs = sum(city.rollout_jobs_per_iteration for city in rollout_cities)
+    if configured_rollout_jobs <= 0:
+        raise ValueError('total rollout city jobs must be positive.')
+    if config.rollouts_per_update <= 0:
+        raise ValueError('rollouts_per_update must be positive.')
+    if configured_rollout_jobs == config.rollouts_per_update:
+        return tuple(
+            CityRolloutJobAllocation(
+                rollout_city=city,
+                rollout_jobs=city.rollout_jobs_per_iteration,
+            )
+            for city in rollout_cities
+        )
+    return weighted_city_rollout_job_allocations(
+        rollout_cities=rollout_cities,
+        total_rollout_jobs=config.rollouts_per_update,
+        total_city_weight=configured_rollout_jobs,
+    )
+
+
+def weighted_city_rollout_job_allocations(
+    rollout_cities: tuple[RolloutCity, ...],
+    total_rollout_jobs: int,
+    total_city_weight: int,
+) -> tuple[CityRolloutJobAllocation, ...]:
+    base_jobs = tuple(
+        total_rollout_jobs * city.rollout_jobs_per_iteration // total_city_weight for city in rollout_cities
+    )
+    remainder_by_city_index = tuple(
+        total_rollout_jobs * city.rollout_jobs_per_iteration % total_city_weight for city in rollout_cities
+    )
+    jobs_by_city_index = list(base_jobs)
+    remaining_jobs = total_rollout_jobs - sum(base_jobs)
+    city_indexes_by_remainder = sorted(
+        range(len(rollout_cities)),
+        key=lambda city_index: (-remainder_by_city_index[city_index], city_index),
+    )
+    for city_index in city_indexes_by_remainder[:remaining_jobs]:
+        jobs_by_city_index[city_index] += 1
+    return tuple(
+        CityRolloutJobAllocation(
+            rollout_city=city,
+            rollout_jobs=jobs_by_city_index[city_index],
+        )
+        for city_index, city in enumerate(rollout_cities)
+    )
+
+
 def effective_rollout_cities(config: MovementPpoConfig) -> tuple[RolloutCity, ...]:
     if config.rollout_cities:
         return config.rollout_cities
@@ -178,6 +252,7 @@ def effective_rollout_cities(config: MovementPpoConfig) -> tuple[RolloutCity, ..
             city_split=CitySplit.TRAIN,
             sumo_config_path=config.cfg_path,
             rollout_workers=config.rollouts_per_update,
+            rollout_priority=0,
         ),
     )
 

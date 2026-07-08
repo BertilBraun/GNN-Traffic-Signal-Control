@@ -31,6 +31,7 @@ def test_valid_city_first_pass_config_loads() -> None:
     assert configuration.held_out_city.name == 'freiburg_altstadt'
     assert configuration.held_out_city.split == CitySplit.HELD_OUT
     assert configuration.held_out_city.rollout_workers == 0
+    assert configuration.held_out_city.rollout_jobs_per_iteration == 0
     assert configuration.evaluation.policies == (
         ExperimentEvaluationPolicy.LEARNED,
         ExperimentEvaluationPolicy.MAX_PRESSURE,
@@ -87,11 +88,43 @@ def test_held_out_city_with_rollout_workers_fails(tmp_path: Path) -> None:
         encoding='utf-8',
     )
 
-    with pytest.raises(ValueError, match='held-out city beta must define rollout_workers: 0'):
+    with pytest.raises(ValueError, match='held-out city beta must define rollout_jobs_per_iteration: 0'):
         load_experiment_configuration(
             configuration_path=configuration_path,
             project_root=tmp_path,
         )
+
+
+def test_city_rollout_jobs_per_iteration_field_loads(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_path.write_text(
+        _experiment_yaml(
+            city_entries="""
+  - name: alpha
+    split: train
+    sumo_config: alpha.sumocfg
+    build_config: alpha.build.yaml
+    rollout_jobs_per_iteration: 3
+    rollout_priority: 7
+  - name: beta
+    split: held_out
+    sumo_config: beta.sumocfg
+    build_config: beta.build.yaml
+    rollout_jobs_per_iteration: 0
+""",
+        ),
+        encoding='utf-8',
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=tmp_path,
+    )
+
+    assert configuration.train_cities[0].rollout_jobs_per_iteration == 3
+    assert configuration.train_cities[0].rollout_workers == 3
+    assert configuration.train_cities[0].rollout_priority == 7
 
 
 @pytest.mark.parametrize(

@@ -24,6 +24,11 @@ class RolloutCity:
     city_split: CitySplit
     sumo_config_path: Path
     rollout_workers: int
+    rollout_priority: int = 0
+
+    @property
+    def rollout_jobs_per_iteration(self) -> int:
+        return self.rollout_workers
 
 
 @dataclass(frozen=True)

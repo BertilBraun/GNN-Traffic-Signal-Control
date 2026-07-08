@@ -140,6 +140,7 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.max_teleports_per_rollout == 999
     assert args.target_kl == 0.03
     assert args.rollouts_per_update == 3
+    assert args.rollouts_per_update_explicit is False
     assert args.num_workers == -1
     assert train_rl.num_workers(args, None) == 12
     assert args.fixed_rollout_seed is None
@@ -239,6 +240,7 @@ def test_train_rl_cli_uses_experiment_rollout_settings(monkeypatch) -> None:
     )
     assert all(city.city_split == CitySplit.TRAIN for city in rollout_cities)
     assert tuple(city.rollout_workers for city in rollout_cities) == (2, 2, 2, 2)
+    assert tuple(city.rollout_jobs_per_iteration for city in rollout_cities) == (2, 2, 2, 2)
 
 
 def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
@@ -260,21 +262,50 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     settings = train_rl.ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
 
     assert settings.iterations == 1000
-    assert settings.steps_per_rollout == 1200
+    assert settings.steps_per_rollout == 600
     assert settings.update_epochs == 2
     assert settings.value_warmup_iterations == 2
     assert settings.warmup_epochs == 2
     assert settings.transitions_per_batch == 256
     assert settings.eval_every == 0
     assert settings.save_every == 10
-    assert train_rl.rollouts_per_update(args, experiment_configuration) == 4
-    assert train_rl.num_workers(args, experiment_configuration) == 4
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 20
+    assert train_rl.num_workers(args, experiment_configuration) == 12
     assert tuple(city.rollout_workers for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
-        1,
-        1,
-        1,
+        5,
+        5,
+        5,
+        5,
+    )
+    assert tuple(city.rollout_priority for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
+        2,
+        3,
+        4,
         1,
     )
+
+
+def test_train_rl_cli_allows_explicit_rollout_total_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--il-checkpoint',
+            'checkpoints/il/unit/movement_policy_best.pt',
+            '--experiment-config',
+            'configs/training/city_first_pass_4_worker.yaml',
+            '--rollouts-per-update',
+            '5',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    experiment_configuration = train_rl.experiment_config(args.experiment_config)
+    assert experiment_configuration is not None
+
+    assert args.rollouts_per_update_explicit is True
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 5
 
 
 def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:

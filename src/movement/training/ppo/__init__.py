@@ -155,12 +155,14 @@ def validate_config(config: MovementPpoConfig) -> None:
     if config.gui and config.sumo_backend is SumoBackendKind.LIBSUMO:
         raise ValueError('SUMO-GUI rollout collection requires the traci backend.')
     if config.rollout_cities:
-        rollout_worker_count = sum(city.rollout_workers for city in config.rollout_cities)
-        if rollout_worker_count != config.rollouts_per_update:
-            raise ValueError(
-                'rollout city worker counts must equal rollouts_per_update: '
-                f'{rollout_worker_count} != {config.rollouts_per_update}'
-            )
+        rollout_job_count = sum(city.rollout_jobs_per_iteration for city in config.rollout_cities)
+        if rollout_job_count <= 0:
+            raise ValueError('total rollout city jobs must be positive.')
+        non_positive_city_names = tuple(
+            city.city_name for city in config.rollout_cities if city.rollout_jobs_per_iteration <= 0
+        )
+        if non_positive_city_names:
+            raise ValueError(f'rollout_cities must define positive rollout jobs: {", ".join(non_positive_city_names)}')
         held_out_city_names = tuple(
             city.city_name for city in config.rollout_cities if city.city_split != CitySplit.TRAIN
         )
@@ -439,6 +441,8 @@ def print_iteration_summary(
     phase = 'skip' if update_skipped else ('value' if warming_up else 'ppo')
     print(
         f'[{phase}] iter={iteration}/{config.iterations} '
+        f'jobs={config.rollouts_per_update} '
+        f'workers={config.num_workers} '
         f'reward={rollout_stats.mean_reward:+.4f} '
         f'return={diagnostics.mean_return:+.4f} '
         f'ev={diagnostics.explained_variance:+.3f} '

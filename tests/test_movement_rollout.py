@@ -33,6 +33,7 @@ from src.movement.training.ppo.reward import (
     speed_deficit_density,
 )
 from src.movement.training.ppo.rollout import (
+    city_rollout_job_allocations,
     effective_rollout_cities,
     load_serialized_rollout,
     rollout_schedule,
@@ -210,10 +211,49 @@ def test_rollout_schedule_uses_configured_train_cities_evenly() -> None:
     assert tuple(rollout.rollout_seed for rollout in schedule) == (46, 47, 48, 49)
 
 
-def test_rollout_schedule_rejects_worker_count_mismatch() -> None:
+def test_rollout_schedule_submits_equal_jobs_by_priority() -> None:
     config = _ppo_config(
-        rollouts_per_update=3,
+        rollouts_per_update=4,
         rollout_cities=(
+            RolloutCity(
+                city_name='small_city',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('small.sumocfg'),
+                rollout_workers=2,
+                rollout_priority=1,
+            ),
+            RolloutCity(
+                city_name='large_city',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('large.sumocfg'),
+                rollout_workers=2,
+                rollout_priority=5,
+            ),
+        ),
+    )
+
+    schedule = rollout_schedule(config=config, iteration=1)
+
+    assert tuple(rollout.rollout_city.city_name for rollout in schedule) == (
+        'large_city',
+        'large_city',
+        'small_city',
+        'small_city',
+    )
+    assert tuple(rollout.rollout_index for rollout in schedule) == (0, 1, 2, 3)
+    assert tuple(rollout.rollout_seed for rollout in schedule) == (46, 47, 48, 49)
+
+
+def test_rollout_schedule_uses_city_jobs_as_weights_when_total_is_overridden() -> None:
+    config = _ppo_config(
+        rollouts_per_update=5,
+        rollout_cities=(
+            RolloutCity(
+                city_name='mannheim_innenstadt',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('mannheim.sumocfg'),
+                rollout_workers=1,
+            ),
             RolloutCity(
                 city_name='karlsruhe_oststadt',
                 city_split=CitySplit.TRAIN,
@@ -223,8 +263,34 @@ def test_rollout_schedule_rejects_worker_count_mismatch() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match='rollout city worker counts must equal rollouts_per_update'):
-        rollout_schedule(config=config, iteration=1)
+    schedule = rollout_schedule(config=config, iteration=1)
+
+    assert tuple(rollout.rollout_city.city_name for rollout in schedule) == (
+        'karlsruhe_oststadt',
+        'karlsruhe_oststadt',
+        'karlsruhe_oststadt',
+        'mannheim_innenstadt',
+        'mannheim_innenstadt',
+    )
+    assert tuple(rollout.rollout_index for rollout in schedule) == (0, 1, 2, 3, 4)
+    assert tuple(rollout.rollout_seed for rollout in schedule) == (47, 48, 49, 50, 51)
+
+
+def test_rollout_job_allocations_reject_zero_total_city_jobs() -> None:
+    config = _ppo_config(
+        rollouts_per_update=1,
+        rollout_cities=(
+            RolloutCity(
+                city_name='karlsruhe_oststadt',
+                city_split=CitySplit.TRAIN,
+                sumo_config_path=Path('karlsruhe.sumocfg'),
+                rollout_workers=0,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='total rollout city jobs must be positive'):
+        city_rollout_job_allocations(config)
 
 
 def test_validate_config_rejects_held_out_rollout_city() -> None:
@@ -415,6 +481,8 @@ def test_run_metadata_writes_checkpoint_and_log_records(tmp_path: Path) -> None:
     assert (config.log_dir / 'run_metadata.json').read_text(encoding='utf-8')
     assert metadata.completed_iteration_at_start == 4
     assert metadata.experiment_configuration_sha256 == 'unit-sha'
+    assert metadata.rollout_jobs_per_update == 1
+    assert metadata.rollout_process_workers == 1
 
 
 def test_effective_rollout_cities_keeps_single_city_default() -> None:
