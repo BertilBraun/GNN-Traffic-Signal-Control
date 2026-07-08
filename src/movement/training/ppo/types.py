@@ -82,6 +82,7 @@ class MovementPpoConfig:
     seed: int
     fixed_rollout_seed: int | None
     resume_checkpoint_path: Path | None
+    allow_resume_config_mismatch: bool
     rollout_cities: tuple[RolloutCity, ...]
     experiment_configuration: ExperimentConfiguration | None
     experiment_configuration_path: Path | None

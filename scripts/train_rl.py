@@ -86,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help='PPO checkpoint whose model, optimizer, RNG, and iteration state will be resumed',
     )
+    parser.add_argument(
+        '--allow-resume-config-mismatch',
+        action='store_true',
+        help='Resume a PPO checkpoint even when the current experiment YAML hash differs from the checkpoint',
+    )
     parser.add_argument('--experiment-config', type=Path, default=None, help='Multi-city experiment YAML path')
     parser.add_argument('--cfg', type=Path, default=DEFAULT_CFG, help='SUMO .sumocfg path')
     parser.add_argument('--iterations', type=int, default=DEFAULT_ITERATIONS, help='Final target PPO iteration')
@@ -312,6 +317,7 @@ def main() -> None:
             seed=args.seed,
             fixed_rollout_seed=args.fixed_rollout_seed,
             resume_checkpoint_path=args.resume_checkpoint,
+            allow_resume_config_mismatch=args.allow_resume_config_mismatch,
             rollout_cities=rollout_cities,
             experiment_configuration=experiment_configuration,
             experiment_configuration_path=args.experiment_config,

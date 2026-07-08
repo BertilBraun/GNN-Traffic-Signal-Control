@@ -105,6 +105,12 @@ def validate_resume_experiment_configuration(
     if expected_sha256 is None:
         raise ValueError('resume checkpoint requires the original experiment configuration')
     if checkpoint_sha256 != expected_sha256:
+        if config.allow_resume_config_mismatch:
+            print(
+                'Warning: resume experiment configuration hash mismatch was explicitly allowed: '
+                f'checkpoint={checkpoint_sha256} current={expected_sha256}'
+            )
+            return
         raise ValueError(
             f'resume experiment configuration hash mismatch: checkpoint={checkpoint_sha256} current={expected_sha256}'
         )

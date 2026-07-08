@@ -883,6 +883,7 @@ def _ppo_config(
         seed=42,
         fixed_rollout_seed=None,
         resume_checkpoint_path=None,
+        allow_resume_config_mismatch=False,
         rollout_cities=rollout_cities,
         experiment_configuration=None,
         experiment_configuration_path=None,

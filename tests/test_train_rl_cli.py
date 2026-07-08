@@ -95,6 +95,24 @@ def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
     assert args.il_checkpoint is None
     assert args.resume_checkpoint == Path('checkpoints/rl/unit/movement_ppo_latest.pt')
     assert args.iterations == 300
+    assert args.allow_resume_config_mismatch is False
+
+
+def test_train_rl_cli_accepts_resume_config_mismatch_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--resume-checkpoint',
+            'checkpoints/rl/unit/movement_ppo_latest.pt',
+            '--allow-resume-config-mismatch',
+        ],
+    )
+
+    args = train_rl.parse_args()
+
+    assert args.allow_resume_config_mismatch is True
 
 
 def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
