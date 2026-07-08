@@ -546,12 +546,28 @@ def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
     assert delay_density_reward(
         local_delay_density=0.2,
         global_delay_density=0.1,
+        flow_rate_per_signal=0.0,
         speed_change_density=0.3,
         global_reward_weight=0.1,
+        flow_reward_weight=0.1,
         speed_change_weight=0.02,
         teleport_penalty=0.5,
         teleport_count=2,
     ) == pytest.approx(-1.216)
+
+
+def test_delay_density_reward_adds_departure_flow_bonus() -> None:
+    assert delay_density_reward(
+        local_delay_density=0.2,
+        global_delay_density=0.1,
+        flow_rate_per_signal=0.5,
+        speed_change_density=0.3,
+        global_reward_weight=0.1,
+        flow_reward_weight=0.1,
+        speed_change_weight=0.02,
+        teleport_penalty=0.5,
+        teleport_count=2,
+    ) == pytest.approx(-1.166)
 
 
 def test_speed_deficit_density_counts_slow_moving_vehicles() -> None:
@@ -911,6 +927,7 @@ def _ppo_config(
         demand_scale_min=0.8,
         demand_scale_max=1.2,
         global_reward_weight=0.1,
+        flow_reward_weight=0.1,
         speed_change_weight=0.02,
         reward_sample_interval=10,
         reward_clip=1.0,

@@ -11,7 +11,7 @@ cities:
     split: train
     sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
     build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
-    rollout_jobs_per_iteration: 5
+    rollout_jobs_per_iteration: 0
     rollout_priority: 3
   - name: stuttgart_mitte
     split: train
@@ -56,8 +56,8 @@ imitation_learning:
 ppo:
   iterations: 1000
   steps_per_rollout: 600
-  rollouts_per_update: 20
-  rollout_workers: 16
+  rollouts_per_update: 15
+  rollout_workers: 15
   update_epochs: 2
   value_warmup_iterations: 2
   warmup_epochs: 2

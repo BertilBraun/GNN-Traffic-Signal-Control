@@ -167,6 +167,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global delay-density reward weight')
     parser.add_argument(
+        '--flow-reward-weight',
+        type=float,
+        default=0.1,
+        help='Global departed-vehicle flow reward weight normalized per signal and simulated second',
+    )
+    parser.add_argument(
         '--speed-change-weight',
         type=float,
         default=0.02,
@@ -292,6 +298,7 @@ def main() -> None:
             demand_scale_min=demand_scale_min,
             demand_scale_max=demand_scale_max,
             global_reward_weight=args.global_reward_weight,
+            flow_reward_weight=args.flow_reward_weight,
             speed_change_weight=args.speed_change_weight,
             reward_sample_interval=reward_sample_interval(args, experiment_configuration),
             reward_clip=args.reward_clip,

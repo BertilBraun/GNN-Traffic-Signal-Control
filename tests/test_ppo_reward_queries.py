@@ -27,6 +27,9 @@ class FakeSimulation:
     def getStartingTeleportNumber(self) -> int:
         return 0
 
+    def getDepartedNumber(self) -> int:
+        return 0
+
 
 class FakeLane:
     def __init__(self) -> None:
@@ -80,6 +83,7 @@ def test_advance_and_reward_reuses_lane_delay_snapshot() -> None:
         context=_context(),
         decision_interval=3,
         global_reward_weight=0.1,
+        flow_reward_weight=0.1,
         speed_change_weight=0.0,
         reward_sample_interval=3,
         reward_clip=1.0,
@@ -103,6 +107,7 @@ def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() ->
         context=_context(),
         decision_interval=2,
         global_reward_weight=0.1,
+        flow_reward_weight=0.1,
         speed_change_weight=0.02,
         reward_sample_interval=1,
         reward_clip=1.0,

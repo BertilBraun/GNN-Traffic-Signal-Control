@@ -127,6 +127,35 @@ def test_city_rollout_jobs_per_iteration_field_loads(tmp_path: Path) -> None:
     assert configuration.train_cities[0].rollout_priority == 7
 
 
+def test_train_city_can_be_excluded_from_ppo_rollouts(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_path.write_text(
+        _experiment_yaml(
+            city_entries="""
+  - name: alpha
+    split: train
+    sumo_config: alpha.sumocfg
+    build_config: alpha.build.yaml
+    rollout_jobs_per_iteration: 0
+  - name: beta
+    split: held_out
+    sumo_config: beta.sumocfg
+    build_config: beta.build.yaml
+    rollout_jobs_per_iteration: 0
+""",
+        ),
+        encoding='utf-8',
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=tmp_path,
+    )
+
+    assert configuration.train_cities[0].rollout_jobs_per_iteration == 0
+
+
 @pytest.mark.parametrize(
     ('city_entries', 'expected_message'),
     (

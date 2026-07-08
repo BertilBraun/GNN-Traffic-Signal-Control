@@ -136,6 +136,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('max_teleports_per_rollout must not be negative.')
     if config.speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
+    if config.flow_reward_weight < 0.0:
+        raise ValueError('flow_reward_weight must not be negative.')
     if config.reward_sample_interval <= 0:
         raise ValueError('reward_sample_interval must be positive.')
     if config.reward_sample_interval > config.decision_interval:
@@ -158,11 +160,6 @@ def validate_config(config: MovementPpoConfig) -> None:
         rollout_job_count = sum(city.rollout_jobs_per_iteration for city in config.rollout_cities)
         if rollout_job_count <= 0:
             raise ValueError('total rollout city jobs must be positive.')
-        non_positive_city_names = tuple(
-            city.city_name for city in config.rollout_cities if city.rollout_jobs_per_iteration <= 0
-        )
-        if non_positive_city_names:
-            raise ValueError(f'rollout_cities must define positive rollout jobs: {", ".join(non_positive_city_names)}')
         held_out_city_names = tuple(
             city.city_name for city in config.rollout_cities if city.city_split != CitySplit.TRAIN
         )

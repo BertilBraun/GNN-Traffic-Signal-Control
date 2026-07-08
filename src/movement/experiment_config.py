@@ -41,8 +41,7 @@ class ExperimentCityConfiguration(BaseModel):
     def validate_rollout_workers_for_split(self) -> 'ExperimentCityConfiguration':
         match self.split:
             case CitySplit.TRAIN:
-                if self.rollout_jobs_per_iteration <= 0:
-                    raise ValueError(f'train city {self.name} must define a positive rollout_jobs_per_iteration value')
+                pass
             case CitySplit.HELD_OUT:
                 if self.rollout_jobs_per_iteration != 0:
                     raise ValueError(f'held-out city {self.name} must define rollout_jobs_per_iteration: 0')

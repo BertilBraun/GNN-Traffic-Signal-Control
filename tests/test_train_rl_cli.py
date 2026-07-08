@@ -47,6 +47,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '-1',
             '--speed-change-weight',
             '0.03',
+            '--flow-reward-weight',
+            '0.12',
             '--reward-sample-interval',
             '5',
             '--sumo-backend',
@@ -72,6 +74,7 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.fixed_rollout_seed == 123
     assert args.resume_checkpoint is None
     assert args.time_to_teleport == -1
+    assert args.flow_reward_weight == 0.12
     assert args.speed_change_weight == 0.03
     assert args.reward_sample_interval == 5
     assert args.sumo_backend == 'libsumo'
@@ -151,6 +154,7 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1
+    assert args.flow_reward_weight == 0.1
     assert args.speed_change_weight == 0.02
     assert args.reward_sample_interval == 5
     assert args.reward_clip == 1.0
@@ -287,11 +291,11 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.transitions_per_batch == 256
     assert settings.eval_every == 0
     assert settings.save_every == 10
-    assert train_rl.rollouts_per_update(args, experiment_configuration) == 20
-    assert train_rl.num_workers(args, experiment_configuration) == 16
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 15
+    assert train_rl.num_workers(args, experiment_configuration) == 15
     assert tuple(city.rollout_workers for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
         5,
-        5,
+        0,
         5,
         5,
     )

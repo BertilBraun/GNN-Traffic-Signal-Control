@@ -18,6 +18,7 @@ def advance_and_reward(
     context: RolloutContext,
     decision_interval: int,
     global_reward_weight: float,
+    flow_reward_weight: float,
     speed_change_weight: float,
     reward_sample_interval: int,
     reward_clip: float,
@@ -26,6 +27,8 @@ def advance_and_reward(
 ) -> IntervalRewardResult:
     if teleport_penalty < 0.0:
         raise ValueError('teleport_penalty must not be negative.')
+    if flow_reward_weight < 0.0:
+        raise ValueError('flow_reward_weight must not be negative.')
     if speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
     if reward_sample_interval <= 0:
@@ -35,6 +38,7 @@ def advance_and_reward(
     local_delay_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     speed_change_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     global_delay_sum = 0.0
+    departed_vehicle_count = 0
     teleport_count = 0
     simulated_steps = 0
     reward_sumo_step_seconds = 0.0
@@ -47,6 +51,7 @@ def advance_and_reward(
         runtime.step()
         reward_sumo_step_seconds += perf_counter() - step_started
         simulated_steps += 1
+        departed_vehicle_count += int(simulation_api.getDepartedNumber())
         teleport_count += int(simulation_api.getStartingTeleportNumber())
         running = runtime.is_running()
         should_sample_reward = (
@@ -98,13 +103,16 @@ def advance_and_reward(
         speed_change_sums[traffic_light_id] / max(1, simulated_steps) for traffic_light_id in context.traffic_light_ids
     )
     global_delay_density = global_delay_sum / max(1, simulated_steps)
+    flow_rate_per_signal = departed_vehicle_count / max(1, simulated_steps) / max(1, len(context.traffic_light_ids))
     raw_rewards = tuple(
         delay_density_reward(
             local_delay_density=local_delay_density,
             global_delay_density=global_delay_density,
+            flow_rate_per_signal=flow_rate_per_signal,
             speed_change_density=speed_change_density_value,
             speed_change_weight=speed_change_weight,
             global_reward_weight=global_reward_weight,
+            flow_reward_weight=flow_reward_weight,
             teleport_penalty=teleport_penalty,
             teleport_count=teleport_count,
         )
@@ -129,8 +137,10 @@ def advance_and_reward(
 def delay_density_reward(
     local_delay_density: float,
     global_delay_density: float,
+    flow_rate_per_signal: float,
     speed_change_density: float,
     global_reward_weight: float,
+    flow_reward_weight: float,
     speed_change_weight: float,
     teleport_penalty: float,
     teleport_count: int,
@@ -138,6 +148,7 @@ def delay_density_reward(
     return (
         -local_delay_density
         - global_reward_weight * global_delay_density
+        + flow_reward_weight * flow_rate_per_signal
         - speed_change_weight * speed_change_density
         - teleport_penalty * teleport_count
     )
