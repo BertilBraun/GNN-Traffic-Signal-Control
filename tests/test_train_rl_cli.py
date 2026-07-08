@@ -288,7 +288,7 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.eval_every == 0
     assert settings.save_every == 10
     assert train_rl.rollouts_per_update(args, experiment_configuration) == 20
-    assert train_rl.num_workers(args, experiment_configuration) == 12
+    assert train_rl.num_workers(args, experiment_configuration) == 16
     assert tuple(city.rollout_workers for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
         5,
         5,
@@ -299,7 +299,7 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
         2,
         3,
         4,
-        1,
+        5,
     )
 
 

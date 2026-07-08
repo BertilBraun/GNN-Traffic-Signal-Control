@@ -159,13 +159,15 @@ def ppo_phase_logit_groups(
     movement_offset = 0
     flat_policy_index = 0
     for transition in transitions:
+        phase_tensors = transition.tensor_sample.phase_tensors
+        assert phase_tensors is not None
         traffic_light_ids = tuple(sorted(transition.tensor_sample.phase_incidences.keys(), key=str))
         if len(traffic_light_ids) != len(transition.actions):
             raise ValueError('PPO transition action count does not match traffic-light count.')
         for traffic_light_index, traffic_light_id in enumerate(traffic_light_ids):
-            incidence = transition.tensor_sample.phase_incidences[traffic_light_id]
+            phase_tensor = phase_tensors[traffic_light_id]
             action_mask = transition.action_masks[traffic_light_index]
-            group_key = (len(incidence.rows), len(incidence.movement_ids))
+            group_key = (phase_tensor.incidence_matrix.shape[0], phase_tensor.movement_ids.shape[0])
             group = groups.setdefault(
                 group_key,
                 PpoPhaseLogitGroupRows(
@@ -176,8 +178,8 @@ def ppo_phase_logit_groups(
                     flat_policy_indices=[],
                 ),
             )
-            group.incidence_matrices.append(torch.tensor(incidence.rows, dtype=torch.float32))
-            group.movement_ids.append(torch.tensor(incidence.movement_ids, dtype=torch.long) + movement_offset)
+            group.incidence_matrices.append(phase_tensor.incidence_matrix)
+            group.movement_ids.append(phase_tensor.movement_ids + movement_offset)
             group.actions.append(transition.actions[traffic_light_index])
             group.action_masks.append(torch.tensor(action_mask, dtype=torch.bool))
             group.flat_policy_indices.append(flat_policy_index)
@@ -200,10 +202,12 @@ def ppo_value_groups(transitions: Sequence[MovementTransition]) -> tuple[PackedP
     movement_offset = 0
     flat_value_index = 0
     for transition in transitions:
+        phase_tensors = transition.tensor_sample.phase_tensors
+        assert phase_tensors is not None
         traffic_light_ids = tuple(sorted(transition.tensor_sample.phase_incidences.keys(), key=str))
         for traffic_light_id in traffic_light_ids:
-            incidence = transition.tensor_sample.phase_incidences[traffic_light_id]
-            movement_count = len(incidence.movement_ids)
+            phase_tensor = phase_tensors[traffic_light_id]
+            movement_count = phase_tensor.movement_ids.shape[0]
             group = groups.setdefault(
                 movement_count,
                 PpoValueGroupRows(
@@ -211,7 +215,7 @@ def ppo_value_groups(transitions: Sequence[MovementTransition]) -> tuple[PackedP
                     flat_value_indices=[],
                 ),
             )
-            group.movement_ids.append(torch.tensor(incidence.movement_ids, dtype=torch.long) + movement_offset)
+            group.movement_ids.append(phase_tensor.movement_ids + movement_offset)
             group.flat_value_indices.append(flat_value_index)
             flat_value_index += 1
         movement_offset += transition.tensor_sample.x_movement.shape[0]

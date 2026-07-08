@@ -24,7 +24,7 @@ cities:
     sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
     build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
     rollout_jobs_per_iteration: 5
-    rollout_priority: 1
+    rollout_priority: 5
   - name: freiburg_altstadt
     split: held_out
     sumo_config: configs/freiburg_altstadt/freiburg_altstadt.sumocfg
@@ -57,7 +57,7 @@ ppo:
   iterations: 1000
   steps_per_rollout: 600
   rollouts_per_update: 20
-  rollout_workers: 12
+  rollout_workers: 16
   update_epochs: 2
   value_warmup_iterations: 2
   warmup_epochs: 2

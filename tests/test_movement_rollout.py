@@ -52,7 +52,12 @@ from src.movement.training.ppo.types import (
 )
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
-from src.movement.training.movement_batch import MovementTensorSample, movement_tensor_sample_from_dataset_sample
+from src.movement.training.movement_batch import (
+    MovementPhaseTensor,
+    MovementTensorSample,
+    movement_tensor_sample_from_dataset_sample,
+    phase_tensors_from_sample,
+)
 from src.movement.training.rollout import MovementRolloutBuffer
 from src.movement.training.rollout.types import MovementTransition
 
@@ -81,15 +86,19 @@ def _sample() -> MovementDatasetSample:
 
 
 def _tensor_sample() -> MovementTensorSample:
-    return movement_tensor_sample_from_dataset_sample(
+    sample = movement_tensor_sample_from_dataset_sample(
         sample=_sample(),
         city_name='unit',
         device=torch.device('cpu'),
     )
+    return replace(
+        sample,
+        phase_tensors=phase_tensors_from_sample(sample=sample, device=torch.device('cpu')),
+    )
 
 
 def _two_traffic_light_tensor_sample() -> MovementTensorSample:
-    return MovementTensorSample(
+    sample = MovementTensorSample(
         x_lane=torch.tensor(((1.0,),), dtype=torch.float32),
         x_movement=torch.tensor(
             (
@@ -121,6 +130,10 @@ def _two_traffic_light_tensor_sample() -> MovementTensorSample:
         },
         teacher_selected_phase_by_tls={'J0': 0, 'J1': 0},
         city_name='unit',
+    )
+    return replace(
+        sample,
+        phase_tensors=phase_tensors_from_sample(sample=sample, device=torch.device('cpu')),
     )
 
 
@@ -681,6 +694,46 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
 
     assert batch.policy_mask.tolist() == [False]
     assert batch.advantages.tolist() == [0.0]
+
+
+def test_ppo_batch_collation_reuses_cached_phase_tensors() -> None:
+    tensor_sample = replace(
+        _tensor_sample(),
+        phase_incidences={
+            'J0': StoredPhaseIncidence(
+                sumo_phase_indices=(0,),
+                movement_ids=(0,),
+                rows=((0,),),
+            )
+        },
+        phase_tensors={
+            'J0': MovementPhaseTensor(
+                incidence_matrix=torch.tensor(((1.0,),), dtype=torch.float32),
+                movement_ids=torch.tensor((0,), dtype=torch.long),
+                target_phase=0,
+            )
+        },
+    )
+    transition = MovementTransition(
+        tensor_sample=tensor_sample,
+        actions=(0,),
+        old_log_probs=(0.0,),
+        action_masks=((True,),),
+        rewards=(1.0,),
+        values=(0.0,),
+        done=True,
+    )
+    loader = ppo_batch_data_loader(
+        transitions=(transition,),
+        advantages=(torch.tensor((0.0,), dtype=torch.float32),),
+        returns=(torch.tensor((1.0,), dtype=torch.float32),),
+        transitions_per_batch=1,
+        update_batch_workers=0,
+    )
+
+    batch = next(iter(loader))
+
+    assert batch.phase_logit_groups[0].incidence_matrices.tolist() == [[[1.0]]]
 
 
 def test_rollout_bootstraps_truncated_returns_from_next_state_value() -> None:
