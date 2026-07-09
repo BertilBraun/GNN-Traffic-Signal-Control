@@ -7,7 +7,7 @@ netconvert:
   promote_all_junctions_to_tl: false
 demand:
   route_count: 300
-  demand_vehicles_per_hour: 4860.0
+  demand_vehicles_per_hour: 4908.6
 verification:
   inspect: true
   movement_graph_html: true
