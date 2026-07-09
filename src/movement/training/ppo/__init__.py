@@ -6,6 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 from time import perf_counter
 
 import torch
@@ -52,6 +53,9 @@ __all__ = [
     'load_movement_ppo_checkpoint',
     'train_movement_ppo',
 ]
+
+NUMBERED_CHECKPOINT_RETENTION = 5
+NUMBERED_CHECKPOINT_PATTERN = re.compile(r'^movement_ppo_iter_(\d+)\.pt$')
 
 
 @dataclass(frozen=True)
@@ -541,6 +545,28 @@ def maybe_save_numbered_checkpoint(config: MovementPpoConfig, state: PpoTraining
         experiment_configuration_sha256=config.experiment_configuration_sha256,
         experiment_configuration_text=config.experiment_configuration_text,
     )
+    prune_numbered_checkpoints(
+        checkpoint_dir=config.checkpoint_dir,
+        retention_count=NUMBERED_CHECKPOINT_RETENTION,
+    )
+
+
+def prune_numbered_checkpoints(checkpoint_dir: Path, retention_count: int) -> None:
+    if retention_count <= 0:
+        raise ValueError('retention_count must be positive.')
+    numbered_checkpoints = sorted(
+        checkpoint_dir.glob('movement_ppo_iter_*.pt'),
+        key=numbered_checkpoint_iteration,
+    )
+    for checkpoint_path in numbered_checkpoints[:-retention_count]:
+        checkpoint_path.unlink()
+
+
+def numbered_checkpoint_iteration(checkpoint_path: Path) -> int:
+    match_result = NUMBERED_CHECKPOINT_PATTERN.match(checkpoint_path.name)
+    if match_result is None:
+        raise ValueError(f'invalid numbered PPO checkpoint path: {checkpoint_path}')
+    return int(match_result.group(1))
 
 
 def save_latest_outputs(

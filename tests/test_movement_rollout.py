@@ -21,7 +21,7 @@ from src.movement.experiment_config import CitySplit
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
-from src.movement.training.ppo import configure_sumo_backend_environment, validate_config
+from src.movement.training.ppo import configure_sumo_backend_environment, prune_numbered_checkpoints, validate_config
 from src.movement.training.ppo.batch import ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
@@ -496,6 +496,24 @@ def test_run_metadata_writes_checkpoint_and_log_records(tmp_path: Path) -> None:
     assert metadata.experiment_configuration_sha256 == 'unit-sha'
     assert metadata.rollout_jobs_per_update == 1
     assert metadata.rollout_process_workers == 1
+
+
+def test_numbered_checkpoint_retention_keeps_latest_iterations(tmp_path: Path) -> None:
+    for iteration in range(1, 8):
+        (tmp_path / f'movement_ppo_iter_{iteration:04d}.pt').write_text(str(iteration), encoding='utf-8')
+    (tmp_path / 'movement_ppo_latest.pt').write_text('latest', encoding='utf-8')
+
+    prune_numbered_checkpoints(checkpoint_dir=tmp_path, retention_count=5)
+
+    remaining_checkpoints = tuple(sorted(path.name for path in tmp_path.glob('movement_ppo_iter_*.pt')))
+    assert remaining_checkpoints == (
+        'movement_ppo_iter_0003.pt',
+        'movement_ppo_iter_0004.pt',
+        'movement_ppo_iter_0005.pt',
+        'movement_ppo_iter_0006.pt',
+        'movement_ppo_iter_0007.pt',
+    )
+    assert (tmp_path / 'movement_ppo_latest.pt').exists()
 
 
 def test_effective_rollout_cities_keeps_single_city_default() -> None:
