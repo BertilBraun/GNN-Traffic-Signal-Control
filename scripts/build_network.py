@@ -196,7 +196,7 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_ROUTE_COUNT,
         metavar='N',
-        help='Maximum deterministic city O-D routes written to the route file',
+        help='Maximum deterministic fastest-path city O-D routes written to the route file',
     )
     p.add_argument(
         '--demand-vehicles-per-hour',
@@ -1350,7 +1350,7 @@ def _city_routes(net, route_count: int) -> tuple[tuple[str, ...], ...]:
         sink = random_generator.choices(candidate_edges, weights=edge_weights, k=1)[0]
         if source == sink:
             continue
-        route = _shortest_route(net, source, sink)
+        route = _fastest_route(net, source, sink)
         if route is None or route in route_set:
             continue
         route_set.add(route)
@@ -1378,11 +1378,11 @@ def _edge_storage_capacity(edge: object) -> float:
     return float(edge.getLength()) * float(edge.getLaneNumber())
 
 
-def _shortest_route(net, source: object, sink: object) -> tuple[str, ...] | None:
+def _fastest_route(net, source: object, sink: object) -> tuple[str, ...] | None:
     path, _cost = net.getOptimalPath(
         source,
         sink,
-        fastest=False,
+        fastest=True,
         vClass='passenger',
     )
     if path is None or len(path) < 2:

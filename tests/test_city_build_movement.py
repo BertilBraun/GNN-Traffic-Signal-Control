@@ -75,15 +75,24 @@ def test_city_route_search_uses_passenger_vehicle_class() -> None:
     class FakeNet:
         def __init__(self) -> None:
             self.requested_vclass = None
+            self.requested_fastest = None
 
-        def getOptimalPath(self, source, sink, fastest=False, vClass=None):
+        def getOptimalPath(
+            self,
+            source: FakeEdge,
+            sink: FakeEdge,
+            fastest: bool = False,
+            vClass: str | None = None,
+        ) -> tuple[tuple[FakeEdge, FakeEdge], float]:
+            self.requested_fastest = fastest
             self.requested_vclass = vClass
             return (source, sink), 2.0
 
     network = FakeNet()
-    route = build_network._shortest_route(network, FakeEdge('source'), FakeEdge('sink'))
+    route = build_network._fastest_route(network, FakeEdge('source'), FakeEdge('sink'))
 
     assert route == ('source', 'sink')
+    assert network.requested_fastest is True
     assert network.requested_vclass == 'passenger'
 
 

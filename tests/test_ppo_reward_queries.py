@@ -24,11 +24,18 @@ class FakeRuntime:
 
 
 class FakeSimulation:
+    def __init__(self) -> None:
+        self.departed_number = 0
+        self.arrived_number = 0
+
     def getStartingTeleportNumber(self) -> int:
         return 0
 
     def getDepartedNumber(self) -> int:
-        return 0
+        return self.departed_number
+
+    def getArrivedNumber(self) -> int:
+        return self.arrived_number
 
 
 class FakeLane:
@@ -118,6 +125,29 @@ def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() ->
     assert fake_traci.lane.vehicle_ids_calls == 0
     assert fake_traci.vehicle.speed_calls == 0
     assert result.speed_change_densities == pytest.approx((0.005, 0.0025))
+
+
+def test_advance_and_reward_flow_bonus_uses_arrived_vehicles() -> None:
+    fake_traci = FakeTraci()
+    fake_traci.simulation.departed_number = 20
+    fake_traci.simulation.arrived_number = 4
+
+    result = advance_and_reward(
+        runtime=FakeRuntime(),
+        lane_api=fake_traci.lane,
+        simulation_api=fake_traci.simulation,
+        context=_context(),
+        decision_interval=1,
+        global_reward_weight=0.0,
+        flow_reward_weight=1.0,
+        speed_change_weight=0.0,
+        reward_sample_interval=1,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        speed_change_tracker=SpeedChangeTracker(),
+    )
+
+    assert result.raw_rewards == pytest.approx((1.99, 2.0))
 
 
 def _context() -> RolloutContext:

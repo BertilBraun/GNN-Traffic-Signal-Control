@@ -170,7 +170,7 @@ def parse_args() -> argparse.Namespace:
         '--flow-reward-weight',
         type=float,
         default=0.1,
-        help='Global departed-vehicle flow reward weight normalized per signal and simulated second',
+        help='Global arrived-vehicle flow reward weight normalized per signal and simulated second',
     )
     parser.add_argument(
         '--speed-change-weight',

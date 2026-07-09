@@ -182,7 +182,7 @@ def _sample_route(
         route, _cost = network.getOptimalPath(
             start_edge,
             destination_edge,
-            fastest=False,
+            fastest=True,
             vClass=INITIAL_TRAFFIC_VEHICLE_CLASS,
         )
         if route is None or len(route) < 2:

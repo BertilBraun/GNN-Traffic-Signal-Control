@@ -38,7 +38,7 @@ def advance_and_reward(
     local_delay_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     speed_change_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     global_delay_sum = 0.0
-    departed_vehicle_count = 0
+    arrived_vehicle_count = 0
     teleport_count = 0
     simulated_steps = 0
     reward_sumo_step_seconds = 0.0
@@ -51,7 +51,7 @@ def advance_and_reward(
         runtime.step()
         reward_sumo_step_seconds += perf_counter() - step_started
         simulated_steps += 1
-        departed_vehicle_count += int(simulation_api.getDepartedNumber())
+        arrived_vehicle_count += int(simulation_api.getArrivedNumber())
         teleport_count += int(simulation_api.getStartingTeleportNumber())
         running = runtime.is_running()
         should_sample_reward = (
@@ -103,7 +103,7 @@ def advance_and_reward(
         speed_change_sums[traffic_light_id] / max(1, simulated_steps) for traffic_light_id in context.traffic_light_ids
     )
     global_delay_density = global_delay_sum / max(1, simulated_steps)
-    flow_rate_per_signal = departed_vehicle_count / max(1, simulated_steps) / max(1, len(context.traffic_light_ids))
+    flow_rate_per_signal = arrived_vehicle_count / max(1, simulated_steps) / max(1, len(context.traffic_light_ids))
     raw_rewards = tuple(
         delay_density_reward(
             local_delay_density=local_delay_density,
