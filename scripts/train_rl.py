@@ -443,6 +443,8 @@ def experiment_rollout_cities(
             sumo_config_path=resolve_experiment_path(path=city.sumo_config, project_root=ROOT),
             rollout_workers=city.rollout_jobs_per_iteration,
             rollout_priority=city.rollout_priority,
+            demand_scale_min=city.minimum_train_scale,
+            demand_scale_max=city.maximum_train_scale,
         )
         for city in experiment_configuration.train_cities
     )

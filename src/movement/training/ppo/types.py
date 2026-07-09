@@ -25,6 +25,8 @@ class RolloutCity:
     sumo_config_path: Path
     rollout_workers: int
     rollout_priority: int = 0
+    demand_scale_min: float | None = None
+    demand_scale_max: float | None = None
 
     @property
     def rollout_jobs_per_iteration(self) -> int:

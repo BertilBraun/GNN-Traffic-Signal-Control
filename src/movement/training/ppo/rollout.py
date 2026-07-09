@@ -366,9 +366,13 @@ def collect_rollout(
     rollout_city: RolloutCity,
 ) -> RolloutRunResult:
     net_path = resolve_sumocfg_net_path(rollout_city.sumo_config_path)
+    demand_scale_min, demand_scale_max = rollout_demand_scale_bounds(
+        config=config,
+        rollout_city=rollout_city,
+    )
     demand_scale = sample_demand_scale(
-        demand_scale_min=config.demand_scale_min,
-        demand_scale_max=config.demand_scale_max,
+        demand_scale_min=demand_scale_min,
+        demand_scale_max=demand_scale_max,
         seed=rollout_seed,
     )
     demand_route_files = route_files_for_demand_scale(
@@ -436,6 +440,21 @@ def collect_rollout(
         runtime.close()
         initial_population.cleanup()
         demand_route_files.cleanup()
+
+
+def rollout_demand_scale_bounds(
+    config: MovementPpoConfig,
+    rollout_city: RolloutCity,
+) -> tuple[float, float]:
+    demand_scale_min = (
+        rollout_city.demand_scale_min if rollout_city.demand_scale_min is not None else config.demand_scale_min
+    )
+    demand_scale_max = (
+        rollout_city.demand_scale_max if rollout_city.demand_scale_max is not None else config.demand_scale_max
+    )
+    if demand_scale_min > demand_scale_max:
+        raise ValueError(f'city {rollout_city.city_name} demand scale min must not exceed max')
+    return demand_scale_min, demand_scale_max
 
 
 def collect_runtime_rollout(

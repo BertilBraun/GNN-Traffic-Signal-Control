@@ -19,6 +19,8 @@ cities:
     build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
     rollout_jobs_per_iteration: 10
     rollout_priority: 5
+    train_scale_min: 0.8
+    train_scale_max: 1.05
   - name: heidelberg_bergheim
     split: train
     sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg

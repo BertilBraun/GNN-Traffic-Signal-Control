@@ -19,6 +19,8 @@ class PpoRunCityMetadata(BaseModel):
     rollout_jobs_per_iteration: int
     rollout_priority: int
     rollout_workers: int
+    demand_scale_min: float | None
+    demand_scale_max: float | None
 
 
 class PpoRunMetadata(BaseModel):
@@ -92,6 +94,8 @@ def city_metadata(city: RolloutCity) -> PpoRunCityMetadata:
         rollout_jobs_per_iteration=city.rollout_jobs_per_iteration,
         rollout_priority=city.rollout_priority,
         rollout_workers=city.rollout_workers,
+        demand_scale_min=city.demand_scale_min,
+        demand_scale_max=city.demand_scale_max,
     )
 
 

@@ -32,6 +32,8 @@ class ExperimentCityConfiguration(BaseModel):
         validation_alias=AliasChoices('rollout_jobs_per_iteration', 'rollout_workers'),
     )
     rollout_priority: int = Field(ge=0, default=0)
+    minimum_train_scale: float | None = Field(gt=0.0, default=None, alias='train_scale_min')
+    maximum_train_scale: float | None = Field(gt=0.0, default=None, alias='train_scale_max')
 
     @property
     def rollout_workers(self) -> int:
@@ -45,6 +47,16 @@ class ExperimentCityConfiguration(BaseModel):
             case CitySplit.HELD_OUT:
                 if self.rollout_jobs_per_iteration != 0:
                     raise ValueError(f'held-out city {self.name} must define rollout_jobs_per_iteration: 0')
+        return self
+
+    @model_validator(mode='after')
+    def validate_city_demand_scale_range(self) -> 'ExperimentCityConfiguration':
+        if (
+            self.minimum_train_scale is not None
+            and self.maximum_train_scale is not None
+            and self.minimum_train_scale > self.maximum_train_scale
+        ):
+            raise ValueError(f'city {self.name} train_scale_min must be less than or equal to train_scale_max')
         return self
 
 
