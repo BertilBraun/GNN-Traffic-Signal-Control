@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import torch
@@ -16,6 +17,11 @@ from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.rollout import MovementRolloutBuffer
+
+
+class PpoRewardMode(str, Enum):
+    DELAY_DENSITY = 'delay-density'
+    THROUGHPUT = 'throughput'
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,7 @@ class RolloutCity:
 class MovementPpoConfig:
     cfg_path: Path
     il_checkpoint_path: Path | None
+    scratch_initialization: bool
     iterations: int
     steps_per_rollout: int
     rollouts_per_update: int
@@ -60,6 +67,10 @@ class MovementPpoConfig:
     demand_scale_max: float
     global_reward_weight: float
     flow_reward_weight: float
+    reward_mode: PpoRewardMode
+    throughput_reward_weight: float
+    progress_reward_weight: float
+    gridlock_penalty_weight: float
     speed_change_weight: float
     reward_sample_interval: int
     reward_clip: float
@@ -151,6 +162,8 @@ class RolloutStats:
     reward_clip_fraction: float
     mean_local_delay_density: float
     mean_global_delay_density: float
+    mean_flow_rate_per_signal: float
+    mean_progress_density: float
     mean_speed_change_density: float
     normalized_entropy: float
     mean_top_action_probability: float
@@ -220,6 +233,8 @@ class IntervalRewardResult:
     raw_rewards: tuple[float, ...]
     local_delay_densities: tuple[float, ...]
     global_delay_density: float
+    flow_rate_per_signal: float
+    progress_densities: tuple[float, ...]
     speed_change_densities: tuple[float, ...]
     teleport_count: int
     simulated_steps: int = 0

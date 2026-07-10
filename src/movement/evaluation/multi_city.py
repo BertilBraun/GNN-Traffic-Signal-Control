@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 import csv
 from hashlib import sha256
 import json
+from multiprocessing import get_context
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -54,6 +56,14 @@ class MultiCityEvaluationRecord:
     seed: int
     demand_scale: float
     metrics: EvaluationMetrics
+
+
+@dataclass(frozen=True)
+class MultiCityEvaluationRunResult:
+    run_index: int
+    total_runs: int
+    record: MultiCityEvaluationRecord
+    elapsed_s: float
 
 
 @dataclass(frozen=True)
@@ -223,6 +233,7 @@ def run_multi_city_evaluation(
     learned_policy_config: LearnedPolicyConfig | None,
     episode_runner: EpisodeRunner,
     backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
+    worker_count: int = 1,
 ) -> MultiCityEvaluationResult:
     if not policies:
         raise ValueError('at least one evaluation policy is required')
@@ -242,6 +253,15 @@ def run_multi_city_evaluation(
         demand_scales=demand_scales,
         backend_kind=backend_kind,
     )
+    if worker_count <= 0:
+        raise ValueError('worker_count must be positive')
+    if worker_count > 1:
+        return run_parallel_multi_city_evaluation(
+            requests=requests,
+            learned_policy_config=learned_policy_config,
+            episode_runner=episode_runner,
+            worker_count=worker_count,
+        )
     records: list[MultiCityEvaluationRecord] = []
     total_runs = len(requests)
     batch_started_s = current_timer_s()
@@ -277,6 +297,71 @@ def run_multi_city_evaluation(
     return MultiCityEvaluationResult(
         records=concrete_records,
         aggregates=aggregate_multi_city_records(concrete_records),
+    )
+
+
+def run_parallel_multi_city_evaluation(
+    requests: tuple[MultiCityEvaluationRunRequest, ...],
+    learned_policy_config: LearnedPolicyConfig | None,
+    episode_runner: EpisodeRunner,
+    worker_count: int,
+) -> MultiCityEvaluationResult:
+    records_by_run_index: dict[int, MultiCityEvaluationRecord] = {}
+    total_runs = len(requests)
+    batch_started_s = current_timer_s()
+    multiprocessing_context = get_context('spawn')
+    with ProcessPoolExecutor(max_workers=min(worker_count, total_runs), mp_context=multiprocessing_context) as pool:
+        futures = {
+            pool.submit(
+                run_multi_city_evaluation_request,
+                run_index,
+                total_runs,
+                request,
+                learned_policy_config if request.policy == EvaluationPolicy.LEARNED else None,
+                episode_runner,
+            ): request
+            for run_index, request in enumerate(requests, start=1)
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            records_by_run_index[result.run_index] = result.record
+            print_evaluation_result(
+                policy=result.record.policy,
+                seed=result.record.seed,
+                metrics=result.record.metrics,
+                run_index=result.run_index,
+                total_runs=result.total_runs,
+                run_elapsed_s=result.elapsed_s,
+                batch_started_s=batch_started_s,
+            )
+    records = tuple(records_by_run_index[run_index] for run_index in range(1, total_runs + 1))
+    return MultiCityEvaluationResult(
+        records=records,
+        aggregates=aggregate_multi_city_records(records),
+    )
+
+
+def run_multi_city_evaluation_request(
+    run_index: int,
+    total_runs: int,
+    request: MultiCityEvaluationRunRequest,
+    learned_policy_config: LearnedPolicyConfig | None,
+    episode_runner: EpisodeRunner,
+) -> MultiCityEvaluationRunResult:
+    run_started_s = current_timer_s()
+    metrics = episode_runner(request, learned_policy_config)
+    return MultiCityEvaluationRunResult(
+        run_index=run_index,
+        total_runs=total_runs,
+        record=MultiCityEvaluationRecord(
+            city_name=request.city_name,
+            city_split=request.city_split,
+            policy=request.policy.value,
+            seed=request.seed,
+            demand_scale=request.demand_scale,
+            metrics=metrics,
+        ),
+        elapsed_s=current_timer_s() - run_started_s,
     )
 
 

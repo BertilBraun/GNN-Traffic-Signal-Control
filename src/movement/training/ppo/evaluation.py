@@ -62,6 +62,8 @@ def write_training_scalars(
     writer.add_scalar('episode/maximum_raw_reward', rollout_stats.maximum_raw_reward, iteration)
     writer.add_scalar('episode/mean_local_delay_density', rollout_stats.mean_local_delay_density, iteration)
     writer.add_scalar('episode/mean_global_delay_density', rollout_stats.mean_global_delay_density, iteration)
+    writer.add_scalar('episode/mean_flow_rate_per_signal', rollout_stats.mean_flow_rate_per_signal, iteration)
+    writer.add_scalar('episode/mean_progress_density', rollout_stats.mean_progress_density, iteration)
     writer.add_scalar('episode/mean_speed_change_density', rollout_stats.mean_speed_change_density, iteration)
     writer.add_scalar('episode/mean_return', diagnostics.mean_return, iteration)
     writer.add_scalar('episode/return_standard_deviation', diagnostics.return_standard_deviation, iteration)
@@ -180,6 +182,7 @@ def run_multi_city_training_evaluation(
             episode_runner=default_episode_runner,
         ),
         backend_kind=config.sumo_backend,
+        worker_count=config.num_workers,
     )
     write_multi_city_evaluation_scalars(
         writer=writer,

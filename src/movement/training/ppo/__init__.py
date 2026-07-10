@@ -119,14 +119,7 @@ def maybe_evaluate_initial_policy(
     state: PpoTrainingState,
     writer: SummaryWriter,
 ) -> None:
-    if state.completed_iteration != 0:
-        return
-    maybe_evaluate_iteration(
-        config=config,
-        state=state,
-        writer=writer,
-        iteration=0,
-    )
+    return
 
 
 def validate_config(config: MovementPpoConfig) -> None:
@@ -142,6 +135,12 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('speed_change_weight must not be negative.')
     if config.flow_reward_weight < 0.0:
         raise ValueError('flow_reward_weight must not be negative.')
+    if config.throughput_reward_weight < 0.0:
+        raise ValueError('throughput_reward_weight must not be negative.')
+    if config.progress_reward_weight < 0.0:
+        raise ValueError('progress_reward_weight must not be negative.')
+    if config.gridlock_penalty_weight < 0.0:
+        raise ValueError('gridlock_penalty_weight must not be negative.')
     if config.reward_sample_interval <= 0:
         raise ValueError('reward_sample_interval must be positive.')
     if config.reward_sample_interval > config.decision_interval:
@@ -392,6 +391,8 @@ def write_city_rollout_scalars(
         writer.add_scalar(f'{tag_prefix}/teleport_count', stats.teleport_count, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_local_delay_density', stats.mean_local_delay_density, iteration)
         writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', stats.mean_local_delay_density, iteration)
+        writer.add_scalar(f'{tag_prefix}/mean_flow_rate_per_signal', stats.mean_flow_rate_per_signal, iteration)
+        writer.add_scalar(f'{tag_prefix}/mean_progress_density', stats.mean_progress_density, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_demand_scale', stats.mean_demand_scale, iteration)
 
 
@@ -452,6 +453,8 @@ def print_iteration_summary(
         f'entropy={update_stats.entropy:.4f} '
         f'norm_entropy={rollout_stats.normalized_entropy:.3f} '
         f'top_p={rollout_stats.mean_top_action_probability:.3f} '
+        f'flow={rollout_stats.mean_flow_rate_per_signal:.4f} '
+        f'progress={rollout_stats.mean_progress_density:.4f} '
         f'speedchg={rollout_stats.mean_speed_change_density:.4f} '
         f'demand={rollout_stats.mean_demand_scale:.2f}'
         f'[{rollout_stats.minimum_demand_scale:.2f}, {rollout_stats.maximum_demand_scale:.2f}] '

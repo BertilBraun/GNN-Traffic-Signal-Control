@@ -23,7 +23,6 @@ from src.movement.features import (
     movement_control_state_from_targets,
 )
 from src.movement.initial_traffic import (
-    InitialTrafficPopulation,
     generate_initial_traffic_population,
     sample_target_occupancy,
 )
@@ -347,6 +346,12 @@ def collect_computed_rollout(
         use_discounted_return_targets=warming_up,
         bootstrap_values=rollout.bootstrap_values,
     )
+    print_finished_rollout(
+        rollout_seed=rollout_seed,
+        city_name=rollout_city.city_name,
+        demand_scale=rollout.stats.mean_demand_scale,
+        stats=rollout.stats,
+    )
     return CollectedRollout(
         buffer=rollout.buffer,
         stats=rollout.stats,
@@ -414,12 +419,6 @@ def collect_rollout(
             programs=runtime.programs,
         )
         context_build_seconds = perf_counter() - context_started
-        print_initial_population(
-            rollout_seed=rollout_seed,
-            city_name=rollout_city.city_name,
-            initial_population=initial_population,
-            demand_scale=demand_scale,
-        )
         rollout = collect_runtime_rollout(
             config=config,
             runtime=runtime,
@@ -622,6 +621,10 @@ def collect_decision_transition(
         decision_interval=config.decision_interval,
         global_reward_weight=config.global_reward_weight,
         flow_reward_weight=config.flow_reward_weight,
+        reward_mode=config.reward_mode,
+        throughput_reward_weight=config.throughput_reward_weight,
+        progress_reward_weight=config.progress_reward_weight,
+        gridlock_penalty_weight=config.gridlock_penalty_weight,
         speed_change_weight=config.speed_change_weight,
         reward_sample_interval=config.reward_sample_interval,
         reward_clip=config.reward_clip,
@@ -729,16 +732,22 @@ def sample_demand_scale(demand_scale_min: float, demand_scale_max: float, seed: 
     return Random(seed).uniform(demand_scale_min, demand_scale_max)
 
 
-def print_initial_population(
+def print_finished_rollout(
     rollout_seed: int,
     city_name: str,
-    initial_population: InitialTrafficPopulation,
     demand_scale: float,
+    stats: RolloutStats,
 ) -> None:
     print(
-        f'  rollout city={city_name} seed={rollout_seed} '
+        f'  rollout finished city={city_name} seed={rollout_seed} '
         f'demand_scale={demand_scale:.3f} '
-        f'initial_occupancy={initial_population.target_occupancy:.3f} '
-        f'initial_vehicles={initial_population.generated_vehicle_count}/'
-        f'{initial_population.requested_vehicle_count}'
+        f'decisions={stats.decision_step_count} '
+        f'sim_steps={stats.simulated_step_count} '
+        f'wall={stats.simulation_elapsed_s:.1f}s '
+        f'sumo_step={stats.reward_sumo_step_seconds:.1f}s '
+        f'reward={stats.mean_reward:+.4f} '
+        f'flow={stats.mean_flow_rate_per_signal:.4f} '
+        f'progress={stats.mean_progress_density:.4f} '
+        f'wait_density={stats.mean_local_delay_density:.4f} '
+        f'teleports={stats.teleport_count}'
     )

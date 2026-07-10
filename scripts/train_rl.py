@@ -27,7 +27,7 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
-from src.movement.training.ppo.types import RolloutCity
+from src.movement.training.ppo.types import PpoRewardMode, RolloutCity
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 DEFAULT_ITERATIONS = 300
@@ -40,6 +40,13 @@ DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
 DEFAULT_UPDATE_BATCH_WORKERS = 0
 DEFAULT_REWARD_SAMPLE_INTERVAL = 5
+DEFAULT_REWARD_MODE = PpoRewardMode.DELAY_DENSITY
+DEFAULT_GLOBAL_REWARD_WEIGHT = 0.1
+DEFAULT_FLOW_REWARD_WEIGHT = 0.1
+DEFAULT_THROUGHPUT_REWARD_WEIGHT = 1.0
+DEFAULT_PROGRESS_REWARD_WEIGHT = 0.03
+DEFAULT_GRIDLOCK_PENALTY_WEIGHT = 0.02
+DEFAULT_SPEED_CHANGE_WEIGHT = 0.02
 DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_SAVE_EVERY = 10
@@ -81,6 +88,11 @@ def parse_args() -> argparse.Namespace:
     )
     initialization = parser.add_mutually_exclusive_group(required=True)
     initialization.add_argument('--il-checkpoint', type=Path, help='IL movement checkpoint for a new PPO run')
+    initialization.add_argument(
+        '--scratch-checkpoint',
+        type=Path,
+        help='Movement checkpoint used only for architecture and normalizers; PPO weights start random',
+    )
     initialization.add_argument(
         '--resume-checkpoint',
         type=Path,
@@ -165,17 +177,46 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help='Maximum rollout demand multiplier sampled per rollout',
     )
-    parser.add_argument('--global-reward-weight', type=float, default=0.1, help='Global delay-density reward weight')
+    parser.add_argument(
+        '--global-reward-weight',
+        type=float,
+        default=DEFAULT_GLOBAL_REWARD_WEIGHT,
+        help='Global delay-density reward weight',
+    )
+    parser.add_argument(
+        '--reward-mode',
+        choices=tuple(mode.value for mode in PpoRewardMode),
+        default=DEFAULT_REWARD_MODE.value,
+        help='PPO rollout reward formula',
+    )
     parser.add_argument(
         '--flow-reward-weight',
         type=float,
-        default=0.1,
+        default=DEFAULT_FLOW_REWARD_WEIGHT,
         help='Global arrived-vehicle flow reward weight normalized per signal and simulated second',
+    )
+    parser.add_argument(
+        '--throughput-reward-weight',
+        type=float,
+        default=DEFAULT_THROUGHPUT_REWARD_WEIGHT,
+        help='Throughput-mode reward weight for vehicles arriving during the decision interval',
+    )
+    parser.add_argument(
+        '--progress-reward-weight',
+        type=float,
+        default=DEFAULT_PROGRESS_REWARD_WEIGHT,
+        help='Throughput-mode dense progress weight from local lane speed fractions',
+    )
+    parser.add_argument(
+        '--gridlock-penalty-weight',
+        type=float,
+        default=DEFAULT_GRIDLOCK_PENALTY_WEIGHT,
+        help='Throughput-mode local/global delay-density penalty weight',
     )
     parser.add_argument(
         '--speed-change-weight',
         type=float,
-        default=0.02,
+        default=DEFAULT_SPEED_CHANGE_WEIGHT,
         help='Auxiliary penalty weight for lane mean-speed changes on incoming lanes',
     )
     parser.add_argument(
@@ -259,6 +300,12 @@ def cli_option_was_passed(option_name: str, arguments: Sequence[str]) -> bool:
     return any(argument == option_name or argument.startswith(option_prefix) for argument in arguments)
 
 
+def initialization_checkpoint_path(args: argparse.Namespace) -> Path | None:
+    if args.scratch_checkpoint is not None:
+        return args.scratch_checkpoint
+    return args.il_checkpoint
+
+
 def main() -> None:
     install_timestamped_prints()
     args = parse_args()
@@ -275,7 +322,8 @@ def main() -> None:
     result = train_movement_ppo(
         MovementPpoConfig(
             cfg_path=cfg_path(args, experiment_configuration),
-            il_checkpoint_path=args.il_checkpoint,
+            il_checkpoint_path=initialization_checkpoint_path(args),
+            scratch_initialization=args.scratch_checkpoint is not None,
             iterations=ppo_settings.iterations,
             steps_per_rollout=ppo_settings.steps_per_rollout,
             rollouts_per_update=rollout_count,
@@ -297,9 +345,13 @@ def main() -> None:
             min_green_steps=args.min_green_steps,
             demand_scale_min=demand_scale_min,
             demand_scale_max=demand_scale_max,
-            global_reward_weight=args.global_reward_weight,
-            flow_reward_weight=args.flow_reward_weight,
-            speed_change_weight=args.speed_change_weight,
+            global_reward_weight=global_reward_weight(args, experiment_configuration),
+            flow_reward_weight=flow_reward_weight(args, experiment_configuration),
+            reward_mode=reward_mode(args, experiment_configuration),
+            throughput_reward_weight=throughput_reward_weight(args, experiment_configuration),
+            progress_reward_weight=progress_reward_weight(args, experiment_configuration),
+            gridlock_penalty_weight=gridlock_penalty_weight(args, experiment_configuration),
+            speed_change_weight=speed_change_weight(args, experiment_configuration),
             reward_sample_interval=reward_sample_interval(args, experiment_configuration),
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
@@ -473,6 +525,69 @@ def reward_sample_interval(
     if experiment_configuration is not None and args.reward_sample_interval == DEFAULT_REWARD_SAMPLE_INTERVAL:
         return experiment_configuration.proximal_policy_optimization.reward_sample_interval
     return args.reward_sample_interval
+
+
+def reward_mode(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> PpoRewardMode:
+    if experiment_configuration is not None and args.reward_mode == DEFAULT_REWARD_MODE.value:
+        return PpoRewardMode(experiment_configuration.proximal_policy_optimization.reward_mode.value)
+    return PpoRewardMode(args.reward_mode)
+
+
+def global_reward_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.global_reward_weight == DEFAULT_GLOBAL_REWARD_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.global_reward_weight
+    return args.global_reward_weight
+
+
+def flow_reward_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.flow_reward_weight == DEFAULT_FLOW_REWARD_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.flow_reward_weight
+    return args.flow_reward_weight
+
+
+def throughput_reward_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.throughput_reward_weight == DEFAULT_THROUGHPUT_REWARD_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.throughput_reward_weight
+    return args.throughput_reward_weight
+
+
+def progress_reward_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.progress_reward_weight == DEFAULT_PROGRESS_REWARD_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.progress_reward_weight
+    return args.progress_reward_weight
+
+
+def gridlock_penalty_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.gridlock_penalty_weight == DEFAULT_GRIDLOCK_PENALTY_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.gridlock_penalty_weight
+    return args.gridlock_penalty_weight
+
+
+def speed_change_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.speed_change_weight == DEFAULT_SPEED_CHANGE_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.speed_change_weight
+    return args.speed_change_weight
 
 
 def num_workers(

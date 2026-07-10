@@ -9,7 +9,7 @@ import torch
 
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.normalization import RunningNormalizer
-from src.movement.training.il.checkpoint import MovementCheckpointMetadata
+from src.movement.training.il.checkpoint import MovementCheckpointMetadata, load_movement_checkpoint
 from src.movement.training.normalizer_state import normalizer_from_state
 from src.movement.training.ppo.checkpoint import (
     load_actor_critic,
@@ -64,6 +64,17 @@ def initialize_from_il_checkpoint(
 ) -> tuple[MovementActorCritic, MovementCheckpointMetadata]:
     if config.il_checkpoint_path is None:
         raise ValueError('il_checkpoint_path is required when resume_checkpoint_path is not set.')
+    if config.scratch_initialization:
+        _scorer, metadata = load_movement_checkpoint(config.il_checkpoint_path, device=config.device)
+        model = MovementActorCritic(
+            lane_feature_dim=metadata.lane_feature_dim,
+            movement_feature_dim=metadata.movement_feature_dim,
+            hidden_dim=metadata.hidden_dim,
+            num_hops=metadata.num_hops,
+        )
+        model.to(torch.device(config.device))
+        zero_value_output(model)
+        return model, metadata
     model, metadata = load_actor_critic(config.il_checkpoint_path, device=config.device)
     zero_value_output(model)
     return model, metadata

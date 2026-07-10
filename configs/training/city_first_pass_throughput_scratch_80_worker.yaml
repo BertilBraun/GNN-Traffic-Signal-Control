@@ -1,0 +1,82 @@
+name: city_first_pass_throughput_scratch_80_worker
+
+cities:
+  - name: karlsruhe_oststadt
+    split: train
+    sumo_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg
+    build_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml
+    rollout_jobs_per_iteration: 20
+    rollout_priority: 2
+  - name: mannheim_innenstadt
+    split: train
+    sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
+    build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
+    rollout_jobs_per_iteration: 20
+    rollout_priority: 4
+  - name: stuttgart_mitte
+    split: train
+    sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
+    build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
+    rollout_jobs_per_iteration: 20
+    rollout_priority: 5
+    train_scale_min: 0.8
+    train_scale_max: 1.05
+  - name: heidelberg_bergheim
+    split: train
+    sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
+    build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
+    rollout_jobs_per_iteration: 20
+    rollout_priority: 3
+  - name: freiburg_altstadt
+    split: held_out
+    sumo_config: configs/freiburg_altstadt/freiburg_altstadt.sumocfg
+    build_config: configs/freiburg_altstadt/freiburg_altstadt.build.yaml
+    rollout_jobs_per_iteration: 0
+    rollout_priority: 0
+
+simulation:
+  decision_interval: 10
+  time_to_teleport: -1
+  yellow_duration: 3
+  min_green_steps: 2
+  initial_occupancy_min: 0.05
+  initial_occupancy_max: 0.08
+
+demand:
+  train_scale_min: 0.8
+  train_scale_max: 1.2
+  eval_scales: [1.0]
+
+imitation_learning:
+  samples_per_city: 9600
+  samples_per_simulation: 80
+  collection_workers: 4
+  epochs: 20
+  samples_per_batch: 128
+  phase_loss_coefficient: 1.0
+
+ppo:
+  iterations: 1000
+  steps_per_rollout: 300
+  rollouts_per_update: 80
+  rollout_workers: 80
+  update_epochs: 2
+  value_warmup_iterations: 10
+  warmup_epochs: 2
+  transitions_per_batch: 2048
+  update_batch_workers: 0
+  reward_sample_interval: 5
+  reward_mode: throughput
+  global_reward_weight: 0.2
+  flow_reward_weight: 0.0
+  throughput_reward_weight: 1.0
+  progress_reward_weight: 0.03
+  gridlock_penalty_weight: 0.02
+  speed_change_weight: 0.005
+  eval_every_iterations: 10
+  save_every_iterations: 1
+
+evaluation:
+  policies: [learned, max-pressure, queue]
+  seeds: [100, 101]
+  steps: 800

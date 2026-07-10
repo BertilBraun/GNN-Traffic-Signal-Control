@@ -18,6 +18,8 @@ class RolloutMetrics:
     raw_rewards: list[float]
     local_delay_densities: list[float]
     global_delay_densities: list[float]
+    flow_rates_per_signal: list[float]
+    progress_densities: list[float]
     speed_change_densities: list[float]
     normalized_entropies: list[float]
     top_action_probabilities: list[float]
@@ -50,6 +52,8 @@ class RolloutMetrics:
         self.raw_rewards = []
         self.local_delay_densities = []
         self.global_delay_densities = []
+        self.flow_rates_per_signal = []
+        self.progress_densities = []
         self.speed_change_densities = []
         self.normalized_entropies = []
         self.top_action_probabilities = []
@@ -102,6 +106,8 @@ class RolloutMetrics:
         self.raw_rewards.extend(interval_reward.raw_rewards)
         self.local_delay_densities.extend(interval_reward.local_delay_densities)
         self.global_delay_densities.append(interval_reward.global_delay_density)
+        self.flow_rates_per_signal.append(interval_reward.flow_rate_per_signal)
+        self.progress_densities.extend(interval_reward.progress_densities)
         self.speed_change_densities.extend(interval_reward.speed_change_densities)
         self.reward_sumo_step_seconds += interval_reward.reward_sumo_step_seconds
         self.reward_lane_query_seconds += interval_reward.reward_lane_query_seconds
@@ -155,6 +161,8 @@ class RolloutMetrics:
             ),
             mean_local_delay_density=sum(self.local_delay_densities) / max(1, len(self.local_delay_densities)),
             mean_global_delay_density=sum(self.global_delay_densities) / max(1, len(self.global_delay_densities)),
+            mean_flow_rate_per_signal=sum(self.flow_rates_per_signal) / max(1, len(self.flow_rates_per_signal)),
+            mean_progress_density=sum(self.progress_densities) / max(1, len(self.progress_densities)),
             mean_speed_change_density=sum(self.speed_change_densities) / max(1, len(self.speed_change_densities)),
             normalized_entropy=sum(self.normalized_entropies) / max(1, len(self.normalized_entropies)),
             mean_top_action_probability=sum(self.top_action_probabilities) / max(1, len(self.top_action_probabilities)),

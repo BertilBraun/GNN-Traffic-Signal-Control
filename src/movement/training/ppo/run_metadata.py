@@ -31,6 +31,7 @@ class PpoRunMetadata(BaseModel):
     experiment_configuration_path: str | None
     experiment_configuration_sha256: str | None
     resume_checkpoint_path: str | None
+    scratch_initialization: bool
     checkpoint_dir: str
     log_dir: str
     iterations: int
@@ -43,6 +44,13 @@ class PpoRunMetadata(BaseModel):
     steps_per_rollout: int
     demand_scale_min: float
     demand_scale_max: float
+    reward_mode: str
+    global_reward_weight: float
+    flow_reward_weight: float
+    throughput_reward_weight: float
+    progress_reward_weight: float
+    gridlock_penalty_weight: float
+    speed_change_weight: float
     evaluation_every_iterations: int
     evaluation_steps: int
     evaluation_seeds: tuple[int, ...]
@@ -65,6 +73,7 @@ def build_run_metadata(
         resume_checkpoint_path=str(config.resume_checkpoint_path)
         if config.resume_checkpoint_path is not None
         else None,
+        scratch_initialization=config.scratch_initialization,
         checkpoint_dir=str(config.checkpoint_dir),
         log_dir=str(config.log_dir),
         iterations=config.iterations,
@@ -77,6 +86,13 @@ def build_run_metadata(
         steps_per_rollout=config.steps_per_rollout,
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
+        reward_mode=config.reward_mode.value,
+        global_reward_weight=config.global_reward_weight,
+        flow_reward_weight=config.flow_reward_weight,
+        throughput_reward_weight=config.throughput_reward_weight,
+        progress_reward_weight=config.progress_reward_weight,
+        gridlock_penalty_weight=config.gridlock_penalty_weight,
+        speed_change_weight=config.speed_change_weight,
         evaluation_every_iterations=config.eval_every,
         evaluation_steps=config.eval_steps,
         evaluation_seeds=config.eval_seeds,
