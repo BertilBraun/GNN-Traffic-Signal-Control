@@ -72,7 +72,7 @@ ppo:
   global_reward_weight: 0.2
   flow_reward_weight: 0.0
   throughput_reward_weight: 1.0
-  progress_reward_weight: 0.15
+  progress_reward_weight: 0.25
   gridlock_penalty_weight: 0.08
   speed_change_weight: 0.005
   eval_every_iterations: 5
