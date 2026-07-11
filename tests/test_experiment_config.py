@@ -59,7 +59,7 @@ def test_throughput_scratch_config_uses_sampled_learned_eval() -> None:
     )
     assert configuration.proximal_policy_optimization.evaluation_learned_temperature == 1.0
     assert configuration.proximal_policy_optimization.steps_per_rollout == 350
-    assert configuration.proximal_policy_optimization.progress_reward_weight == 0.05
+    assert configuration.proximal_policy_optimization.progress_reward_weight == 0.15
     assert configuration.proximal_policy_optimization.gridlock_penalty_weight == 0.08
 
 
