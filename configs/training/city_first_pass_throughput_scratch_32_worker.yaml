@@ -13,6 +13,8 @@ cities:
     build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
     rollout_jobs_per_iteration: 10
     rollout_priority: 4
+    train_scale_min: 0.8
+    train_scale_max: 1.05
   - name: stuttgart_mitte
     split: train
     sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
@@ -61,7 +63,7 @@ ppo:
   rollouts_per_update: 40
   rollout_workers: 32
   update_epochs: 2
-  value_warmup_iterations: 10
+  value_warmup_iterations: 0
   warmup_epochs: 2
   transitions_per_batch: 2048
   update_batch_workers: 0
@@ -81,4 +83,4 @@ ppo:
 evaluation:
   policies: [learned, max-pressure, queue]
   seeds: [100, 101, 102, 103, 104, 105]
-  steps: 800
+  steps: 500
