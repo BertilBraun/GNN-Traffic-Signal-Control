@@ -174,6 +174,8 @@ def validate_config(config: MovementPpoConfig) -> None:
             raise ValueError('scratch num_hops must not be negative.')
     if not config.eval_learned_device:
         raise ValueError('eval_learned_device must not be empty.')
+    if config.eval_learned_temperature <= 0.0:
+        raise ValueError('eval_learned_temperature must be positive.')
     if not config.eval_demand_scales:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:

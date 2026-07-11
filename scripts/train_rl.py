@@ -19,7 +19,7 @@ os.environ['MKL_NUM_THREADS'] = '1'
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.movement.evaluation import EvaluationPolicy
+from src.movement.evaluation import EvaluationPolicy, LearnedEvaluationActionMode
 from src.movement.experiment_config import (
     ExperimentConfiguration,
     load_experiment_configuration,
@@ -51,6 +51,8 @@ DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_EVAL_WORKERS = 1
 DEFAULT_EVAL_LEARNED_DEVICE = 'cpu'
+DEFAULT_EVAL_LEARNED_ACTION_MODE = LearnedEvaluationActionMode.DETERMINISTIC
+DEFAULT_EVAL_LEARNED_TEMPERATURE = 1.0
 DEFAULT_SAVE_EVERY = 10
 DEFAULT_SCRATCH_LANE_FEATURE_DIM = 29
 DEFAULT_SCRATCH_MOVEMENT_FEATURE_DIM = 4
@@ -71,6 +73,8 @@ class PpoCommandSettings:
     eval_every: int
     eval_workers: int
     eval_learned_device: str
+    eval_learned_action_mode: LearnedEvaluationActionMode
+    eval_learned_temperature: float
     save_every: int
 
 
@@ -284,6 +288,18 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_EVAL_LEARNED_DEVICE,
         help='Torch device used by learned policy evaluation workers',
     )
+    parser.add_argument(
+        '--eval-learned-action-mode',
+        choices=tuple(mode.value for mode in LearnedEvaluationActionMode),
+        default=DEFAULT_EVAL_LEARNED_ACTION_MODE.value,
+        help='Action selection used by learned policy evaluation',
+    )
+    parser.add_argument(
+        '--eval-learned-temperature',
+        type=float,
+        default=DEFAULT_EVAL_LEARNED_TEMPERATURE,
+        help='Softmax temperature for sampled learned policy evaluation',
+    )
     parser.add_argument('--eval-steps', type=int, default=None, help='Evaluation simulation seconds')
     parser.add_argument('--eval-seeds', nargs='+', type=int, default=None, help='Evaluation SUMO seeds')
     parser.add_argument(
@@ -428,6 +444,8 @@ def main() -> None:
             eval_policies=evaluation_policies(args, experiment_configuration),
             eval_worker_count=ppo_settings.eval_workers,
             eval_learned_device=ppo_settings.eval_learned_device,
+            eval_learned_action_mode=ppo_settings.eval_learned_action_mode,
+            eval_learned_temperature=ppo_settings.eval_learned_temperature,
             eval_demand_scale=evaluation_demand_scale(args),
             eval_demand_scales=evaluation_demand_scales(args, experiment_configuration),
             save_every=ppo_settings.save_every,
@@ -517,6 +535,8 @@ def ppo_command_settings(
             eval_every=args.eval_every if args.eval_every is not None else DEFAULT_EVAL_EVERY,
             eval_workers=args.eval_workers,
             eval_learned_device=args.eval_learned_device,
+            eval_learned_action_mode=LearnedEvaluationActionMode(args.eval_learned_action_mode),
+            eval_learned_temperature=args.eval_learned_temperature,
             save_every=args.save_every,
         )
     ppo = experiment_configuration.proximal_policy_optimization
@@ -549,8 +569,30 @@ def ppo_command_settings(
             if args.eval_learned_device == DEFAULT_EVAL_LEARNED_DEVICE
             else args.eval_learned_device
         ),
+        eval_learned_action_mode=eval_learned_action_mode(args, experiment_configuration),
+        eval_learned_temperature=eval_learned_temperature(args, experiment_configuration),
         save_every=ppo.save_every_iterations if args.save_every == DEFAULT_SAVE_EVERY else args.save_every,
     )
+
+
+def eval_learned_action_mode(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration,
+) -> LearnedEvaluationActionMode:
+    if args.eval_learned_action_mode == DEFAULT_EVAL_LEARNED_ACTION_MODE.value:
+        return LearnedEvaluationActionMode(
+            experiment_configuration.proximal_policy_optimization.evaluation_learned_action_mode.value
+        )
+    return LearnedEvaluationActionMode(args.eval_learned_action_mode)
+
+
+def eval_learned_temperature(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration,
+) -> float:
+    if args.eval_learned_temperature == DEFAULT_EVAL_LEARNED_TEMPERATURE:
+        return experiment_configuration.proximal_policy_optimization.evaluation_learned_temperature
+    return args.eval_learned_temperature
 
 
 def experiment_rollout_cities(

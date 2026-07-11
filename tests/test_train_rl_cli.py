@@ -6,7 +6,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts import train_rl
-from src.movement.evaluation import EvaluationPolicy
+from src.movement.evaluation import EvaluationPolicy, LearnedEvaluationActionMode
 from src.movement.experiment_config import CitySplit
 
 
@@ -40,6 +40,10 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '3',
             '--eval-learned-device',
             'cpu',
+            '--eval-learned-action-mode',
+            'sample',
+            '--eval-learned-temperature',
+            '0.7',
             '--gui',
             '--initial-occupancy-min',
             '0.15',
@@ -74,6 +78,8 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.eval_demand_scale == 0.75
     assert args.eval_workers == 3
     assert args.eval_learned_device == 'cpu'
+    assert args.eval_learned_action_mode == 'sample'
+    assert args.eval_learned_temperature == 0.7
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
     assert args.initial_occupancy_max == 0.25
@@ -191,6 +197,8 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.eval_every is None
     assert args.eval_workers == 1
     assert args.eval_learned_device == 'cpu'
+    assert args.eval_learned_action_mode == 'deterministic'
+    assert args.eval_learned_temperature == 1.0
     assert args.scratch_lane_feature_dim == 29
     assert args.scratch_movement_feature_dim == 4
     assert args.scratch_hidden_dim == 64
@@ -336,6 +344,8 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.eval_every == 0
     assert settings.eval_workers == 1
     assert settings.eval_learned_device == 'cpu'
+    assert settings.eval_learned_action_mode == LearnedEvaluationActionMode.DETERMINISTIC
+    assert settings.eval_learned_temperature == 1.0
     assert settings.save_every == 1
     assert train_rl.rollouts_per_update(args, experiment_configuration) == 30
     assert train_rl.num_workers(args, experiment_configuration) == 20
@@ -408,6 +418,10 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
             '4',
             '--eval-learned-device',
             'cuda',
+            '--eval-learned-action-mode',
+            'sample',
+            '--eval-learned-temperature',
+            '0.8',
         ],
     )
 
@@ -422,6 +436,8 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.eval_every == 10
     assert settings.eval_workers == 4
     assert settings.eval_learned_device == 'cuda'
+    assert settings.eval_learned_action_mode == LearnedEvaluationActionMode.SAMPLE
+    assert settings.eval_learned_temperature == 0.8
     assert train_rl.evaluation_steps(args, experiment_configuration) == 300
     assert train_rl.evaluation_seeds(args, experiment_configuration) == (7, 8)
     assert train_rl.evaluation_policies(args, experiment_configuration) == (

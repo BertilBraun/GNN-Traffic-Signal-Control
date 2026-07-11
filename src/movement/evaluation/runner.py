@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+import math
 from pathlib import Path
+import random
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -50,10 +52,17 @@ class EvaluationPolicy(str, Enum):
     LEARNED = 'learned'
 
 
+class LearnedEvaluationActionMode(str, Enum):
+    DETERMINISTIC = 'deterministic'
+    SAMPLE = 'sample'
+
+
 @dataclass(frozen=True)
 class LearnedPolicyConfig:
     checkpoint_path: Path
     device: str
+    action_mode: LearnedEvaluationActionMode = LearnedEvaluationActionMode.DETERMINISTIC
+    temperature: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,9 @@ class LearnedPolicyContext:
     vehicle_snapshot_collector: VehicleSnapshotCollector
     lane_flow_tracker: LaneGroupFlowTracker
     device: str
+    action_mode: LearnedEvaluationActionMode
+    temperature: float
+    random_generator: random.Random
 
 
 @dataclass(frozen=True)
@@ -190,6 +202,7 @@ def run_evaluation_episode(
             decision_interval=decision_interval,
             net_path=net_path,
             vehicle_api=vehicle_api,
+            seed=seed,
         )
         baseline_context = _baseline_context(
             policy=policy,
@@ -421,11 +434,14 @@ def _learned_context(
     decision_interval: int,
     net_path: Path,
     vehicle_api: VehicleApi,
+    seed: int,
 ) -> LearnedPolicyContext | None:
     if policy != EvaluationPolicy.LEARNED:
         return None
     if learned_policy_config is None:
         raise ValueError('learned_policy_config is required for learned evaluation.')
+    if learned_policy_config.temperature <= 0.0:
+        raise ValueError('learned evaluation temperature must be positive.')
     model, metadata = load_movement_checkpoint(
         learned_policy_config.checkpoint_path,
         device=learned_policy_config.device,
@@ -446,6 +462,9 @@ def _learned_context(
             decision_interval_s=decision_interval,
         ),
         device=learned_policy_config.device,
+        action_mode=learned_policy_config.action_mode,
+        temperature=learned_policy_config.temperature,
+        random_generator=random.Random(seed + 17_213),
     )
 
 
@@ -496,6 +515,9 @@ def _learned_states(
         programs=programs,
         graph=learned_context.graph,
         movement_scores=movement_scores,
+        action_mode=learned_context.action_mode,
+        temperature=learned_context.temperature,
+        random_generator=learned_context.random_generator,
     )
 
 
@@ -503,20 +525,60 @@ def _graph_score_states(
     programs: Mapping[str, TrafficLightProgram],
     graph: MovementGraph,
     movement_scores: Sequence[float],
+    action_mode: LearnedEvaluationActionMode = LearnedEvaluationActionMode.DETERMINISTIC,
+    temperature: float = 1.0,
+    random_generator: random.Random | None = None,
 ) -> dict[str, str]:
+    if temperature <= 0.0:
+        raise ValueError('learned evaluation temperature must be positive.')
+    if action_mode == LearnedEvaluationActionMode.SAMPLE and random_generator is None:
+        raise ValueError('random_generator is required for sampled learned evaluation.')
     states: dict[str, str] = {}
     for traffic_light_id, program in programs.items():
         incidence = graph.phase_incidences[program.traffic_light_id]
         movement_ids = tuple(int(value) for value in incidence.movement_ids)
-        best_local_index = 0
-        best_score = _phase_score(incidence.rows[0], movement_ids, movement_scores)
-        for local_index, row in enumerate(incidence.rows[1:], start=1):
-            score = _phase_score(row, movement_ids, movement_scores)
-            if score > best_score:
-                best_local_index = local_index
-                best_score = score
-        states[traffic_light_id] = program.selectable_phases[best_local_index].state
+        phase_scores = tuple(_phase_score(row, movement_ids, movement_scores) for row in incidence.rows)
+        match action_mode:
+            case LearnedEvaluationActionMode.DETERMINISTIC:
+                local_index = _best_phase_index(phase_scores)
+            case LearnedEvaluationActionMode.SAMPLE:
+                assert random_generator is not None
+                local_index = _sample_phase_index(
+                    phase_scores=phase_scores,
+                    temperature=temperature,
+                    random_generator=random_generator,
+                )
+        states[traffic_light_id] = program.selectable_phases[local_index].state
     return states
+
+
+def _best_phase_index(phase_scores: Sequence[float]) -> int:
+    best_local_index = 0
+    best_score = phase_scores[0]
+    for local_index, score in enumerate(phase_scores[1:], start=1):
+        if score > best_score:
+            best_local_index = local_index
+            best_score = score
+    return best_local_index
+
+
+def _sample_phase_index(
+    phase_scores: Sequence[float],
+    temperature: float,
+    random_generator: random.Random,
+) -> int:
+    if temperature <= 0.0:
+        raise ValueError('learned evaluation temperature must be positive.')
+    maximum_score = max(phase_scores)
+    weights = tuple(math.exp((score - maximum_score) / temperature) for score in phase_scores)
+    total_weight = sum(weights)
+    threshold = random_generator.random() * total_weight
+    cumulative_weight = 0.0
+    for local_index, weight in enumerate(weights):
+        cumulative_weight += weight
+        if cumulative_weight >= threshold:
+            return local_index
+    return len(weights) - 1
 
 
 def _phase_score(

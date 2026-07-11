@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 from torch.optim.optimizer import StateDict
 
-from src.movement.evaluation import EvaluationPolicy
+from src.movement.evaluation import EvaluationPolicy, LearnedEvaluationActionMode
 from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.features import LaneGroupGeometry
 from src.movement.graph_schema import MovementGraph
@@ -97,6 +97,8 @@ class MovementPpoConfig:
     eval_policies: tuple[EvaluationPolicy, ...]
     eval_worker_count: int
     eval_learned_device: str
+    eval_learned_action_mode: LearnedEvaluationActionMode
+    eval_learned_temperature: float
     eval_demand_scale: float
     eval_demand_scales: tuple[float, ...]
     save_every: int

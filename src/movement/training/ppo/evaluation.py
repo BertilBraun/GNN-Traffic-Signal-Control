@@ -122,6 +122,8 @@ def run_training_evaluation(
         learned_policy_config = LearnedPolicyConfig(
             checkpoint_path=checkpoint_path,
             device=config.eval_learned_device,
+            action_mode=config.eval_learned_action_mode,
+            temperature=config.eval_learned_temperature,
         )
         if config.experiment_configuration is not None:
             return run_multi_city_training_evaluation(

@@ -25,6 +25,11 @@ class ExperimentPpoRewardMode(str, Enum):
     THROUGHPUT = 'throughput'
 
 
+class ExperimentLearnedEvaluationActionMode(str, Enum):
+    DETERMINISTIC = 'deterministic'
+    SAMPLE = 'sample'
+
+
 class ExperimentCityConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -133,6 +138,11 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')
     evaluation_workers: int = Field(gt=0, default=1, alias='eval_workers')
     evaluation_learned_device: str = Field(min_length=1, default='cpu', alias='eval_learned_device')
+    evaluation_learned_action_mode: ExperimentLearnedEvaluationActionMode = Field(
+        default=ExperimentLearnedEvaluationActionMode.DETERMINISTIC,
+        alias='eval_learned_action_mode',
+    )
+    evaluation_learned_temperature: float = Field(gt=0.0, default=1.0, alias='eval_learned_temperature')
     save_every_iterations: int = Field(gt=0)
 
 

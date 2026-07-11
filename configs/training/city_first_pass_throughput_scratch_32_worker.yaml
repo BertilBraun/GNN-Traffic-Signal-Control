@@ -59,7 +59,7 @@ imitation_learning:
 
 ppo:
   iterations: 1000
-  steps_per_rollout: 300
+  steps_per_rollout: 350
   rollouts_per_update: 40
   rollout_workers: 32
   update_epochs: 2
@@ -72,12 +72,14 @@ ppo:
   global_reward_weight: 0.2
   flow_reward_weight: 0.0
   throughput_reward_weight: 1.0
-  progress_reward_weight: 0.03
-  gridlock_penalty_weight: 0.02
+  progress_reward_weight: 0.05
+  gridlock_penalty_weight: 0.08
   speed_change_weight: 0.005
   eval_every_iterations: 5
   eval_workers: 32
   eval_learned_device: cpu
+  eval_learned_action_mode: sample
+  eval_learned_temperature: 1.0
   save_every_iterations: 1
 
 evaluation:

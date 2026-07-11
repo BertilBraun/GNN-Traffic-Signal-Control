@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 from src.movement.experiment_config import (  # noqa: E402
     CitySplit,
     ExperimentEvaluationPolicy,
+    ExperimentLearnedEvaluationActionMode,
     load_experiment_configuration,
 )
 
@@ -37,6 +38,29 @@ def test_valid_city_first_pass_config_loads() -> None:
         ExperimentEvaluationPolicy.MAX_PRESSURE,
         ExperimentEvaluationPolicy.QUEUE,
     )
+    assert (
+        configuration.proximal_policy_optimization.evaluation_learned_action_mode
+        == ExperimentLearnedEvaluationActionMode.DETERMINISTIC
+    )
+    assert configuration.proximal_policy_optimization.evaluation_learned_temperature == 1.0
+
+
+def test_throughput_scratch_config_uses_sampled_learned_eval() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert (
+        configuration.proximal_policy_optimization.evaluation_learned_action_mode
+        == ExperimentLearnedEvaluationActionMode.SAMPLE
+    )
+    assert configuration.proximal_policy_optimization.evaluation_learned_temperature == 1.0
+    assert configuration.proximal_policy_optimization.steps_per_rollout == 350
+    assert configuration.proximal_policy_optimization.progress_reward_weight == 0.05
+    assert configuration.proximal_policy_optimization.gridlock_penalty_weight == 0.08
 
 
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:

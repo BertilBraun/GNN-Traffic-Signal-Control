@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, StoredPhaseIncidence
-from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy
+from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy, LearnedEvaluationActionMode
 from src.movement.evaluation import LearnedPolicyConfig
 from src.movement.evaluation.multi_city import (
     FileCachedEpisodeRunner,
@@ -1026,6 +1026,8 @@ def _ppo_config(
         eval_policies=(EvaluationPolicy.MAX_PRESSURE,),
         eval_worker_count=1,
         eval_learned_device='cpu',
+        eval_learned_action_mode=LearnedEvaluationActionMode.DETERMINISTIC,
+        eval_learned_temperature=1.0,
         eval_demand_scale=1.0,
         eval_demand_scales=(1.0,),
         save_every=10,

@@ -61,6 +61,8 @@ class PpoRunMetadata(BaseModel):
     evaluation_seeds: tuple[int, ...]
     evaluation_workers: int
     evaluation_learned_device: str
+    evaluation_learned_action_mode: str
+    evaluation_learned_temperature: float
     evaluation_demand_scales: tuple[float, ...]
     evaluation_policies: tuple[str, ...]
     rollout_cities: tuple[PpoRunCityMetadata, ...]
@@ -118,6 +120,8 @@ def build_run_metadata(
         evaluation_seeds=config.eval_seeds,
         evaluation_workers=config.eval_worker_count,
         evaluation_learned_device=config.eval_learned_device,
+        evaluation_learned_action_mode=config.eval_learned_action_mode.value,
+        evaluation_learned_temperature=config.eval_learned_temperature,
         evaluation_demand_scales=config.eval_demand_scales,
         evaluation_policies=tuple(policy.value for policy in config.eval_policies),
         rollout_cities=tuple(city_metadata(city=city) for city in config.rollout_cities),

@@ -14,7 +14,7 @@ from .display import (
     print_evaluation_result,
     print_evaluation_start,
 )
-from .runner import EvaluationPolicy, LearnedPolicyConfig, run_evaluation_episode
+from .runner import EvaluationPolicy, LearnedEvaluationActionMode, LearnedPolicyConfig, run_evaluation_episode
 from .multi_city import (
     MultiCityEvaluationAggregate,
     MultiCityEvaluationRecord,
@@ -34,6 +34,7 @@ __all__ = [
     'EvaluationMetrics',
     'EvaluationPolicy',
     'EvaluationRecord',
+    'LearnedEvaluationActionMode',
     'LearnedPolicyConfig',
     'MultiCityEvaluationAggregate',
     'MultiCityEvaluationRecord',
