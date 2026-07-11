@@ -42,3 +42,18 @@ def test_sample_phase_index_rejects_non_positive_temperature() -> None:
             temperature=0.0,
             random_generator=random.Random(123),
         )
+
+
+def test_sample_phase_index_respects_candidate_indices() -> None:
+    random_generator = random.Random(456)
+    samples = tuple(
+        _sample_phase_index(
+            phase_scores=(0.0, 1.0, 2.0),
+            temperature=1.0,
+            random_generator=random_generator,
+            candidate_indices=(0, 1),
+        )
+        for _sample_index in range(20)
+    )
+
+    assert set(samples) <= {0, 1}

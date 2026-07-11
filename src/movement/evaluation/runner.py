@@ -216,6 +216,7 @@ def run_evaluation_episode(
             if (step - 1) % decision_interval == 0:
                 desired_states = _desired_states(
                     policy=policy,
+                    runtime=runtime,
                     programs=runtime.programs,
                     baseline_context=baseline_context,
                     learned_context=learned_context,
@@ -333,6 +334,7 @@ def lane_inputs_from_net(
 
 def _desired_states(
     policy: EvaluationPolicy,
+    runtime: MovementControlRuntime,
     programs: Mapping[str, TrafficLightProgram],
     baseline_context: BaselinePolicyContext | None,
     learned_context: LearnedPolicyContext | None,
@@ -355,6 +357,10 @@ def _desired_states(
                 programs=programs,
                 learned_context=learned_context,
                 control_state=control_state,
+                allowed_target_states_by_traffic_light={
+                    traffic_light_id: frozenset(runtime.allowed_target_states(traffic_light_id))
+                    for traffic_light_id in programs
+                },
             )
 
 
@@ -472,6 +478,7 @@ def _learned_states(
     programs: Mapping[str, TrafficLightProgram],
     learned_context: LearnedPolicyContext,
     control_state: MovementControlState,
+    allowed_target_states_by_traffic_light: Mapping[str, frozenset[str]],
 ) -> dict[str, str]:
     vehicles = learned_context.vehicle_snapshot_collector.capture()
     vehicle_index = build_vehicle_feature_index(
@@ -518,6 +525,7 @@ def _learned_states(
         action_mode=learned_context.action_mode,
         temperature=learned_context.temperature,
         random_generator=learned_context.random_generator,
+        allowed_target_states_by_traffic_light=allowed_target_states_by_traffic_light,
     )
 
 
@@ -528,6 +536,7 @@ def _graph_score_states(
     action_mode: LearnedEvaluationActionMode = LearnedEvaluationActionMode.DETERMINISTIC,
     temperature: float = 1.0,
     random_generator: random.Random | None = None,
+    allowed_target_states_by_traffic_light: Mapping[str, frozenset[str]] | None = None,
 ) -> dict[str, str]:
     if temperature <= 0.0:
         raise ValueError('learned evaluation temperature must be positive.')
@@ -538,24 +547,40 @@ def _graph_score_states(
         incidence = graph.phase_incidences[program.traffic_light_id]
         movement_ids = tuple(int(value) for value in incidence.movement_ids)
         phase_scores = tuple(_phase_score(row, movement_ids, movement_scores) for row in incidence.rows)
+        allowed_states = (
+            allowed_target_states_by_traffic_light[traffic_light_id]
+            if allowed_target_states_by_traffic_light is not None
+            else frozenset(str(phase.state) for phase in program.selectable_phases)
+        )
+        allowed_phase_indices = tuple(
+            local_index
+            for local_index, phase in enumerate(program.selectable_phases)
+            if str(phase.state) in allowed_states
+        )
+        if not allowed_phase_indices:
+            raise ValueError(f'No selectable phase is currently allowed for traffic light {traffic_light_id!r}.')
         match action_mode:
             case LearnedEvaluationActionMode.DETERMINISTIC:
-                local_index = _best_phase_index(phase_scores)
+                local_index = _best_phase_index(phase_scores, allowed_phase_indices)
             case LearnedEvaluationActionMode.SAMPLE:
                 assert random_generator is not None
                 local_index = _sample_phase_index(
                     phase_scores=phase_scores,
                     temperature=temperature,
                     random_generator=random_generator,
+                    candidate_indices=allowed_phase_indices,
                 )
         states[traffic_light_id] = program.selectable_phases[local_index].state
     return states
 
 
-def _best_phase_index(phase_scores: Sequence[float]) -> int:
-    best_local_index = 0
-    best_score = phase_scores[0]
-    for local_index, score in enumerate(phase_scores[1:], start=1):
+def _best_phase_index(phase_scores: Sequence[float], candidate_indices: Sequence[int]) -> int:
+    if not candidate_indices:
+        raise ValueError('candidate_indices must not be empty.')
+    best_local_index = candidate_indices[0]
+    best_score = phase_scores[best_local_index]
+    for local_index in candidate_indices[1:]:
+        score = phase_scores[local_index]
         if score > best_score:
             best_local_index = local_index
             best_score = score
@@ -566,19 +591,25 @@ def _sample_phase_index(
     phase_scores: Sequence[float],
     temperature: float,
     random_generator: random.Random,
+    candidate_indices: Sequence[int] | None = None,
 ) -> int:
     if temperature <= 0.0:
         raise ValueError('learned evaluation temperature must be positive.')
-    maximum_score = max(phase_scores)
-    weights = tuple(math.exp((score - maximum_score) / temperature) for score in phase_scores)
+    eligible_indices = tuple(candidate_indices) if candidate_indices is not None else tuple(range(len(phase_scores)))
+    if not eligible_indices:
+        raise ValueError('candidate_indices must not be empty.')
+    maximum_score = max(phase_scores[local_index] for local_index in eligible_indices)
+    weights = tuple(
+        math.exp((phase_scores[local_index] - maximum_score) / temperature) for local_index in eligible_indices
+    )
     total_weight = sum(weights)
     threshold = random_generator.random() * total_weight
     cumulative_weight = 0.0
-    for local_index, weight in enumerate(weights):
+    for local_index, weight in zip(eligible_indices, weights):
         cumulative_weight += weight
         if cumulative_weight >= threshold:
             return local_index
-    return len(weights) - 1
+    return eligible_indices[-1]
 
 
 def _phase_score(
