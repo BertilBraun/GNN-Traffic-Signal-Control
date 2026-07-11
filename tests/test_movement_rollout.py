@@ -968,7 +968,6 @@ def _ppo_config(
         eval_seeds=(42,),
         eval_policies=(EvaluationPolicy.MAX_PRESSURE,),
         eval_worker_count=1,
-        learned_eval_worker_count=1,
         eval_learned_device='cpu',
         eval_demand_scale=1.0,
         eval_demand_scales=(1.0,),

@@ -132,7 +132,6 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     speed_change_weight: float = Field(ge=0.0, default=0.02)
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')
     evaluation_workers: int = Field(gt=0, default=1, alias='eval_workers')
-    learned_evaluation_workers: int = Field(gt=0, default=1, alias='learned_eval_workers')
     evaluation_learned_device: str = Field(min_length=1, default='cpu', alias='eval_learned_device')
     save_every_iterations: int = Field(gt=0)
 

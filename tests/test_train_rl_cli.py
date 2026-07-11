@@ -38,8 +38,6 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '0.75',
             '--eval-workers',
             '3',
-            '--learned-eval-workers',
-            '1',
             '--eval-learned-device',
             'cpu',
             '--gui',
@@ -75,7 +73,6 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.demand_scale_max == 0.85
     assert args.eval_demand_scale == 0.75
     assert args.eval_workers == 3
-    assert args.learned_eval_workers == 1
     assert args.eval_learned_device == 'cpu'
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
@@ -161,7 +158,6 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.eval_policies is None
     assert args.eval_every is None
     assert args.eval_workers == 1
-    assert args.learned_eval_workers == 1
     assert args.eval_learned_device == 'cpu'
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
@@ -303,7 +299,6 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.transitions_per_batch == 256
     assert settings.eval_every == 0
     assert settings.eval_workers == 1
-    assert settings.learned_eval_workers == 1
     assert settings.eval_learned_device == 'cpu'
     assert settings.save_every == 1
     assert train_rl.rollouts_per_update(args, experiment_configuration) == 30
@@ -375,8 +370,6 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
             '1.0',
             '--eval-workers',
             '4',
-            '--learned-eval-workers',
-            '2',
             '--eval-learned-device',
             'cuda',
         ],
@@ -392,7 +385,6 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.update_epochs == 1
     assert settings.eval_every == 10
     assert settings.eval_workers == 4
-    assert settings.learned_eval_workers == 2
     assert settings.eval_learned_device == 'cuda'
     assert train_rl.evaluation_steps(args, experiment_configuration) == 300
     assert train_rl.evaluation_seeds(args, experiment_configuration) == (7, 8)

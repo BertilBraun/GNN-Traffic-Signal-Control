@@ -87,7 +87,6 @@ class MovementPpoConfig:
     eval_seeds: tuple[int, ...]
     eval_policies: tuple[EvaluationPolicy, ...]
     eval_worker_count: int
-    learned_eval_worker_count: int
     eval_learned_device: str
     eval_demand_scale: float
     eval_demand_scales: tuple[float, ...]

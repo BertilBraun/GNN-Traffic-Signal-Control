@@ -1,23 +1,23 @@
-name: city_first_pass_throughput_scratch_80_worker
+name: city_first_pass_throughput_scratch_32_worker
 
 cities:
   - name: karlsruhe_oststadt
     split: train
     sumo_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg
     build_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml
-    rollout_jobs_per_iteration: 20
+    rollout_jobs_per_iteration: 10
     rollout_priority: 2
   - name: mannheim_innenstadt
     split: train
     sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
     build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
-    rollout_jobs_per_iteration: 20
+    rollout_jobs_per_iteration: 10
     rollout_priority: 4
   - name: stuttgart_mitte
     split: train
     sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
     build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
-    rollout_jobs_per_iteration: 20
+    rollout_jobs_per_iteration: 10
     rollout_priority: 5
     train_scale_min: 0.8
     train_scale_max: 1.05
@@ -25,7 +25,7 @@ cities:
     split: train
     sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
     build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
-    rollout_jobs_per_iteration: 20
+    rollout_jobs_per_iteration: 10
     rollout_priority: 3
   - name: freiburg_altstadt
     split: held_out
@@ -58,8 +58,8 @@ imitation_learning:
 ppo:
   iterations: 1000
   steps_per_rollout: 300
-  rollouts_per_update: 80
-  rollout_workers: 80
+  rollouts_per_update: 40
+  rollout_workers: 32
   update_epochs: 2
   value_warmup_iterations: 10
   warmup_epochs: 2
