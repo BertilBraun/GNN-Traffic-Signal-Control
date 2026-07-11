@@ -56,6 +56,7 @@ __all__ = [
 
 NUMBERED_CHECKPOINT_RETENTION = 5
 NUMBERED_CHECKPOINT_PATTERN = re.compile(r'^movement_ppo_iter_(\d+)\.pt$')
+EVAL_CHECKPOINT_PATTERN = re.compile(r'^movement_ppo_eval_iter_(\d+)\.pt$')
 
 
 @dataclass(frozen=True)
@@ -522,6 +523,7 @@ def maybe_evaluate_iteration(
         iteration=iteration,
         writer=writer,
     )
+    save_eval_outputs(config=config, state=state, iteration=iteration)
     if is_best_checkpoint(evaluation_result.learned_checkpoint_score, state.best_checkpoint_score):
         assert evaluation_result.learned_checkpoint_score is not None
         state.best_checkpoint_score = evaluation_result.learned_checkpoint_score
@@ -552,6 +554,29 @@ def save_best_outputs(config: MovementPpoConfig, state: PpoTrainingState, iterat
         model=state.model,
         metadata=state.metadata,
         loss=0.0,
+    )
+
+
+def save_eval_outputs(config: MovementPpoConfig, state: PpoTrainingState, iteration: int) -> None:
+    save_ppo_checkpoint(
+        path=config.checkpoint_dir / f'movement_ppo_eval_iter_{iteration:04d}.pt',
+        model=state.model,
+        optimizer=state.optimizer,
+        metadata=state.metadata,
+        iteration=iteration,
+        best_checkpoint_score=state.best_checkpoint_score,
+        experiment_configuration_sha256=config.experiment_configuration_sha256,
+        experiment_configuration_text=config.experiment_configuration_text,
+    )
+    save_actor_checkpoint(
+        path=config.checkpoint_dir / f'movement_policy_eval_iter_{iteration:04d}.pt',
+        model=state.model,
+        metadata=state.metadata,
+        loss=0.0,
+    )
+    prune_eval_checkpoints(
+        checkpoint_dir=config.checkpoint_dir,
+        retention_count=NUMBERED_CHECKPOINT_RETENTION,
     )
 
 
@@ -589,6 +614,26 @@ def numbered_checkpoint_iteration(checkpoint_path: Path) -> int:
     match_result = NUMBERED_CHECKPOINT_PATTERN.match(checkpoint_path.name)
     if match_result is None:
         raise ValueError(f'invalid numbered PPO checkpoint path: {checkpoint_path}')
+    return int(match_result.group(1))
+
+
+def prune_eval_checkpoints(checkpoint_dir: Path, retention_count: int) -> None:
+    if retention_count <= 0:
+        raise ValueError('retention_count must be positive.')
+    eval_checkpoints = sorted(
+        checkpoint_dir.glob('movement_ppo_eval_iter_*.pt'),
+        key=eval_checkpoint_iteration,
+    )
+    for checkpoint_path in eval_checkpoints[:-retention_count]:
+        actor_checkpoint_path = checkpoint_dir / checkpoint_path.name.replace('movement_ppo_', 'movement_policy_')
+        checkpoint_path.unlink()
+        actor_checkpoint_path.unlink(missing_ok=True)
+
+
+def eval_checkpoint_iteration(checkpoint_path: Path) -> int:
+    match_result = EVAL_CHECKPOINT_PATTERN.match(checkpoint_path.name)
+    if match_result is None:
+        raise ValueError(f'invalid eval PPO checkpoint path: {checkpoint_path}')
     return int(match_result.group(1))
 
 

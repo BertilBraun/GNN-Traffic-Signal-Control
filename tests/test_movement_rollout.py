@@ -21,7 +21,12 @@ from src.movement.experiment_config import CitySplit
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
-from src.movement.training.ppo import configure_sumo_backend_environment, prune_numbered_checkpoints, validate_config
+from src.movement.training.ppo import (
+    configure_sumo_backend_environment,
+    prune_eval_checkpoints,
+    prune_numbered_checkpoints,
+    validate_config,
+)
 from src.movement.training.ppo.batch import ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
@@ -545,6 +550,27 @@ def test_numbered_checkpoint_retention_keeps_latest_iterations(tmp_path: Path) -
         'movement_ppo_iter_0007.pt',
     )
     assert (tmp_path / 'movement_ppo_latest.pt').exists()
+
+
+def test_eval_checkpoint_retention_keeps_latest_eval_iterations(tmp_path: Path) -> None:
+    for iteration in range(0, 30, 5):
+        (tmp_path / f'movement_ppo_eval_iter_{iteration:04d}.pt').write_text(str(iteration), encoding='utf-8')
+        (tmp_path / f'movement_policy_eval_iter_{iteration:04d}.pt').write_text(str(iteration), encoding='utf-8')
+
+    prune_eval_checkpoints(checkpoint_dir=tmp_path, retention_count=3)
+
+    remaining_ppo_checkpoints = tuple(sorted(path.name for path in tmp_path.glob('movement_ppo_eval_iter_*.pt')))
+    remaining_policy_checkpoints = tuple(sorted(path.name for path in tmp_path.glob('movement_policy_eval_iter_*.pt')))
+    assert remaining_ppo_checkpoints == (
+        'movement_ppo_eval_iter_0015.pt',
+        'movement_ppo_eval_iter_0020.pt',
+        'movement_ppo_eval_iter_0025.pt',
+    )
+    assert remaining_policy_checkpoints == (
+        'movement_policy_eval_iter_0015.pt',
+        'movement_policy_eval_iter_0020.pt',
+        'movement_policy_eval_iter_0025.pt',
+    )
 
 
 def test_effective_rollout_cities_keeps_single_city_default() -> None:
