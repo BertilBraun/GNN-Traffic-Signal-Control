@@ -107,6 +107,38 @@ def test_train_rl_cli_accepts_resume_checkpoint(monkeypatch) -> None:
     assert args.allow_resume_config_mismatch is False
 
 
+def test_train_rl_cli_accepts_random_scratch_initialization(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--scratch-random',
+            '--scratch-lane-feature-dim',
+            '29',
+            '--scratch-movement-feature-dim',
+            '4',
+            '--scratch-hidden-dim',
+            '64',
+            '--scratch-num-hops',
+            '1',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    scratch_config = train_rl.scratch_model_config(args)
+
+    assert args.il_checkpoint is None
+    assert args.scratch_checkpoint is None
+    assert args.scratch_random is True
+    assert train_rl.initialization_checkpoint_path(args) is None
+    assert scratch_config is not None
+    assert scratch_config.lane_feature_dim == 29
+    assert scratch_config.movement_feature_dim == 4
+    assert scratch_config.hidden_dim == 64
+    assert scratch_config.num_hops == 1
+
+
 def test_train_rl_cli_accepts_resume_config_mismatch_override(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
@@ -159,6 +191,10 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.eval_every is None
     assert args.eval_workers == 1
     assert args.eval_learned_device == 'cpu'
+    assert args.scratch_lane_feature_dim == 29
+    assert args.scratch_movement_feature_dim == 4
+    assert args.scratch_hidden_dim == 64
+    assert args.scratch_num_hops == 1
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1

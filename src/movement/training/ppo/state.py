@@ -10,6 +10,8 @@ import torch
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.normalization import RunningNormalizer
 from src.movement.training.il.checkpoint import MovementCheckpointMetadata, load_movement_checkpoint
+from src.movement.training.il.types import MovementILTrainingConfig
+from src.movement.training.normalizer_state import NormalizerState
 from src.movement.training.normalizer_state import normalizer_from_state
 from src.movement.training.ppo.checkpoint import (
     load_actor_critic,
@@ -62,6 +64,8 @@ def initialize_training_state(config: MovementPpoConfig) -> PpoTrainingState:
 def initialize_from_il_checkpoint(
     config: MovementPpoConfig,
 ) -> tuple[MovementActorCritic, MovementCheckpointMetadata]:
+    if config.scratch_model_config is not None:
+        return initialize_from_random_scratch(config)
     if config.il_checkpoint_path is None:
         raise ValueError('il_checkpoint_path is required when resume_checkpoint_path is not set.')
     if config.scratch_initialization:
@@ -78,6 +82,48 @@ def initialize_from_il_checkpoint(
     model, metadata = load_actor_critic(config.il_checkpoint_path, device=config.device)
     zero_value_output(model)
     return model, metadata
+
+
+def initialize_from_random_scratch(
+    config: MovementPpoConfig,
+) -> tuple[MovementActorCritic, MovementCheckpointMetadata]:
+    assert config.scratch_model_config is not None
+    scratch_model_config = config.scratch_model_config
+    model = MovementActorCritic(
+        lane_feature_dim=scratch_model_config.lane_feature_dim,
+        movement_feature_dim=scratch_model_config.movement_feature_dim,
+        hidden_dim=scratch_model_config.hidden_dim,
+        num_hops=scratch_model_config.num_hops,
+    )
+    model.to(torch.device(config.device))
+    zero_value_output(model)
+    metadata = MovementCheckpointMetadata(
+        lane_feature_dim=scratch_model_config.lane_feature_dim,
+        movement_feature_dim=scratch_model_config.movement_feature_dim,
+        hidden_dim=scratch_model_config.hidden_dim,
+        num_hops=scratch_model_config.num_hops,
+        lane_normalizer=identity_normalizer_state(scratch_model_config.lane_feature_dim),
+        movement_normalizer=identity_normalizer_state(scratch_model_config.movement_feature_dim),
+        config=MovementILTrainingConfig(
+            hidden_dim=scratch_model_config.hidden_dim,
+            num_hops=scratch_model_config.num_hops,
+            checkpoint_dir='checkpoints/il/random_scratch',
+            device='cpu',
+        ),
+    )
+    return model, metadata
+
+
+def identity_normalizer_state(feature_dim: int) -> NormalizerState:
+    if feature_dim <= 0:
+        raise ValueError('feature_dim must be positive.')
+    return NormalizerState(
+        count=2,
+        mean=tuple(0.0 for _ in range(feature_dim)),
+        squared_differences=tuple(2.0 for _ in range(feature_dim)),
+        frozen=True,
+        epsilon=1e-8,
+    )
 
 
 def initialize_from_ppo_checkpoint(

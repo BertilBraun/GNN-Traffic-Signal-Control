@@ -40,9 +40,18 @@ class RolloutCity:
 
 
 @dataclass(frozen=True)
+class ScratchModelConfig:
+    lane_feature_dim: int
+    movement_feature_dim: int
+    hidden_dim: int
+    num_hops: int
+
+
+@dataclass(frozen=True)
 class MovementPpoConfig:
     cfg_path: Path
     il_checkpoint_path: Path | None
+    scratch_model_config: ScratchModelConfig | None
     scratch_initialization: bool
     iterations: int
     steps_per_rollout: int

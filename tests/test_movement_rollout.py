@@ -42,7 +42,11 @@ from src.movement.training.ppo.rollout import (
     save_serialized_rollout,
 )
 from src.movement.training.ppo.run_metadata import build_run_metadata, write_run_metadata
-from src.movement.training.ppo.state import cuda_random_states_for_restore, validate_resume_experiment_configuration
+from src.movement.training.ppo.state import (
+    cuda_random_states_for_restore,
+    initialize_from_random_scratch,
+    validate_resume_experiment_configuration,
+)
 from src.movement.training.ppo.types import (
     CollectedRollout,
     MovementPpoCheckpoint,
@@ -50,6 +54,7 @@ from src.movement.training.ppo.types import (
     PpoRewardMode,
     RolloutCity,
     RolloutStats,
+    ScratchModelConfig,
 )
 from src.movement.training.ppo.stats import standard_deviation, training_diagnostics
 from src.movement.training.ppo.update import gradient_norm
@@ -380,6 +385,31 @@ def test_cuda_random_states_for_restore_are_cpu_byte_tensors() -> None:
     assert all(state.device.type == 'cpu' for state in states)
     assert all(state.dtype == torch.uint8 for state in states)
     assert tuple(int(value) for value in states[0]) == (1, 2, 3)
+
+
+def test_random_scratch_initialization_uses_explicit_dimensions() -> None:
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        il_checkpoint_path=None,
+        scratch_model_config=ScratchModelConfig(
+            lane_feature_dim=29,
+            movement_feature_dim=4,
+            hidden_dim=64,
+            num_hops=1,
+        ),
+    )
+
+    model, metadata = initialize_from_random_scratch(config)
+
+    assert next(model.parameters()).device.type == 'cpu'
+    assert metadata.lane_feature_dim == 29
+    assert metadata.movement_feature_dim == 4
+    assert metadata.hidden_dim == 64
+    assert metadata.num_hops == 1
+    assert metadata.lane_normalizer.mean == tuple(0.0 for _ in range(29))
+    assert metadata.movement_normalizer.mean == tuple(0.0 for _ in range(4))
+    assert metadata.lane_normalizer.frozen is True
+    assert metadata.movement_normalizer.frozen is True
 
 
 def test_held_out_learned_score_ignores_train_city_aggregates() -> None:
@@ -924,6 +954,7 @@ def _ppo_config(
     return MovementPpoConfig(
         cfg_path=Path('grid.sumocfg'),
         il_checkpoint_path=Path('movement_policy.pt'),
+        scratch_model_config=None,
         scratch_initialization=False,
         iterations=2,
         steps_per_rollout=3,

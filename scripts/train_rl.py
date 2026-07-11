@@ -27,7 +27,7 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
-from src.movement.training.ppo.types import PpoRewardMode, RolloutCity
+from src.movement.training.ppo.types import PpoRewardMode, RolloutCity, ScratchModelConfig
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 DEFAULT_ITERATIONS = 300
@@ -52,6 +52,10 @@ DEFAULT_EVAL_EVERY = 10
 DEFAULT_EVAL_WORKERS = 1
 DEFAULT_EVAL_LEARNED_DEVICE = 'cpu'
 DEFAULT_SAVE_EVERY = 10
+DEFAULT_SCRATCH_LANE_FEATURE_DIM = 29
+DEFAULT_SCRATCH_MOVEMENT_FEATURE_DIM = 4
+DEFAULT_SCRATCH_HIDDEN_DIM = 64
+DEFAULT_SCRATCH_NUM_HOPS = 1
 ORIGINAL_PRINT = builtins.print
 
 
@@ -96,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         '--scratch-checkpoint',
         type=Path,
         help='Movement checkpoint used only for architecture and normalizers; PPO weights start random',
+    )
+    initialization.add_argument(
+        '--scratch-random',
+        action='store_true',
+        help='Start PPO from random actor-critic weights without loading any checkpoint',
     )
     initialization.add_argument(
         '--resume-checkpoint',
@@ -297,6 +306,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--device', default='cpu', help='Torch device')
     parser.add_argument('--seed', type=int, default=42, help='Torch and SUMO seed')
     parser.add_argument(
+        '--scratch-lane-feature-dim',
+        type=int,
+        default=DEFAULT_SCRATCH_LANE_FEATURE_DIM,
+        help='Lane feature dimension for --scratch-random',
+    )
+    parser.add_argument(
+        '--scratch-movement-feature-dim',
+        type=int,
+        default=DEFAULT_SCRATCH_MOVEMENT_FEATURE_DIM,
+        help='Movement feature dimension for --scratch-random',
+    )
+    parser.add_argument(
+        '--scratch-hidden-dim',
+        type=int,
+        default=DEFAULT_SCRATCH_HIDDEN_DIM,
+        help='GNN hidden dimension for --scratch-random',
+    )
+    parser.add_argument(
+        '--scratch-num-hops',
+        type=int,
+        default=DEFAULT_SCRATCH_NUM_HOPS,
+        help='GNN message-passing hops for --scratch-random',
+    )
+    parser.add_argument(
         '--fixed-rollout-seed',
         type=int,
         default=None,
@@ -321,6 +354,17 @@ def initialization_checkpoint_path(args: argparse.Namespace) -> Path | None:
     return args.il_checkpoint
 
 
+def scratch_model_config(args: argparse.Namespace) -> ScratchModelConfig | None:
+    if not args.scratch_random:
+        return None
+    return ScratchModelConfig(
+        lane_feature_dim=args.scratch_lane_feature_dim,
+        movement_feature_dim=args.scratch_movement_feature_dim,
+        hidden_dim=args.scratch_hidden_dim,
+        num_hops=args.scratch_num_hops,
+    )
+
+
 def main() -> None:
     install_timestamped_prints()
     args = parse_args()
@@ -338,6 +382,7 @@ def main() -> None:
         MovementPpoConfig(
             cfg_path=cfg_path(args, experiment_configuration),
             il_checkpoint_path=initialization_checkpoint_path(args),
+            scratch_model_config=scratch_model_config(args),
             scratch_initialization=args.scratch_checkpoint is not None,
             iterations=ppo_settings.iterations,
             steps_per_rollout=ppo_settings.steps_per_rollout,

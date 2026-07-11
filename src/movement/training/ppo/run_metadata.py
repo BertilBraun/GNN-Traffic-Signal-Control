@@ -32,6 +32,11 @@ class PpoRunMetadata(BaseModel):
     experiment_configuration_sha256: str | None
     resume_checkpoint_path: str | None
     scratch_initialization: bool
+    random_scratch_initialization: bool
+    random_scratch_lane_feature_dim: int | None
+    random_scratch_movement_feature_dim: int | None
+    random_scratch_hidden_dim: int | None
+    random_scratch_num_hops: int | None
     checkpoint_dir: str
     log_dir: str
     iterations: int
@@ -76,6 +81,19 @@ def build_run_metadata(
         if config.resume_checkpoint_path is not None
         else None,
         scratch_initialization=config.scratch_initialization,
+        random_scratch_initialization=config.scratch_model_config is not None,
+        random_scratch_lane_feature_dim=(
+            config.scratch_model_config.lane_feature_dim if config.scratch_model_config is not None else None
+        ),
+        random_scratch_movement_feature_dim=(
+            config.scratch_model_config.movement_feature_dim if config.scratch_model_config is not None else None
+        ),
+        random_scratch_hidden_dim=(
+            config.scratch_model_config.hidden_dim if config.scratch_model_config is not None else None
+        ),
+        random_scratch_num_hops=config.scratch_model_config.num_hops
+        if config.scratch_model_config is not None
+        else None,
         checkpoint_dir=str(config.checkpoint_dir),
         log_dir=str(config.log_dir),
         iterations=config.iterations,

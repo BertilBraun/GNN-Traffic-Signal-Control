@@ -119,7 +119,14 @@ def maybe_evaluate_initial_policy(
     state: PpoTrainingState,
     writer: SummaryWriter,
 ) -> None:
-    return
+    if config.eval_every <= 0 or state.completed_iteration != 0:
+        return
+    maybe_evaluate_iteration(
+        config=config,
+        state=state,
+        writer=writer,
+        iteration=0,
+    )
 
 
 def validate_config(config: MovementPpoConfig) -> None:
@@ -155,6 +162,15 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('update_batch_workers must not be negative.')
     if config.eval_worker_count <= 0:
         raise ValueError('eval_worker_count must be positive.')
+    if config.scratch_model_config is not None:
+        if config.scratch_model_config.lane_feature_dim <= 0:
+            raise ValueError('scratch lane_feature_dim must be positive.')
+        if config.scratch_model_config.movement_feature_dim <= 0:
+            raise ValueError('scratch movement_feature_dim must be positive.')
+        if config.scratch_model_config.hidden_dim <= 0:
+            raise ValueError('scratch hidden_dim must be positive.')
+        if config.scratch_model_config.num_hops < 0:
+            raise ValueError('scratch num_hops must not be negative.')
     if not config.eval_learned_device:
         raise ValueError('eval_learned_device must not be empty.')
     if not config.eval_demand_scales:
