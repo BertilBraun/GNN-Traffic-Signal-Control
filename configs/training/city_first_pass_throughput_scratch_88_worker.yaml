@@ -75,7 +75,7 @@ ppo:
   speed_change_weight: 0.005
   eval_every_iterations: 10
   eval_workers: 32
-  learned_eval_workers: 1
+  learned_eval_workers: 32
   eval_learned_device: cpu
   save_every_iterations: 1
 
