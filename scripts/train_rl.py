@@ -49,6 +49,9 @@ DEFAULT_GRIDLOCK_PENALTY_WEIGHT = 0.02
 DEFAULT_SPEED_CHANGE_WEIGHT = 0.02
 DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
+DEFAULT_EVAL_WORKERS = 1
+DEFAULT_LEARNED_EVAL_WORKERS = 1
+DEFAULT_EVAL_LEARNED_DEVICE = 'cpu'
 DEFAULT_SAVE_EVERY = 10
 ORIGINAL_PRINT = builtins.print
 
@@ -63,6 +66,9 @@ class PpoCommandSettings:
     transitions_per_batch: int
     update_batch_workers: int
     eval_every: int
+    eval_workers: int
+    learned_eval_workers: int
+    eval_learned_device: str
     save_every: int
 
 
@@ -260,6 +266,23 @@ def parse_args() -> argparse.Namespace:
         help='Maximum sampled initial network occupancy',
     )
     parser.add_argument('--eval-every', type=int, default=None, help='Evaluate every N iterations')
+    parser.add_argument(
+        '--eval-workers',
+        type=int,
+        default=DEFAULT_EVAL_WORKERS,
+        help='Parallel worker processes for cached baseline evaluation',
+    )
+    parser.add_argument(
+        '--learned-eval-workers',
+        type=int,
+        default=DEFAULT_LEARNED_EVAL_WORKERS,
+        help='Parallel worker processes for learned policy evaluation',
+    )
+    parser.add_argument(
+        '--eval-learned-device',
+        default=DEFAULT_EVAL_LEARNED_DEVICE,
+        help='Torch device used by learned policy evaluation workers',
+    )
     parser.add_argument('--eval-steps', type=int, default=None, help='Evaluation simulation seconds')
     parser.add_argument('--eval-seeds', nargs='+', type=int, default=None, help='Evaluation SUMO seeds')
     parser.add_argument(
@@ -366,6 +389,9 @@ def main() -> None:
             eval_steps=evaluation_steps(args, experiment_configuration),
             eval_seeds=evaluation_seeds(args, experiment_configuration),
             eval_policies=evaluation_policies(args, experiment_configuration),
+            eval_worker_count=ppo_settings.eval_workers,
+            learned_eval_worker_count=ppo_settings.learned_eval_workers,
+            eval_learned_device=ppo_settings.eval_learned_device,
             eval_demand_scale=evaluation_demand_scale(args),
             eval_demand_scales=evaluation_demand_scales(args, experiment_configuration),
             save_every=ppo_settings.save_every,
@@ -453,6 +479,9 @@ def ppo_command_settings(
             transitions_per_batch=args.transitions_per_batch,
             update_batch_workers=args.update_batch_workers,
             eval_every=args.eval_every if args.eval_every is not None else DEFAULT_EVAL_EVERY,
+            eval_workers=args.eval_workers,
+            learned_eval_workers=args.learned_eval_workers,
+            eval_learned_device=args.eval_learned_device,
             save_every=args.save_every,
         )
     ppo = experiment_configuration.proximal_policy_optimization
@@ -479,6 +508,17 @@ def ppo_command_settings(
             else args.update_batch_workers
         ),
         eval_every=ppo.evaluate_every_iterations if args.eval_every is None else args.eval_every,
+        eval_workers=ppo.evaluation_workers if args.eval_workers == DEFAULT_EVAL_WORKERS else args.eval_workers,
+        learned_eval_workers=(
+            ppo.learned_evaluation_workers
+            if args.learned_eval_workers == DEFAULT_LEARNED_EVAL_WORKERS
+            else args.learned_eval_workers
+        ),
+        eval_learned_device=(
+            ppo.evaluation_learned_device
+            if args.eval_learned_device == DEFAULT_EVAL_LEARNED_DEVICE
+            else args.eval_learned_device
+        ),
         save_every=ppo.save_every_iterations if args.save_every == DEFAULT_SAVE_EVERY else args.save_every,
     )
 

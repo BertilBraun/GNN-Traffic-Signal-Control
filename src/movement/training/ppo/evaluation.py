@@ -25,6 +25,7 @@ from src.movement.evaluation.multi_city import (
     FileCachedEpisodeRunner,
     MultiCityEvaluationAggregate,
     MultiCityEvaluationResult,
+    MultiCityEvaluationRecord,
     aggregate_multi_city_records,
     default_episode_runner,
     print_multi_city_summary,
@@ -121,7 +122,7 @@ def run_training_evaluation(
         )
         learned_policy_config = LearnedPolicyConfig(
             checkpoint_path=checkpoint_path,
-            device=config.device,
+            device=config.eval_learned_device,
         )
         if config.experiment_configuration is not None:
             return run_multi_city_training_evaluation(
@@ -169,20 +170,9 @@ def run_multi_city_training_evaluation(
 ) -> TrainingEvaluationResult:
     if config.experiment_configuration is None:
         raise ValueError('experiment_configuration is required for multi-city PPO evaluation')
-    result = run_multi_city_evaluation(
-        configuration=config.experiment_configuration,
-        project_root=config.project_root,
-        policies=config.eval_policies,
-        seeds=config.eval_seeds,
-        steps=config.eval_steps,
-        demand_scales=config.eval_demand_scales,
+    result = run_split_multi_city_evaluation(
+        config=config,
         learned_policy_config=learned_policy_config,
-        episode_runner=FileCachedEpisodeRunner(
-            cache_dir=config.project_root / '.cache' / 'evaluation',
-            episode_runner=default_episode_runner,
-        ),
-        backend_kind=config.sumo_backend,
-        worker_count=config.num_workers,
     )
     write_multi_city_evaluation_scalars(
         writer=writer,
@@ -200,6 +190,64 @@ def run_multi_city_training_evaluation(
             aggregates=result.aggregates,
             evaluation_steps=config.eval_steps,
         )
+    )
+
+
+def run_split_multi_city_evaluation(
+    config: MovementPpoConfig,
+    learned_policy_config: LearnedPolicyConfig,
+) -> MultiCityEvaluationResult:
+    baseline_policies = tuple(policy for policy in config.eval_policies if policy != EvaluationPolicy.LEARNED)
+    learned_result = run_policy_group_multi_city_evaluation(
+        config=config,
+        policies=(EvaluationPolicy.LEARNED,) if EvaluationPolicy.LEARNED in config.eval_policies else (),
+        learned_policy_config=learned_policy_config,
+        worker_count=config.learned_eval_worker_count,
+    )
+    baseline_result = run_policy_group_multi_city_evaluation(
+        config=config,
+        policies=baseline_policies,
+        learned_policy_config=None,
+        worker_count=config.eval_worker_count,
+    )
+    return combine_multi_city_results((learned_result, baseline_result))
+
+
+def run_policy_group_multi_city_evaluation(
+    config: MovementPpoConfig,
+    policies: tuple[EvaluationPolicy, ...],
+    learned_policy_config: LearnedPolicyConfig | None,
+    worker_count: int,
+) -> MultiCityEvaluationResult:
+    if config.experiment_configuration is None:
+        raise ValueError('experiment_configuration is required for multi-city PPO evaluation')
+    if not policies:
+        return MultiCityEvaluationResult(records=(), aggregates=())
+    return run_multi_city_evaluation(
+        configuration=config.experiment_configuration,
+        project_root=config.project_root,
+        policies=policies,
+        seeds=config.eval_seeds,
+        steps=config.eval_steps,
+        demand_scales=config.eval_demand_scales,
+        learned_policy_config=learned_policy_config,
+        episode_runner=FileCachedEpisodeRunner(
+            cache_dir=config.project_root / '.cache' / 'evaluation',
+            episode_runner=default_episode_runner,
+        ),
+        backend_kind=config.sumo_backend,
+        worker_count=worker_count,
+    )
+
+
+def combine_multi_city_results(results: Sequence[MultiCityEvaluationResult]) -> MultiCityEvaluationResult:
+    records: list[MultiCityEvaluationRecord] = []
+    for result in results:
+        records.extend(result.records)
+    combined_records = tuple(records)
+    return MultiCityEvaluationResult(
+        records=combined_records,
+        aggregates=aggregate_multi_city_records(combined_records),
     )
 
 

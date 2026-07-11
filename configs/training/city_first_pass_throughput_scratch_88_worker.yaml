@@ -74,6 +74,9 @@ ppo:
   gridlock_penalty_weight: 0.02
   speed_change_weight: 0.005
   eval_every_iterations: 10
+  eval_workers: 32
+  learned_eval_workers: 1
+  eval_learned_device: cpu
   save_every_iterations: 1
 
 evaluation:

@@ -36,6 +36,12 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '0.85',
             '--eval-demand-scale',
             '0.75',
+            '--eval-workers',
+            '3',
+            '--learned-eval-workers',
+            '1',
+            '--eval-learned-device',
+            'cpu',
             '--gui',
             '--initial-occupancy-min',
             '0.15',
@@ -68,6 +74,9 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.demand_scale_min == 0.4
     assert args.demand_scale_max == 0.85
     assert args.eval_demand_scale == 0.75
+    assert args.eval_workers == 3
+    assert args.learned_eval_workers == 1
+    assert args.eval_learned_device == 'cpu'
     assert args.gui is True
     assert args.initial_occupancy_min == 0.15
     assert args.initial_occupancy_max == 0.25
@@ -151,6 +160,9 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.eval_seeds is None
     assert args.eval_policies is None
     assert args.eval_every is None
+    assert args.eval_workers == 1
+    assert args.learned_eval_workers == 1
+    assert args.eval_learned_device == 'cpu'
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
     assert args.global_reward_weight == 0.1
@@ -284,26 +296,29 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     settings = train_rl.ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
 
     assert settings.iterations == 1000
-    assert settings.steps_per_rollout == 600
+    assert settings.steps_per_rollout == 500
     assert settings.update_epochs == 2
     assert settings.value_warmup_iterations == 2
     assert settings.warmup_epochs == 2
     assert settings.transitions_per_batch == 256
     assert settings.eval_every == 0
-    assert settings.save_every == 10
-    assert train_rl.rollouts_per_update(args, experiment_configuration) == 15
-    assert train_rl.num_workers(args, experiment_configuration) == 15
+    assert settings.eval_workers == 1
+    assert settings.learned_eval_workers == 1
+    assert settings.eval_learned_device == 'cpu'
+    assert settings.save_every == 1
+    assert train_rl.rollouts_per_update(args, experiment_configuration) == 30
+    assert train_rl.num_workers(args, experiment_configuration) == 20
     assert tuple(city.rollout_workers for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
-        5,
+        10,
         0,
-        5,
-        5,
+        10,
+        10,
     )
     assert tuple(city.rollout_priority for city in train_rl.experiment_rollout_cities(experiment_configuration)) == (
         2,
         3,
-        4,
         5,
+        4,
     )
 
 
@@ -358,6 +373,12 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
             'queue',
             '--eval-demand-scale',
             '1.0',
+            '--eval-workers',
+            '4',
+            '--learned-eval-workers',
+            '2',
+            '--eval-learned-device',
+            'cuda',
         ],
     )
 
@@ -370,6 +391,9 @@ def test_train_rl_cli_overrides_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.value_warmup_iterations == 1
     assert settings.update_epochs == 1
     assert settings.eval_every == 10
+    assert settings.eval_workers == 4
+    assert settings.learned_eval_workers == 2
+    assert settings.eval_learned_device == 'cuda'
     assert train_rl.evaluation_steps(args, experiment_configuration) == 300
     assert train_rl.evaluation_seeds(args, experiment_configuration) == (7, 8)
     assert train_rl.evaluation_policies(args, experiment_configuration) == (

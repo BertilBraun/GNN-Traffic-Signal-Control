@@ -153,6 +153,12 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('num_workers must be positive.')
     if config.update_batch_workers < 0:
         raise ValueError('update_batch_workers must not be negative.')
+    if config.eval_worker_count <= 0:
+        raise ValueError('eval_worker_count must be positive.')
+    if config.learned_eval_worker_count <= 0:
+        raise ValueError('learned_eval_worker_count must be positive.')
+    if not config.eval_learned_device:
+        raise ValueError('eval_learned_device must not be empty.')
     if not config.eval_demand_scales:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:
