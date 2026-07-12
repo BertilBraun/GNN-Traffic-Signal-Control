@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from math import cos, pi, sin
+from math import hypot
 from pathlib import Path
 import re
 
@@ -15,9 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GRID_REPORT = PROJECT_ROOT / 'reports' / 'movement_graph_3x3.html'
-DEFAULT_CITY_REPORT = PROJECT_ROOT / 'configs' / 'stuttgart_mitte' / 'reports' / 'movement_graph.html'
 DEFAULT_OUTPUT_DIRECTORY = PROJECT_ROOT / 'docs' / 'assets'
-DEFAULT_CITY_JUNCTION = 'cluster_1461415657_1461415710_1461415712_1461415724_#17more'
 GRAPH_DATA_PATTERN = re.compile(r'<script id="graph-data" type="application/json">(.*?)</script>', re.DOTALL)
 
 
@@ -45,6 +43,7 @@ class LaneGroup(BaseModel):
     lane_group_id: int
     from_junction_id: str
     to_junction_id: str
+    junction_ids: tuple[str, ...]
 
 
 class Movement(BaseModel):
@@ -69,8 +68,6 @@ class MovementGraphReport(BaseModel):
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--grid-report', type=Path, default=DEFAULT_GRID_REPORT)
-    parser.add_argument('--city-report', type=Path, default=DEFAULT_CITY_REPORT)
-    parser.add_argument('--city-junction', default=DEFAULT_CITY_JUNCTION)
     parser.add_argument('--output-dir', type=Path, default=DEFAULT_OUTPUT_DIRECTORY)
     return parser.parse_args()
 
@@ -95,18 +92,33 @@ def positions_by_lane_group(
     report: MovementGraphReport,
     junction_positions: dict[str, tuple[float, float]],
 ) -> dict[int, tuple[float, float]]:
-    return {
-        lane_group.lane_group_id: (
-            (junction_positions[lane_group.from_junction_id][0] + junction_positions[lane_group.to_junction_id][0]) / 2,
-            (junction_positions[lane_group.from_junction_id][1] + junction_positions[lane_group.to_junction_id][1]) / 2,
-        )
-        for lane_group in report.lane_groups
-    }
+    positions: dict[int, tuple[float, float]] = {}
+    for lane_group in report.lane_groups:
+        points = tuple(junction_positions[junction_id] for junction_id in lane_group.junction_ids)
+        segment_lengths = tuple(hypot(end[0] - start[0], end[1] - start[1]) for start, end in zip(points, points[1:]))
+        half_length = sum(segment_lengths) / 2
+        travelled = 0.0
+        for start, end, segment_length in zip(points, points[1:], segment_lengths):
+            if travelled + segment_length >= half_length:
+                ratio = (half_length - travelled) / segment_length if segment_length else 0.0
+                direction_x = end[0] - start[0]
+                direction_y = end[1] - start[1]
+                normalizer = max(1.0, segment_length)
+                positions[lane_group.lane_group_id] = (
+                    start[0] + direction_x * ratio - direction_y / normalizer * 5.0,
+                    start[1] + direction_y * ratio + direction_x / normalizer * 5.0,
+                )
+                break
+            travelled += segment_length
+        else:
+            positions[lane_group.lane_group_id] = points[0]
+    return positions
 
 
 def positions_by_movement(
     movements: tuple[Movement, ...],
     junction_positions: dict[str, tuple[float, float]],
+    lane_positions: dict[int, tuple[float, float]],
     radius: float,
 ) -> dict[int, tuple[float, float]]:
     positions: dict[int, tuple[float, float]] = {}
@@ -114,9 +126,23 @@ def positions_by_movement(
     for traffic_light_id in traffic_light_ids:
         local_movements = tuple(movement for movement in movements if movement.traffic_light_id == traffic_light_id)
         center_x, center_y = junction_positions[traffic_light_id]
-        for index, movement in enumerate(local_movements):
-            angle = 2 * pi * index / len(local_movements)
-            positions[movement.movement_id] = (center_x + radius * cos(angle), center_y + radius * sin(angle))
+        input_lane_group_ids = tuple(dict.fromkeys(movement.input_lane_group_id for movement in local_movements))
+        for input_lane_group_id in input_lane_group_ids:
+            same_input = tuple(
+                movement for movement in local_movements if movement.input_lane_group_id == input_lane_group_id
+            )
+            input_x, input_y = lane_positions[input_lane_group_id]
+            direction_x = input_x - center_x
+            direction_y = input_y - center_y
+            length = max(1.0, hypot(direction_x, direction_y))
+            unit_x = direction_x / length
+            unit_y = direction_y / length
+            for index, movement in enumerate(same_input):
+                tangent_offset = (index - (len(same_input) - 1) / 2) * 8.0
+                positions[movement.movement_id] = (
+                    center_x + unit_x * radius - unit_y * tangent_offset,
+                    center_y + unit_y * radius + unit_x * tangent_offset,
+                )
     return positions
 
 
@@ -147,7 +173,7 @@ def draw_graph(
 ) -> None:
     junction_positions = positions_by_junction(report)
     lane_positions = positions_by_lane_group(report, junction_positions)
-    movement_positions = positions_by_movement(movements, junction_positions, movement_radius)
+    movement_positions = positions_by_movement(movements, junction_positions, lane_positions, movement_radius)
     visible_roads = (
         report.roads
         if context_junction_ids is None
@@ -257,73 +283,12 @@ def plot_grid(report: MovementGraphReport, output_directory: Path) -> None:
     plt.close(figure)
 
 
-def plot_city_junction(
-    report: MovementGraphReport,
-    traffic_light_id: str,
-    output_directory: Path,
-) -> None:
-    movements = tuple(movement for movement in report.movements if movement.traffic_light_id == traffic_light_id)
-    if not movements:
-        raise ValueError(f'No movements found for city junction {traffic_light_id}.')
-    lane_group_ids = frozenset(
-        lane_group_id
-        for movement in movements
-        for lane_group_id in (movement.input_lane_group_id, movement.output_lane_group_id)
-    )
-    junction_positions = positions_by_junction(report)
-    lane_positions = positions_by_lane_group(report, junction_positions)
-    local_points = tuple(lane_positions[lane_group_id] for lane_group_id in lane_group_ids)
-    lane_groups_by_id = {lane_group.lane_group_id: lane_group for lane_group in report.lane_groups}
-    context_junction_ids = frozenset(
-        junction_id
-        for lane_group_id in lane_group_ids
-        for junction_id in (
-            lane_groups_by_id[lane_group_id].from_junction_id,
-            lane_groups_by_id[lane_group_id].to_junction_id,
-        )
-    ) | frozenset((traffic_light_id,))
-    center_x, center_y = junction_positions[traffic_light_id]
-    local_distances = tuple(max(abs(point[0] - center_x), abs(point[1] - center_y)) for point in local_points)
-    local_span = max(1.0, max(local_distances))
-    figure, axis = plt.subplots(figsize=(9.2, 7.6))
-    draw_graph(
-        axis,
-        report,
-        movements,
-        lane_group_ids,
-        movement_radius=local_span * 0.10,
-        show_all_junctions=True,
-        context_junction_ids=context_junction_ids,
-    )
-    visible_points = (*local_points, (center_x, center_y))
-    minimum_x = min(point[0] for point in visible_points)
-    maximum_x = max(point[0] for point in visible_points)
-    minimum_y = min(point[1] for point in visible_points)
-    maximum_y = max(point[1] for point in visible_points)
-    padding = max(maximum_x - minimum_x, maximum_y - minimum_y) * 0.12
-    axis.set_xlim(minimum_x - padding, maximum_x + padding)
-    axis.set_ylim(minimum_y - padding, maximum_y + padding)
-    junction = next(junction for junction in report.junctions if junction.junction_id == traffic_light_id)
-    approach_count = len({movement.input_lane_group_id for movement in movements})
-    exit_count = len({movement.output_lane_group_id for movement in movements})
-    axis.set_title(
-        'Irregular Stuttgart junction: '
-        f'{approach_count} inputs, {exit_count} outputs, {len(movements)} movements, '
-        f'{junction.selectable_phase_count} phases'
-    )
-    axis.legend(loc='lower center', ncols=3, frameon=False)
-    figure.savefig(output_directory / 'movement-graph-irregular-junction.png', bbox_inches='tight')
-    plt.close(figure)
-
-
 def main() -> None:
     arguments = parse_arguments()
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     configure_style()
     grid_report = load_report(arguments.grid_report)
-    city_report = load_report(arguments.city_report)
     plot_grid(grid_report, arguments.output_dir)
-    plot_city_junction(city_report, arguments.city_junction, arguments.output_dir)
     print(f'Wrote movement-graph figures to {arguments.output_dir}')
 
 

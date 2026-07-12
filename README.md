@@ -21,9 +21,7 @@ flowchart LR
 
 The [interactive 3×3 movement graph](docs/assets/movement-graph-3x3.html) can switch layouts, hide explanatory layers, and inspect individual lane groups, movements, junctions, and message edges.
 
-![Irregular Stuttgart junction](docs/assets/movement-graph-irregular-junction.png)
-
-The cropped Stuttgart example has four input lane groups, five output lane groups, 16 movement nodes, and five selectable phases. It shows that an irregular junction is still reduced to the same shared node and phase semantics. The junction anchor and road lines are visual context; only lane groups and movements enter the GNN. See [Architecture and constraints](docs/architecture.md) for the exact graph and action semantics.
+See [Architecture and constraints](docs/architecture.md) for the exact graph and action semantics.
 
 ## Iteration-85 result
 

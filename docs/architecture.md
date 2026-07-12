@@ -90,7 +90,3 @@ This is the intended generalization mechanism. Its effectiveness must still be e
 ![3x3 movement graph](assets/movement-graph-3x3.png)
 
 [Open the interactive 3×3 graph](assets/movement-graph-3x3.html).
-
-![Irregular Stuttgart junction](assets/movement-graph-irregular-junction.png)
-
-The second image is deliberately cropped to expose an irregular local representation with four inputs, five outputs, 16 movements, and five phases. Blue edges carry input-lane information into movements; amber edges connect movement choices with output-lane supply.
