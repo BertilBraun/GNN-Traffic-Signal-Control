@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from tensorboard.backend.event_processing.event_accumulator import EventAccumulator, ScalarEvent
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator, ScalarEvent, TensorEvent
+from tensorboard.util import tensor_util
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +18,7 @@ DEFAULT_EVENT_DIRECTORY = (
     / 'artifacts'
     / 'ppo_runs'
     / 'city_first_pass_throughput_progress_025_sample_eval_v3'
-    / 'tensorboard_full'
+    / 'tensorboard_through_iter_0085'
 )
 DEFAULT_OUTPUT_DIRECTORY = PROJECT_ROOT / 'docs' / 'results' / 'assets'
 SELECTED_ITERATION = 85
@@ -62,16 +62,26 @@ def load_events(event_directory: Path) -> EventAccumulator:
     event_paths = tuple(event_directory.glob('events.out.tfevents.*'))
     if len(event_paths) != 1:
         raise ValueError(f'Expected one TensorBoard event file in {event_directory}, found {len(event_paths)}.')
-    accumulator = EventAccumulator(str(event_paths[0]), size_guidance={'scalars': 0})
+    accumulator = EventAccumulator(str(event_paths[0]), size_guidance={'scalars': 0, 'tensors': 0})
     accumulator.Reload()
     return accumulator
 
 
 def scalar_series(accumulator: EventAccumulator, tag: str) -> Series:
-    events: list[ScalarEvent] = accumulator.Scalars(tag)
+    if tag in accumulator.Tags()['scalars']:
+        scalar_events: list[ScalarEvent] = accumulator.Scalars(tag)
+        return Series(
+            steps=tuple(event.step for event in scalar_events if event.step <= SELECTED_ITERATION),
+            values=tuple(event.value for event in scalar_events if event.step <= SELECTED_ITERATION),
+        )
+    tensor_events: list[TensorEvent] = accumulator.Tensors(tag)
     return Series(
-        steps=tuple(event.step for event in events),
-        values=tuple(event.value for event in events),
+        steps=tuple(event.step for event in tensor_events if event.step <= SELECTED_ITERATION),
+        values=tuple(
+            float(tensor_util.make_ndarray(event.tensor_proto).item())
+            for event in tensor_events
+            if event.step <= SELECTED_ITERATION
+        ),
     )
 
 
@@ -101,10 +111,6 @@ def configure_style() -> None:
     )
 
 
-def mark_selected_iteration(axis: Axes) -> None:
-    axis.axvline(SELECTED_ITERATION, color='#222222', linestyle=':', linewidth=1.4)
-
-
 def save_figure(figure: Figure, output_path: Path) -> None:
     figure.savefig(output_path, bbox_inches='tight')
     plt.close(figure)
@@ -124,22 +130,13 @@ def plot_city_throughput(accumulator: EventAccumulator, output_directory: Path) 
             color=colors[index],
             label=city.label,
         )
-    mark_selected_iteration(axis)
-    axis.annotate(
-        'selected checkpoint\niteration 85',
-        xy=(SELECTED_ITERATION, axis.get_ylim()[1]),
-        xytext=(8, -8),
-        textcoords='offset points',
-        ha='left',
-        va='top',
-    )
     axis.set(
-        title='Learned-policy throughput across the full training run',
+        title='Learned-policy throughput through iteration 85',
         xlabel='PPO iteration',
         ylabel='Throughput (vehicles/hour)',
     )
     axis.legend(ncols=2)
-    save_figure(figure, output_directory / 'learned-throughput-full-run.png')
+    save_figure(figure, output_directory / 'learned-throughput-through-iteration-0085.png')
 
 
 def plot_city_comparison(accumulator: EventAccumulator, output_directory: Path, city: City) -> None:
@@ -167,7 +164,6 @@ def plot_city_comparison(accumulator: EventAccumulator, output_directory: Path, 
         linestyle='--',
         label='Queue',
     )
-    mark_selected_iteration(axis)
     selected_index = learned.steps.index(SELECTED_ITERATION)
     axis.scatter(
         (SELECTED_ITERATION,),
@@ -176,7 +172,7 @@ def plot_city_comparison(accumulator: EventAccumulator, output_directory: Path, 
         marker='D',
         s=42,
         zorder=5,
-        label='Selected checkpoint',
+        label='Iteration 85',
     )
     axis.set(
         title=f'{city.label}: learned throughput and fixed baselines',
@@ -184,7 +180,7 @@ def plot_city_comparison(accumulator: EventAccumulator, output_directory: Path, 
         ylabel='Throughput (vehicles/hour)',
     )
     axis.legend(ncols=2)
-    save_figure(figure, output_directory / f'{city.key}-throughput-comparison.png')
+    save_figure(figure, output_directory / f'{city.key}-throughput-through-iteration-0085.png')
 
 
 def plot_freiburg_validation(accumulator: EventAccumulator, output_directory: Path) -> None:
@@ -219,16 +215,15 @@ def plot_freiburg_validation(accumulator: EventAccumulator, output_directory: Pa
             linestyle='--',
             label='Queue',
         )
-        mark_selected_iteration(axis)
         selected_index = learned.steps.index(SELECTED_ITERATION)
         axis.scatter(
             (SELECTED_ITERATION,), (learned.values[selected_index],), color='#222222', marker='D', s=38, zorder=5
         )
         axis.set_ylabel(f'{label}\n({unit})')
-    axes[0].set_title('Freiburg validation trajectory across the full training run')
+    axes[0].set_title('Freiburg validation trajectory through iteration 85')
     axes[0].legend(ncols=3)
     axes[-1].set_xlabel('PPO iteration')
-    save_figure(figure, output_directory / 'freiburg-validation-full-run.png')
+    save_figure(figure, output_directory / 'freiburg-validation-through-iteration-0085.png')
 
 
 def plot_diagnostics(accumulator: EventAccumulator, output_directory: Path) -> None:
@@ -245,15 +240,14 @@ def plot_diagnostics(accumulator: EventAccumulator, output_directory: Path) -> N
         for tag, label in zip(tags, labels, strict=True):
             series = scalar_series(accumulator, tag)
             axis.plot(series.steps, series.values, linewidth=1.6, label=label)
-        mark_selected_iteration(axis)
         axis.set_ylabel(ylabel)
         if len(tags) > 1:
             axis.legend()
-    figure.suptitle('PPO training diagnostics across the full run', fontweight='bold')
+    figure.suptitle('PPO training diagnostics through iteration 85', fontweight='bold')
     for axis in axes[-1]:
         axis.set_xlabel('PPO iteration')
     figure.tight_layout()
-    save_figure(figure, output_directory / 'ppo-training-diagnostics-full-run.png')
+    save_figure(figure, output_directory / 'ppo-training-diagnostics-through-iteration-0085.png')
 
 
 def main() -> None:
