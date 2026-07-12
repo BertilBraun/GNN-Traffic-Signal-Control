@@ -1,275 +1,96 @@
-# Movement-GNN Architecture Overview
+# Architecture and Constraints
 
-The project trains a neural controller for signalized traffic networks. The controller should eventually improve over deterministic baselines such as max pressure and queue-based control by reducing waiting time, queueing, spillback, and travel time while increasing throughput.
+## Control objective
 
-The learned model does **not** generate arbitrary signal states. It only scores legal movements. Valid phases, phase transitions, minimum-green constraints, yellow phases, and illegal-state prevention remain handled by the deterministic controller.
-
-## Core Decision
-
-The learned policy is movement-centric.
+The controller maps a SUMO traffic state to one legal target phase per signalized junction. It does not generate raw red/yellow/green strings. Network construction synthesizes compatible phases, and the runtime enforces minimum-green and transition rules around the policy's choices.
 
 ```text
-network state -> LaneGroup/Movement graph -> GNN -> movement scores
-movement scores + valid phases -> phase scores -> selected valid phase
+traffic state
+  -> LaneGroup / Movement graph
+  -> shared message-passing GNN
+  -> one score per Movement
+  -> one summed logit per synthesized phase
+  -> legal-action mask
+  -> one phase decision per junction
 ```
 
-A valid phase is a set of compatible movements produced by the existing phase synthesis code. A phase score is computed from the scores of the movements it enables, initially by summing movement scores.
+## Graph nodes
 
-For each junction, the stored phase-incidence matrix maps movement scores to
-phase logits. A phase logit is the sum of the scores of all movements enabled by
-that phase. The runtime then masks phases that are temporarily illegal because
-of minimum-green or transition constraints. PPO rollout collection and sampled
-learned-policy evaluation call the same masking path, so evaluation cannot
-silently choose an action that training would have rejected. Yellow transitions
-and signal-state validity remain deterministic controller responsibilities.
+### LaneGroup
 
-## Graph Abstraction
+A `LaneGroup` is a directed road corridor between controller-relevant endpoints. Opposite directions are different nodes. Unambiguous corridors through unsignalized junctions may be contracted into one lane group; contraction stops at branches where continuing would introduce a reachability shortcut.
 
-The learning graph has two node types:
+Lane-group features describe the final detector region before the downstream junction and include:
 
-- `LaneGroup`: a directed road segment between two signalized junctions.
-- `Movement`: a legal signal-controlled flow from one `LaneGroup` into another.
+- vehicle, moving-vehicle, and queue counts;
+- occupancy, mean speed, detector saturation, and available storage;
+- short- and long-window arrival and departure rates;
+- moving vehicles and predicted arrivals approaching the queue tail;
+- minimum and mean queue-tail ETA;
+- corridor length, detector length, lane count, and speed limit.
 
-There are no signal/intersection nodes in the GNN for the initial design.
+Dynamic counts are normalized by detector capacity. A detector describes its observed region, not an unobserved full-road queue.
 
-A directed road between intersections `A` and `B` creates separate lane groups:
+### Movement
+
+A `Movement` is a legal signal-controlled turn from one input lane group to one output lane group through a specific traffic light. Movement nodes contain turn-local information such as demand, turn type, controlled-link count, and whether the movement was green at the previous decision.
+
+Junctions are not GNN nodes. They own movements and selectable phases, but appear in visualizations only as spatial anchors.
+
+## Typed message edges
+
+Every movement has four directed message edges:
 
 ```text
-L_AB = traffic from A to B
-L_BA = traffic from B to A
+input LaneGroup  -> Movement
+output LaneGroup -> Movement
+Movement         -> input LaneGroup
+Movement         -> output LaneGroup
 ```
 
-These are separate nodes because they have separate queues, speeds, occupancy, demand, lane counts, and rush-hour behavior.
+Message direction is not traffic direction. The output-to-movement edge carries downstream supply and spillback information back to the turn that would feed it.
 
-A movement at junction `B` from `L_AB` into `L_BC` is represented as:
+One macro-hop is `Movement -> LaneGroup -> Movement`. It lets a movement observe immediately adjacent upstream and downstream movements. The reference checkpoint uses one macro-hop.
+
+## Phase scoring
+
+The GNN outputs one scalar score for every movement in the current city graph. For each junction, a phase-incidence matrix records which local movements receive green in each synthesized phase. Phase logits are sums over enabled movements:
 
 ```text
-M_ABC = movement from L_AB to L_BC through junction B
+phase_logit[p] = sum(movement_score[m] for m enabled by phase p)
 ```
 
-## Main Graph Structure
+This reduction supports any number of movements and phases without changing the learned parameter shapes.
 
-```mermaid
-flowchart LR
-    L_AB["LaneGroup L_AB<br/>road A -> B"] <--> M_ABC["Movement M_ABC<br/>turn at B"]
-    M_ABC <--> L_BC["LaneGroup L_BC<br/>road B -> C"]
-    L_BC <--> M_BCD["Movement M_BCD<br/>turn at C"]
-    M_BCD <--> L_CD["LaneGroup L_CD<br/>road C -> D"]
-```
+## Legal-action constraints
 
-The graph naturally alternates:
+The selectable phase set already excludes incompatible movement combinations. At runtime, a Boolean action mask further removes phases that cannot be selected at that decision because of control state.
 
-```text
-LaneGroup <-> Movement <-> LaneGroup <-> Movement <-> LaneGroup
-```
+- A junction must satisfy its configured minimum green before switching.
+- A switch may insert a deterministic yellow transition before the new green.
+- A continued phase does not insert a transition.
+- Pass-through or unsupported junctions are not policy decisions.
+- Forced one-action decisions train the critic but do not contribute actor or entropy loss.
+- Rollout collection and sampled learned-policy evaluation use the same legal-action mask.
 
-Continuation through a signalized junction is represented by its controlled
-Movement nodes. Unambiguous directed road corridors through unsignalized
-junctions are contracted into one LaneGroup. Branches select a unique straight
-continuation when available; otherwise contraction stops rather than creating
-reachability shortcuts.
+The runtime asserts that an action allowed by PPO's mask is accepted by the signal controller. Illegal signal states are therefore excluded by construction rather than learned through penalties.
 
-Contracted LaneGroups retain their ordered SUMO edge IDs. Static features sum
-length and free-flow travel time, derive effective speed from those totals, and
-aggregate lane storage in lane-metres. Dynamic detector features cover the
-downstream 200 metres of the complete corridor, including multiple edges when
-needed.
+## Policy inference modes
 
-No explicit conflict edges are needed in the first version because valid phase synthesis already prevents illegal combinations.
+PPO forms a categorical distribution over the legal phase logits. Training rollouts and the reference evaluation sample from that distribution. The interactive `scripts/run.py` path instead selects the highest-scoring legal phase for a stable visual demonstration. Results must state which inference mode was used.
 
-## Cross-City Generalization
+## Cross-city generalization
 
-The model shares one movement scorer and one typed message-passing backbone
-across every junction and city. `LaneGroup` and `Movement` have the same feature
-semantics regardless of the number of roads or traffic lights. The graph may
-therefore grow or shrink without changing learned parameter shapes.
+The same feature definitions, typed message functions, movement scorer, and phase reduction are reused in every city. No learned city identity, fixed intersection index, fixed graph size, or global fixed phase count is required. A new city supplies a new graph and new per-junction phase-incidence matrices while retaining the learned parameters.
 
-Variable phase counts are handled after the GNN: each junction's own
-phase-incidence matrix reduces its local movement scores to its own legal phase
-set. There is no fixed city-wide action vector and no learned city identity.
-This representation is the intended mechanism for transfer to arbitrary
-OSM-derived topology. Whether it generalizes remains an empirical question;
-see the [current results report](results/city_first_pass_throughput_scratch_32_worker.md)
-for the validation evidence and its limitations.
+This is the intended generalization mechanism. Its effectiveness must still be evaluated empirically on topology-held-out cities and, for final claims, on fresh seeds and an unseen city that was not used for checkpoint selection.
 
-## Interactive Graph Inspection
+## Visual examples
 
-Generate the current movement graph visualization with:
+![3x3 movement graph](assets/movement-graph-3x3.png)
 
-```powershell
-python scripts\visualize_movement_graph.py --open
-```
+[Open the interactive 3×3 graph](assets/movement-graph-3x3.html).
 
-The SUMO-map layout places junction anchors at their network coordinates,
-directed LaneGroup nodes between their edge endpoints, and Movement nodes
-around the signalized junction that owns them. The relaxed layout applies
-repulsion between junction anchors and springs along SUMO roads.
+![Complex center junction](assets/movement-graph-complex-junction.png)
 
-Junction anchors, unsignalized junctions, and gray road lines are explanatory
-overlays, not GNN nodes. Blue and amber connections show the bidirectional typed
-message edges between input/output LaneGroups and Movements. Signalized labels
-also display selectable phase count; this is distinct from movement-node count.
-
-## Edge Semantics
-
-For each movement `M_ABC`, the graph contains typed edges:
-
-```text
-input_lane_to_movement:   L_AB -> M_ABC
-output_lane_to_movement:  L_BC -> M_ABC
-movement_to_input_lane:   M_ABC -> L_AB
-movement_to_output_lane:  M_ABC -> L_BC
-```
-
-Message direction is not the same as traffic direction. For example, downstream supply information from `L_BC` must flow into `M_ABC`, even though vehicles flow from `M_ABC` into `L_BC`.
-
-## Message Passing
-
-Zero-hop scoring uses only the movement itself plus its input and output lane groups.
-
-One macro-hop is:
-
-```text
-Movement -> LaneGroup -> Movement
-```
-
-This lets a movement see immediately upstream and downstream neighboring movements.
-
-Two macro-hops extend the context one more continuation step and are intended for corridor coordination and green-wave-like behavior.
-
-Planned progression:
-
-1. `0-hop` imitation learning: validate features, indexing, targets, and phase aggregation.
-2. `1-hop` imitation learning: validate graph construction and message passing.
-3. `1-hop` reinforcement learning: learn immediate upstream/downstream coordination.
-4. `2-hop` reinforcement learning: test corridor coordination.
-5. No `3-hop` model initially.
-
-## Data Placement
-
-Most sensor-like state belongs to `LaneGroup` nodes.
-
-Recommended `LaneGroup` features:
-
-- detector vehicle count;
-- moving vehicle count;
-- queue length;
-- occupancy;
-- mean speed;
-- available storage proxy;
-- arrival rate over 15 s;
-- departure rate over 15 s;
-- arrival rate over 60 s;
-- departure rate over 60 s;
-- detector saturation flag;
-- moving vehicles approaching the queue tail;
-- fast moving vehicles approaching the queue tail;
-- minimum and mean ETA to the queue tail;
-- predicted arrivals to the queue tail over 5, 10, and 15 s;
-- length;
-- detector length;
-- number of lanes;
-- speed limit.
-
-Turn-specific state belongs to `Movement` nodes.
-
-Recommended `Movement` features:
-
-- oracle movement demand;
-- normalized oracle movement demand;
-- turn type;
-- number of underlying SUMO controlled links;
-- saturation-flow estimate if available;
-- green at the previous controller decision.
-
-For the first implementation, movement demand is allowed to use SUMO oracle information from routes/next links. Realistic turn-demand estimation from detectors, turn lanes, historical ratios, or camera assumptions is deferred.
-
-Detector-local counts are computed from vehicle lane positions. A vehicle belongs
-to a lane-group detector only when it is within the final
-`min(200 m, lane-group length)` before the downstream junction. Moving count uses
-SUMO's 0.1 m/s halting threshold, so an accelerating platoon remains explicitly
-visible after its queue has cleared.
-
-ETA-to-queue-tail features estimate whether moving vehicles will soon catch the
-back of the stopped queue. The tail is one effective vehicle spacing behind the
-most upstream stopped vehicle in the detector, or the stop line if there is no
-stopped vehicle. Vehicles already downstream of that tail are not counted as
-approaching it.
-
-For a movement at junction A, the output LaneGroup is the road leaving A. Its
-detector is at that road's downstream end, near junction B. The output feature
-therefore observes the approach to B for spillback pressure; it is not a detector
-immediately after A's stop line.
-
-## Detector and Normalization Decision
-
-Detector-based values must be normalized by detector capacity, not by full road capacity, because detector lengths may differ.
-
-A 100 m detector cannot distinguish a 100 m queue from a 300 m queue once it is fully saturated. Therefore, detector-local features should explicitly mean “state of the observed detector region,” not “full road segment state.”
-
-Use features such as:
-
-```text
-queue_norm_detector = queue_length_in_detector / detector_length
-count_norm_detector = vehicle_count_in_detector / detector_capacity
-detector_saturation = whether the detector appears fully queued
-```
-
-Static scale features such as full lane-group length, detector length, lane count, and speed limit should also be included so the model can interpret detector-local saturation in context.
-
-## Training Split
-
-There are two distinct learning stages.
-
-### Imitation Learning
-
-Imitation learning is supervised regression.
-
-```text
-features -> movement scores
-target = current implemented max-pressure movement score
-loss = Huber or MSE
-```
-
-The max-pressure teacher remains the initial behavioral target, but its raw
-incoming and outgoing halting counts are not neural input columns. Otherwise IL
-collapses to an exact subtraction and leaves the remaining representation
-untrained. Training combines score regression with phase-ranking
-cross-entropy, and traffic evaluation is required alongside the supervised
-loss.
-
-### Reinforcement Learning
-
-RL starts only after imitation learning works.
-
-The model still outputs movement scores. These are aggregated into phase logits:
-
-```text
-phase_logit(P) = sum(score(m) for m in movements enabled by P)
-```
-
-During PPO-style training, a valid phase is sampled from the softmax over phase logits. During deterministic evaluation, the selected phase is the argmax phase.
-
-PPO is therefore not used for the supervised regression target. It is used later for discrete phase-action optimization after movement scores have been converted into phase logits.
-
-## Training and Control Flow
-
-```mermaid
-flowchart TD
-    S["SUMO state"] --> F["Feature extraction"]
-    F --> G["LaneGroup/Movement graph"]
-    G --> N["GNN movement scorer"]
-    N --> MS["Movement scores"]
-    MS --> PA["Phase aggregation over valid phases"]
-    PA --> A["Selected valid phase"]
-    A --> C["Runtime controller<br/>min-green, yellow, all-red"]
-    C --> S2["SUMO step"]
-    S2 --> R["Metrics / reward"]
-
-    MP["Current max-pressure policy"] --> T["Teacher movement scores"]
-    T --> IL["IL regression loss"]
-    MS --> IL
-
-    R --> PPO["Later PPO objective"]
-    MS --> PPO
-```
+The second image is deliberately cropped to expose the local representation. Blue edges carry input-lane information into movements; amber edges connect movement choices with output-lane supply. The complex-junction crop should be reviewed for readability before publication.

@@ -1,68 +1,60 @@
-# Movement PPO Training
+# Training and Evaluation
 
-The current controller trains a shared movement-level graph policy with proximal policy optimization (PPO). It can start from an imitation-learning checkpoint or, as in the current reference result, from random weights. The model is independent of city graph size and of the number of legal phases at each junction.
+The movement GNN supports three initialization paths:
 
-## From movement scores to legal phases
+1. random-scratch PPO;
+2. imitation learning followed by PPO;
+3. PPO resume from a complete actor/critic/optimizer checkpoint.
 
-For every observation, the GNN produces a scalar score for each `Movement` node. Each traffic light has a phase-incidence matrix describing which movements receive green in each synthesized phase. Summing movement scores over each phase's incidence set produces local phase logits.
+All paths use the same movement graph, phase-incidence aggregation, and legal-action mask described in [Architecture and constraints](architecture.md).
 
-The runtime builds the same Boolean legal-action mask used during rollout collection and sampled evaluation. Phases blocked by minimum-green or transition constraints receive effectively negative-infinite logits. A categorical distribution is formed only over the remaining legal phases. SUMO signal programs, yellow transitions, and phase synthesis stay deterministic, so the learned model cannot invent an incompatible signal state.
+## Imitation learning
 
-The policy acts once per junction. A batch may therefore contain cities with different numbers of junctions and different local phase counts without padding the model to one global city-specific action space.
+Imitation learning trains the GNN movement scorer to reproduce a deterministic teacher such as max pressure. The teacher supplies movement scores and selected phases; training combines movement-score regression with phase-ranking cross-entropy.
 
-## PPO objective
-
-PPO stores the sampled action, its log probability under the behavior policy, the legal mask, reward, value prediction, and bootstrapping state. Generalized advantage estimation produces an advantage for each junction decision. The actor minimizes the clipped surrogate objective:
-
-```text
-ratio = exp(new_log_probability - old_log_probability)
-policy_objective = min(ratio * advantage, clip(ratio, 1 - epsilon, 1 + epsilon) * advantage)
-```
-
-Clipping prevents one update from moving the policy too far from the distribution that collected the rollout. Approximate KL divergence and ratio-clipping frequency are logged as additional update diagnostics.
-
-A value head pools movement embeddings by traffic light and predicts one value per junction. Its squared value error supplies the critic term. An entropy bonus rewards a broader legal phase distribution and discourages premature collapse; forced one-action decisions are excluded from the actor and entropy losses but still train the critic. The combined update contains policy, value, and entropy terms.
-
-Rollouts are fixed-length segments rather than necessarily terminal episodes. If SUMO is still running at the segment boundary, the critic evaluates the next state and bootstraps both GAE and return targets. Only a genuinely terminated simulation uses a zero final value.
-
-## Why actions are sampled
-
-Rollout collection samples each junction's legal categorical phase distribution. This exploration is part of the policy optimized by PPO. The reference evaluation also uses `sample` mode at temperature `1.0`, so it measures the same stochastic controller semantics instead of replacing the trained policy with a greedy argmax controller after training.
-
-Sampling means evaluation includes action randomness as well as demand and route randomness. Results must therefore average multiple seeds and report enough scenario metrics to reveal gridlock or incomplete trips. A deterministic learned-policy evaluation can be useful as a separate ablation, but it is a different policy and must be labeled accordingly.
-
-Max-pressure and queue baselines are deterministic for a fixed configuration and seed. They are evaluated once and reused during periodic evaluation; later evaluation intervals need only run the changing learned policy.
-
-## Multi-city rollouts and generalization
-
-Each update may concatenate independent rollout segments from multiple cities. Every worker computes returns and advantages for its own segment before buffers are combined. A persistent process pool avoids restarting SUMO for each iteration, and libsumo provides the headless backend used by the reference run.
-
-The intended generalization mechanism is parameter sharing over a common abstraction:
-
-- directed lane-group nodes encode demand, queues, speed, occupancy, storage, and arrivals;
-- movement nodes encode legal turns and turn-local state;
-- typed message passing combines upstream demand with downstream supply;
-- the same movement scorer is reused at every junction in every city;
-- phase incidence converts variable-size movement sets into each junction's variable-size legal action space.
-
-No city identity or fixed intersection index is required by the policy. Generalization is nevertheless an empirical question: topology-held-out validation does not substitute for independent training seeds and a final unseen-city evaluation.
-
-## Reward and scenario sampling
-
-The current multi-city reference uses the throughput reward mode. It combines local discharge throughput with a weighted global throughput signal, vehicle progress, a gridlock penalty, and a small speed-change penalty. The exact selected-run weights are documented in the [results report](results/city_first_pass_throughput_scratch_32_worker.md) and its committed experiment YAML.
-
-Every rollout samples demand scale and target initial occupancy from configured ranges. Valid routes are generated from the shaped city network, vehicles are inserted at safe positions at simulation time zero, and one SUMO insertion step occurs before the first action. Periodic evaluation uses fixed seeds, fixed demand scale, and the same occupancy-generation procedure for all policies.
-
-Training diagnostics include reward and return distributions, value scale, critic explained variance, normalized entropy, top-action probability, approximate KL, clipping frequency, policy/value loss, gradient norms, teleport counts, city-specific rollout congestion, and detailed timing.
-
-Completion rate, vehicles remaining, teleports, throughput, and wait density should be interpreted together. Average waiting, travel, and time-loss values include only completed vehicles and can look artificially favorable when a poor controller leaves hard trips unfinished.
-
-## Scratch training
-
-The current experiment configuration supplies city splits, rollout allocation, reward weights, evaluation seeds, and worker counts. Random-scratch training additionally requires explicit graph feature and model dimensions:
+Collect balanced samples from the rollout cities in an experiment config:
 
 ```powershell
-$env:SUMO_HOME = 'C:\Program Files (x86)\Eclipse\Sumo'
+uv run python scripts\collect_multi_city_il.py `
+  --experiment-config configs\training\city_first_pass_throughput_scratch_32_worker.yaml `
+  --output-dir datasets\city_first_pass_il
+```
+
+Train a shared checkpoint from the combined dataset:
+
+```powershell
+uv run python scripts\train_il.py `
+  --experiment-config configs\training\city_first_pass_throughput_scratch_32_worker.yaml `
+  --data datasets\city_first_pass_il\combined.jsonl `
+  --ckpt-dir checkpoints\il\city_first_pass
+```
+
+The experiment YAML supplies sample counts, collection workers, epochs, batch size, and phase-loss coefficient unless an explicit CLI override is provided.
+
+## PPO from imitation learning
+
+Start PPO with the trained actor and matching normalizers:
+
+```powershell
+uv run python scripts\train_rl.py `
+  --experiment-config configs\training\city_first_pass_4_worker.yaml `
+  --il-checkpoint checkpoints\il\city_first_pass\movement_policy_best.pt
+```
+
+The critic is new even though the actor and shared GNN are initialized from imitation learning. `ppo.value_warmup_iterations` in the experiment YAML can train the value head before normal joint PPO updates. During warm-up:
+
+- the actor and shared policy representation are frozen;
+- the final value layer starts at zero;
+- bootstrapped discounted returns train the critic;
+- normal clipped PPO begins after the configured warm-up iterations.
+
+Warm-up is useful when a competent imitation actor would otherwise be disturbed by an initially uncalibrated critic. The scratch iteration-85 run used no value warm-up because both actor and critic began together from random weights.
+
+## Random-scratch PPO
+
+Reproduce the architecture and experiment settings used by the iteration-85 run:
+
+```powershell
 uv run python scripts\train_rl.py `
   --experiment-config configs\training\city_first_pass_throughput_scratch_32_worker.yaml `
   --scratch-random `
@@ -72,24 +64,49 @@ uv run python scripts\train_rl.py `
   --scratch-num-hops 1
 ```
 
-On Linux, set `export SUMO_HOME=/usr/share/sumo` and replace backslashes and PowerShell continuations with forward slashes and `\`.
+The YAML assigns 10 rollout jobs to each of four training cities, for 40 independent 350-decision-step segments per update, collected by 32 persistent libsumo workers.
 
-## Evaluation
+## PPO objective
 
-Evaluate the five-city experiment with the selected learned checkpoint and the two configured baselines:
+For each legal junction decision, PPO records the sampled action, behavior log probability, legal mask, reward, value, and bootstrap state. Generalized advantage estimation produces the policy advantage. The actor uses the clipped surrogate:
 
-```powershell
-uv run python scripts\eval_multi_city.py `
-  --experiment-config configs\training\city_first_pass_throughput_scratch_32_worker.yaml `
-  --checkpoint artifacts\ppo_runs\city_first_pass_throughput_progress_025_sample_eval_v3\selected_iteration_0085\movement_policy_iter_0085_best.pt `
-  --output-dir reports\city_first_pass_iteration_0085
+```text
+ratio = exp(new_log_probability - old_log_probability)
+objective = min(ratio * advantage,
+                clip(ratio, 1 - epsilon, 1 + epsilon) * advantage)
 ```
 
-The experiment config selects six seeds, 1,200 decision steps, sampled learned actions, and demand scale `1.0`.
+The critic minimizes value error. An entropy term encourages exploration over legal phases. Decisions forced to one legal phase train the critic but are excluded from actor and entropy loss. Approximate KL divergence, PPO clipping frequency, entropy, policy/value loss, gradients, returns, and explained variance are logged.
 
-## Resuming PPO
+Rollouts are fixed-length segments. If SUMO is still running at a segment boundary, the critic estimates the next state and bootstraps GAE and return targets. Only genuine termination uses a zero final value.
 
-PPO checkpoints contain actor and critic parameters, optimizer state, completed iteration, best selection score, random-number-generator state, normalizers, and architecture metadata. Resume into the same run with:
+## Reward
+
+The scratch reference run used throughput reward mode with:
+
+| component | weight |
+| --- | ---: |
+| local throughput | 1.0 |
+| global reward | 0.2 |
+| vehicle progress | 0.25 |
+| gridlock penalty | 0.08 |
+| speed change | 0.005 |
+
+Training demand was sampled from configured city ranges, and target initial occupancy from 5–8%. SUMO gridlock teleporting was disabled. The reward weights, demand ranges, rollout allocation, and evaluation settings are committed in the experiment YAML.
+
+## Stochastic rollout and evaluation
+
+PPO rollouts sample one categorical action from each junction's currently legal phase logits. The reference learned-policy evaluation uses the same sampled legal-action semantics at temperature `1.0`. This evaluates the policy distribution optimized by PPO.
+
+Max-pressure and queue baselines are deterministic for a fixed city, demand, and seed. They score the same legal phases using hand-designed pressure or queue values and select the maximum. The GUI runner uses greedy learned phase scores for visual stability; it is not the sampled evaluation path.
+
+## Checkpoints
+
+Training writes latest, periodic, and best checkpoints. PPO checkpoint files contain actor and critic parameters, optimizer state, completed iteration, random-number-generator state, feature normalizers, and architecture metadata. Policy-only files are convenient for inference.
+
+Best-checkpoint selection is an internal training mechanism based on the configured periodic learned-policy evaluation score. It does not mean that the selected checkpoint beat a baseline on every city, and baseline performance is not encoded into the checkpoint. The iteration-85 report evaluates that frozen checkpoint city by city.
+
+Resume a complete PPO state with:
 
 ```powershell
 uv run python scripts\train_rl.py `
@@ -98,4 +115,23 @@ uv run python scripts\train_rl.py `
   --iterations 500
 ```
 
-`--iterations` is the final target iteration. Scenario and PPO parameters must remain consistent with the saved run. Do not interpret a latest checkpoint as the best checkpoint: the reference run regressed after iteration 85, and both the selected checkpoint and full trajectory are retained.
+`--iterations` is the final target iteration, not the number of additional iterations.
+
+## Multi-city evaluation
+
+Evaluate the frozen iteration-85 checkpoint across the configured cities and baselines:
+
+```powershell
+uv run python scripts\eval_multi_city.py `
+  --experiment-config configs\training\city_first_pass_throughput_scratch_32_worker.yaml `
+  --checkpoint artifacts\ppo_runs\city_first_pass_throughput_progress_025_sample_eval_v3\selected_iteration_0085\movement_policy_iter_0085_best.pt `
+  --output-dir reports\city_first_pass_iteration_0085
+```
+
+The experiment configuration uses six fixed seeds, demand scale `1.0`, and 1,200 decision steps. Evaluation reports throughput, completion, teleports, wait density, queue metrics, and completed-trip waiting/travel metrics.
+
+Completion and congestion must accompany completed-trip averages. Average waiting, travel, and time loss exclude unfinished vehicles and can look artificially favorable when a controller leaves difficult trips in the network.
+
+## Final generalization protocol
+
+Freiburg generated no PPO rollouts but was used during development, so it is validation rather than an untouched final test. A strong final claim requires multiple independent training seeds, fresh evaluation seeds, confidence intervals, and another unseen OSM city that was not used for checkpoint selection.

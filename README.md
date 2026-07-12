@@ -1,62 +1,87 @@
 # GNN Traffic Signal Control
 
-This research project trains a generalist graph-neural-network (GNN) traffic-signal controller across arbitrary cities derived from OpenStreetMap (OSM). A shared movement-level policy observes a heterogeneous graph of directed lane groups and legal turning movements, then selects one legal phase independently at each signalized junction. The aim is to learn reusable traffic-control behavior without fixing the number of intersections, the road topology, or the number of phases per junction.
+This research project trains a generalist graph-neural-network traffic-signal controller across arbitrary cities derived from OpenStreetMap (OSM). A shared movement-level policy observes directed road corridors and legal turns, then scores the legal phases at every signalized junction. The representation is independent of city size, road topology, and the number of phases at a junction.
 
-## Approach
+## Architecture
 
-Each directed road corridor becomes a `LaneGroup` node and each legal turn through a signal becomes a `Movement` node. Typed message passing lets movements combine upstream demand with downstream capacity. The GNN outputs one score per movement; the controller sums the scores of the movements enabled by each candidate phase, masks phases that are temporarily illegal, and samples or selects a phase for each junction. SUMO remains responsible for minimum-green constraints, yellow transitions, and valid signal programs.
+```mermaid
+flowchart LR
+    A["SUMO traffic state"] --> B["LaneGroup / Movement graph"]
+    B --> C["Shared GNN"]
+    C --> D["Movement scores"]
+    D --> E["Sum scores by phase incidence"]
+    E --> F["Mask temporarily illegal phases"]
+    F --> G["Select one legal phase per junction"]
+    G --> H["Minimum green and yellow transition runtime"]
+```
 
-The city pipeline imports OSM, cleans and prunes malformed or infeasible junctions, builds movement-safe SUMO networks, and samples routes, demand, and initial occupancy. The same learned parameters operate across different graph sizes and phase counts. See the [architecture overview](docs/movement_architecture_overview.md), [PPO methodology](docs/ppo_training.md), and [OSM city pipeline](docs/city_osm_usage.md).
+`LaneGroup` nodes represent directed road corridors and carry queue, speed, occupancy, arrival, departure, and capacity information. `Movement` nodes represent legal turns through signalized junctions. Typed messages connect every movement to its input and output lane groups, allowing the same GNN parameters to combine upstream demand and downstream supply in every city.
 
-## Results
+![Static 3x3 movement graph](docs/assets/movement-graph-3x3.png)
 
-The strongest scratch-trained run used four rollout cities and treated Freiburg as held out from PPO rollout generation. The selected iteration-85 checkpoint was evaluated with sampled learned actions over six fixed seeds and a 1,200-step horizon. Throughput is vehicles/hour.
+The [interactive 3×3 movement graph](docs/assets/movement-graph-3x3.html) can switch layouts, hide explanatory layers, and inspect individual lane groups, movements, junctions, and message edges.
+
+![Complex center junction](docs/assets/movement-graph-complex-junction.png)
+
+The cropped center junction illustrates how a four-way junction becomes multiple movement nodes rather than one intersection node. The junction anchor and road lines are visual context; only lane groups and movements enter the GNN. See [Architecture and constraints](docs/architecture.md) for the exact graph and action semantics.
+
+## Iteration-85 result
+
+The strongest scratch-trained run used Karlsruhe, Mannheim, Stuttgart, and Heidelberg for PPO rollout generation. Freiburg generated no PPO rollouts and served as a topology-held-out validation city. The iteration-85 checkpoint was evaluated with sampled learned actions over six fixed seeds and a 1,200-decision-step horizon.
 
 | city | split | learned | max pressure | queue |
 | --- | --- | ---: | ---: | ---: |
-| Karlsruhe | train | 2,837.5 | 2,870.0 | 2,714.5 |
-| Mannheim | train | 2,987.5 | 3,260.5 | 3,294.0 |
-| Stuttgart | train | 3,871.5 | 3,911.0 | 3,870.5 |
-| Heidelberg | train | 3,141.5 | 3,026.5 | 2,684.5 |
-| Freiburg | validation | 2,941.0 | 2,521.0 | 2,377.0 |
+| Karlsruhe | train | 2,837.5/h | 2,870.0/h | 2,714.5/h |
+| Mannheim | train | 2,987.5/h | 3,260.5/h | 3,294.0/h |
+| Stuttgart | train | 3,871.5/h | 3,911.0/h | 3,870.5/h |
+| Heidelberg | train | 3,141.5/h | 3,026.5/h | 2,684.5/h |
+| Freiburg | validation | 2,941.0/h | 2,521.0/h | 2,377.0/h |
 
-The defensible headline is: **a scratch-trained generalist GNN PPO controller reached or exceeded strong baselines on several OSM-derived cities and substantially outperformed them on the validation city at the selected checkpoint.** It did not beat every baseline in every city. Freiburg influenced checkpoint selection and is therefore a validation city, not an untouched final test set. Performance regressed after roughly iterations 70–85; the complete trajectory remains in the raw TensorBoard and logs.
+![Learned throughput through iteration 85](docs/results/assets/learned-throughput-through-iteration-0085.png)
 
-![Full learned-policy throughput trajectory](docs/results/assets/learned-throughput-full-run.png)
+The checkpoint beat both baselines in Heidelberg and Freiburg, was effectively tied with queue and close to max pressure in Stuttgart, was close to max pressure and above queue in Karlsruhe, and trailed both baselines in Mannheim. Freiburg was used during model development and is not an untouched final test set. See the [complete iteration-85 report](docs/results/city_first_pass_throughput_scratch_32_worker.md).
 
-Read the [full experiment report](docs/results/city_first_pass_throughput_scratch_32_worker.md) for completion, congestion, limitations, artifacts, and all plots.
+## Build a city and run the controller
 
-## Getting Started
-
-Install [uv](https://docs.astral.sh/uv/) and SUMO, then from the repository root:
+Install [uv](https://docs.astral.sh/uv/), SUMO, and the project dependencies. On Linux:
 
 ```bash
 uv sync --group dev
 export SUMO_HOME=/usr/share/sumo
-uv run python scripts/inspect_movement_city.py \
-  --cfg configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg \
-  --time-to-teleport -1
 ```
 
-Evaluate the selected checkpoint across all five configured cities:
+On PowerShell, set the equivalent SUMO location, for example:
 
-```bash
-uv run python scripts/eval_multi_city.py \
-  --experiment-config configs/training/city_first_pass_throughput_scratch_32_worker.yaml \
-  --checkpoint artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/selected_iteration_0085/movement_policy_iter_0085_best.pt \
-  --output-dir reports/city_first_pass_iteration_0085
+```powershell
+$env:SUMO_HOME = 'C:\Program Files (x86)\Eclipse\Sumo'
 ```
 
-Start the same random-scratch PPO setup (32 rollout workers and libsumo are read from the experiment config):
+City configurations are produced by the network workbench. This command rebuilds Freiburg from its saved OSM/build/prune inputs, opens the pruning and graph inspection pages, verifies the result, and runs the configured GUI calibration step:
 
-```bash
-uv run python scripts/train_rl.py \
-  --experiment-config configs/training/city_first_pass_throughput_scratch_32_worker.yaml \
-  --scratch-random \
-  --scratch-lane-feature-dim 29 \
-  --scratch-movement-feature-dim 4 \
-  --scratch-hidden-dim 64 \
-  --scratch-num-hops 1
+```powershell
+uv run python scripts\network_workbench.py `
+  --build-file configs\freiburg_altstadt\freiburg_altstadt.build.yaml `
+  all
 ```
 
-PowerShell uses the same arguments with backticks for line continuation and `$env:SUMO_HOME = 'C:\\Program Files (x86)\\Eclipse\\Sumo'`. City generation and pruning are covered in [City / OSM usage](docs/city_osm_usage.md). The [documentation index](docs/README.md) separates current scientific documentation from operational and archived material.
+Once the city config exists, launch the selected checkpoint with the normal `run.py` defaults:
+
+```powershell
+uv run python scripts\run.py `
+  --cfg configs\freiburg_altstadt\freiburg_altstadt.sumocfg `
+  --method learned `
+  --checkpoint artifacts\ppo_runs\city_first_pass_throughput_progress_025_sample_eval_v3\selected_iteration_0085\movement_policy_iter_0085_best.pt `
+  --gui
+```
+
+The GUI runner displays the policy greedily by choosing the highest-scoring currently legal phase. The reported experiment evaluates the learned categorical policy by sampling legal phases. These are two explicit inference modes for the same checkpoint; the GUI command is intended for inspection rather than reproducing the result table.
+
+To build a different OSM extract, tune pruning, or calibrate demand, follow [City pipeline](docs/city_pipeline.md). To collect imitation data, train from scratch, continue PPO from imitation learning, or evaluate checkpoints, follow [Training and evaluation](docs/training_and_evaluation.md).
+
+## Documentation
+
+- [Architecture and constraints](docs/architecture.md)
+- [City-building pipeline](docs/city_pipeline.md)
+- [Training and evaluation](docs/training_and_evaluation.md)
+- [Iteration-85 results](docs/results/city_first_pass_throughput_scratch_32_worker.md)
+- [Documentation index and archive policy](docs/README.md)
