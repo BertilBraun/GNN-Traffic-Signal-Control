@@ -5,14 +5,15 @@ This research project trains a generalist graph-neural-network traffic-signal co
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A["SUMO traffic state"] --> B["LaneGroup / Movement graph"]
-    B --> C["Shared GNN"]
-    C --> D["Movement scores"]
-    D --> E["Sum scores by phase incidence"]
-    E --> F["Mask temporarily illegal phases"]
-    F --> G["Select one legal phase per junction"]
-    G --> H["Minimum green and yellow transition runtime"]
+flowchart TD
+    A["SUMO traffic state"]
+    B["LaneGroup and Movement graph"]
+    C["Shared GNN produces movement scores"]
+    D["Phase incidence sums movement scores into phase logits"]
+    E["Legal-action mask selects one phase per junction"]
+    F["Signal runtime enforces minimum green and yellow transitions"]
+
+    A --> B --> C --> D --> E --> F
 ```
 
 `LaneGroup` nodes represent directed road corridors and carry queue, speed, occupancy, arrival, departure, and capacity information. `Movement` nodes represent legal turns through signalized junctions. Typed messages connect every movement to its input and output lane groups, allowing the same GNN parameters to combine upstream demand and downstream supply in every city.
