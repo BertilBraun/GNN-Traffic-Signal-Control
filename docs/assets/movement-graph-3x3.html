@@ -218,7 +218,14 @@ function movementPosition(movement) {
   const unitY = dy / length;
   const sameInput = movementsByTls
     .get(movement.traffic_light_id)
-    .filter(item => item.input_lane_group_id === movement.input_lane_group_id);
+    .filter(item => item.input_lane_group_id === movement.input_lane_group_id)
+    .sort((left, right) => {
+      const leftOutput = lanePosition(laneById.get(left.output_lane_group_id));
+      const rightOutput = lanePosition(laneById.get(right.output_lane_group_id));
+      const leftProjection = (leftOutput.x - center.x) * -unitY + (leftOutput.y - center.y) * unitX;
+      const rightProjection = (rightOutput.x - center.x) * -unitY + (rightOutput.y - center.y) * unitX;
+      return leftProjection - rightProjection || left.movement_id - right.movement_id;
+    });
   const inputIndex = sameInput.findIndex(item => item.movement_id === movement.movement_id);
   const tangentOffset = (inputIndex - (sameInput.length - 1) / 2) * 5;
   const radius = sameInput.length > 3 ? 18 : 15;

@@ -149,7 +149,17 @@ def positions_by_movement(
             length = max(1.0, hypot(direction_x, direction_y))
             unit_x = direction_x / length
             unit_y = direction_y / length
-            for index, movement in enumerate(same_input):
+            ordered_movements = tuple(
+                sorted(
+                    same_input,
+                    key=lambda movement: (
+                        (lane_positions[movement.output_lane_group_id][0] - center_x) * -unit_y
+                        + (lane_positions[movement.output_lane_group_id][1] - center_y) * unit_x,
+                        movement.movement_id,
+                    ),
+                )
+            )
+            for index, movement in enumerate(ordered_movements):
                 tangent_offset = (index - (len(same_input) - 1) / 2) * 8.0
                 positions[movement.movement_id] = (
                     center_x + unit_x * radius - unit_y * tangent_offset,
