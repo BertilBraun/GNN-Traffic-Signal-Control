@@ -340,6 +340,9 @@ function curvedPath(a, b, bend) {{
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.max(1, Math.hypot(dx, dy));
   return `M ${{a.x}} ${{a.y}} Q ${{mx - dy / length * bend}} ${{my + dx / length * bend}} ${{b.x}} ${{b.y}}`;
 }}
+function connectorPath(source, junction, target) {{
+  return `M ${{source.x}} ${{source.y}} Q ${{junction.x}} ${{junction.y}} ${{target.x}} ${{target.y}}`;
+}}
 function selectedEdgeId() {{
   return selected && selected.startsWith('edge:') ? selected.slice(5) : null;
 }}
@@ -407,7 +410,8 @@ function render() {{
       const edge = messageEdgesById.get(`connector:${{connector.source_lane_group_id}}:${{connector.target_lane_group_id}}:${{connector.via_junction_id}}`);
       const sourcePoint = lanePosition(laneById.get(connector.source_lane_group_id));
       const targetPoint = lanePosition(laneById.get(connector.target_lane_group_id));
-      const path = element('path', {{d: curvedPath(sourcePoint, targetPoint, 0), class: messageClass(edge, 'connector'), 'marker-end': 'url(#arrow-connector)', style: `stroke-width:${{connectorStroke}}px`}});
+      const junctionPoint = junctionPosition(connector.via_junction_id);
+      const path = element('path', {{d: connectorPath(sourcePoint, junctionPoint, targetPoint), class: messageClass(edge, 'connector'), 'marker-end': 'url(#arrow-connector)', style: `stroke-width:${{connectorStroke}}px`}});
       path.addEventListener('click', event => selectEdge(edge, event));
       edges.appendChild(path);
     }}

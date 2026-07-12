@@ -20,6 +20,7 @@ flowchart LR
 ![Static 3x3 movement graph](docs/assets/movement-graph-3x3.png)
 
 The [interactive 3×3 movement graph](docs/assets/movement-graph-3x3.html) can switch layouts, hide explanatory layers, and inspect individual lane groups, movements, junctions, and message edges.
+Green connector edges show lane-group-to-lane-group message flow through unsignalized junctions; blue and amber edges show signalized input and output movement relations.
 
 See [Architecture and constraints](docs/architecture.md) for the exact graph and action semantics.
 

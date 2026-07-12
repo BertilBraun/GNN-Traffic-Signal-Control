@@ -89,4 +89,6 @@ This is the intended generalization mechanism. Its effectiveness must still be e
 
 ![3x3 movement graph](assets/movement-graph-3x3.png)
 
+Green edges are directed lane-group connectors through unsignalized junctions. At signalized junctions, blue input edges and amber output edges route information through explicit movement nodes instead.
+
 [Open the interactive 3×3 graph](assets/movement-graph-3x3.html).

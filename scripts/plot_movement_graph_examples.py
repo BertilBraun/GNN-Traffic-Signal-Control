@@ -10,6 +10,9 @@ import re
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
+from matplotlib.lines import Line2D
+from matplotlib.patches import FancyArrowPatch
+from matplotlib.path import Path as MatplotlibPath
 from pydantic import BaseModel, ConfigDict
 
 
@@ -55,6 +58,14 @@ class Movement(BaseModel):
     output_lane_group_id: int
 
 
+class LaneConnector(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_lane_group_id: int
+    target_lane_group_id: int
+    via_junction_id: str
+
+
 class MovementGraphReport(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -63,6 +74,7 @@ class MovementGraphReport(BaseModel):
     roads: tuple[Road, ...]
     lane_groups: tuple[LaneGroup, ...]
     movements: tuple[Movement, ...]
+    lane_connectors: tuple[LaneConnector, ...]
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -162,6 +174,32 @@ def draw_roads(
         axis.plot((start[0], end[0]), (start[1], end[1]), color='#AEB6BB', linewidth=2.2, zorder=0)
 
 
+def draw_lane_connectors(
+    axis: Axes,
+    connectors: tuple[LaneConnector, ...],
+    lane_positions: dict[int, tuple[float, float]],
+    junction_positions: dict[str, tuple[float, float]],
+) -> None:
+    for connector in connectors:
+        source = lane_positions[connector.source_lane_group_id]
+        target = lane_positions[connector.target_lane_group_id]
+        junction = junction_positions[connector.via_junction_id]
+        path = MatplotlibPath(
+            (source, junction, target),
+            (MatplotlibPath.MOVETO, MatplotlibPath.CURVE3, MatplotlibPath.CURVE3),
+        )
+        arrow = FancyArrowPatch(
+            path=path,
+            arrowstyle='-|>',
+            mutation_scale=7,
+            color='#58A66C',
+            linewidth=1.15,
+            alpha=0.72,
+            zorder=2,
+        )
+        axis.add_patch(arrow)
+
+
 def draw_graph(
     axis: Axes,
     report: MovementGraphReport,
@@ -184,6 +222,14 @@ def draw_graph(
         )
     )
     draw_roads(axis, visible_roads, junction_positions)
+    visible_connectors = (
+        report.lane_connectors
+        if context_junction_ids is None
+        else tuple(
+            connector for connector in report.lane_connectors if connector.via_junction_id in context_junction_ids
+        )
+    )
+    draw_lane_connectors(axis, visible_connectors, lane_positions, junction_positions)
 
     for movement in movements:
         movement_position = movement_positions[movement.movement_id]
@@ -278,7 +324,15 @@ def plot_grid(report: MovementGraphReport, output_directory: Path) -> None:
         context_junction_ids=None,
     )
     axis.set_title('3x3 road layout as a LaneGroup / Movement graph')
-    axis.legend(loc='lower center', ncols=4, frameon=False)
+    handles, labels = axis.get_legend_handles_labels()
+    connector_handle = Line2D((), (), color='#58A66C', linewidth=2.0)
+    axis.legend(
+        (connector_handle, *handles),
+        ('Unsignalized LaneGroup connector', *labels),
+        loc='lower center',
+        ncols=3,
+        frameon=False,
+    )
     figure.savefig(output_directory / 'movement-graph-3x3.png', bbox_inches='tight')
     plt.close(figure)
 
