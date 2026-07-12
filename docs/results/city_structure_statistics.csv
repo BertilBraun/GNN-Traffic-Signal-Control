@@ -1,0 +1,6 @@
+city,scenario,role,junctions,signalized_junctions,traffic_light_controllers,controllable_policy_junctions,pass_through_signalized_junctions,unsupported_signalized_junctions,lane_groups,movements,unsignalized_lane_group_connectors,input_lane_to_movement_edges,output_lane_to_movement_edges,movement_to_input_lane_edges,movement_to_output_lane_edges,typed_message_edges_total,selectable_phases,phases_per_junction_mean,phases_per_junction_median,phases_per_junction_min,phases_per_junction_max,external_edges,lanes,lane_length_km
+Karlsruhe,karlsruhe_oststadt,PPO rollout,141,42,45,41,0,4,286,271,319,271,271,271,271,1084,136,3.317073170731707,3,2,10,338,517,100.3869799999999
+Mannheim,mannheim_innenstadt,PPO rollout,417,100,103,84,0,19,708,467,993,467,467,467,467,1868,254,3.0238095238095237,2.0,2,7,864,1221,134.08124000000026
+Stuttgart,stuttgart_mitte,PPO rollout,290,71,78,69,0,9,519,508,721,508,508,508,508,2032,238,3.449275362318841,3,2,12,696,941,131.53524000000013
+Heidelberg,heidelberg_bergheim,PPO rollout,244,55,63,56,0,7,408,365,460,365,365,365,365,1460,177,3.1607142857142856,3.0,2,10,524,744,86.84092999999974
+Freiburg,freiburg_altstadt,held out from PPO rollouts,231,63,66,58,0,8,425,416,585,416,416,416,416,1664,205,3.5344827586206895,3.0,2,11,560,758,109.46781000000006
