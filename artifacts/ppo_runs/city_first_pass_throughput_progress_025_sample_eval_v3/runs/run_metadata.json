@@ -1,0 +1,96 @@
+{
+  "created_at_utc": "2026-07-11T21:54:09.985351+00:00",
+  "experiment_name": "city_first_pass_throughput_scratch_32_worker",
+  "experiment_configuration_path": "configs/training/city_first_pass_throughput_scratch_32_worker.yaml",
+  "experiment_configuration_sha256": "e097515a41cb68cdc07abac2788535ad80cdf4e8ad0394d02b22b502e00a5b3c",
+  "resume_checkpoint_path": null,
+  "scratch_initialization": false,
+  "random_scratch_initialization": true,
+  "random_scratch_lane_feature_dim": 29,
+  "random_scratch_movement_feature_dim": 4,
+  "random_scratch_hidden_dim": 64,
+  "random_scratch_num_hops": 1,
+  "checkpoint_dir": "checkpoints/rl/city_first_pass_throughput_progress_025_sample_eval_v3",
+  "log_dir": "runs/rl/city_first_pass_throughput_progress_025_sample_eval_v3",
+  "iterations": 1000,
+  "completed_iteration_at_start": 0,
+  "rollout_jobs_per_update": 40,
+  "rollouts_per_update": 40,
+  "rollout_process_workers": 32,
+  "rollout_workers": 32,
+  "sumo_backend": "libsumo",
+  "steps_per_rollout": 350,
+  "demand_scale_min": 0.8,
+  "demand_scale_max": 1.2,
+  "reward_mode": "throughput",
+  "global_reward_weight": 0.2,
+  "flow_reward_weight": 0.0,
+  "throughput_reward_weight": 1.0,
+  "progress_reward_weight": 0.25,
+  "gridlock_penalty_weight": 0.08,
+  "speed_change_weight": 0.005,
+  "evaluation_every_iterations": 5,
+  "evaluation_steps": 1200,
+  "evaluation_seeds": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105
+  ],
+  "evaluation_workers": 32,
+  "evaluation_learned_device": "cpu",
+  "evaluation_learned_action_mode": "sample",
+  "evaluation_learned_temperature": 1.0,
+  "evaluation_demand_scales": [
+    1.0
+  ],
+  "evaluation_policies": [
+    "learned",
+    "max-pressure",
+    "queue"
+  ],
+  "rollout_cities": [
+    {
+      "city_name": "karlsruhe_oststadt",
+      "city_split": "train",
+      "sumo_config_path": "/root/GNN-Traffic-Signal-Control/configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg",
+      "rollout_jobs_per_iteration": 10,
+      "rollout_priority": 2,
+      "rollout_workers": 10,
+      "demand_scale_min": null,
+      "demand_scale_max": null
+    },
+    {
+      "city_name": "mannheim_innenstadt",
+      "city_split": "train",
+      "sumo_config_path": "/root/GNN-Traffic-Signal-Control/configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg",
+      "rollout_jobs_per_iteration": 10,
+      "rollout_priority": 4,
+      "rollout_workers": 10,
+      "demand_scale_min": 0.8,
+      "demand_scale_max": 1.05
+    },
+    {
+      "city_name": "stuttgart_mitte",
+      "city_split": "train",
+      "sumo_config_path": "/root/GNN-Traffic-Signal-Control/configs/stuttgart_mitte/stuttgart_mitte.sumocfg",
+      "rollout_jobs_per_iteration": 10,
+      "rollout_priority": 5,
+      "rollout_workers": 10,
+      "demand_scale_min": 0.8,
+      "demand_scale_max": 1.05
+    },
+    {
+      "city_name": "heidelberg_bergheim",
+      "city_split": "train",
+      "sumo_config_path": "/root/GNN-Traffic-Signal-Control/configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg",
+      "rollout_jobs_per_iteration": 10,
+      "rollout_priority": 3,
+      "rollout_workers": 10,
+      "demand_scale_min": null,
+      "demand_scale_max": null
+    }
+  ]
+}
