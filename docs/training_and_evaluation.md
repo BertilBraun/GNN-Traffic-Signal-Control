@@ -8,6 +8,24 @@ The movement GNN supports three initialization paths:
 
 All paths use the same movement graph, phase-incidence aggregation, and legal-action mask described in [Architecture and constraints](architecture.md).
 
+## Linux training launcher
+
+[`train.sh`](../train.sh) is the maintained remote/Linux entry point. By default it installs system and Python dependencies, rebuilds the five saved city recipes, runs Ruff and pytest, starts TensorBoard, captures the console under `runs/rl/<run>/train_stdout.log`, and launches the 32-worker scratch experiment for a final target of 85 iterations:
+
+```bash
+./train.sh
+```
+
+The experiment YAML remains the source of truth for rollout, reward, PPO, and evaluation settings. The launcher only supplies initialization, output paths, device, and the final iteration target. Useful environment overrides are:
+
+```bash
+SKIP_BUILD=1 RUN_TESTS=0 ./train.sh
+IL_CHECKPOINT=checkpoints/il/city_first_pass/movement_policy_best.pt ./train.sh
+RESUME_CHECKPOINT=checkpoints/rl/my_run/movement_ppo_latest.pt FINAL_ITERATIONS=200 ./train.sh
+```
+
+`IL_CHECKPOINT` initializes the actor and normalizers from imitation learning. `RESUME_CHECKPOINT` restores the complete PPO state and takes precedence over `IL_CHECKPOINT`. Do not set either variable for random-scratch PPO.
+
 ## Imitation learning
 
 Imitation learning trains the GNN movement scorer to reproduce a deterministic teacher such as max pressure. The teacher supplies movement scores and selected phases; training combines movement-score regression with phase-ranking cross-entropy.
@@ -30,6 +48,8 @@ uv run python scripts\train_il.py `
 ```
 
 The experiment YAML supplies sample counts, collection workers, epochs, batch size, and phase-loss coefficient unless an explicit CLI override is provided.
+
+Each JSONL line is one variable-size decision graph: lane and movement feature matrices, four lane/movement edge types, weighted lane-to-lane connector edges, per-junction phase-incidence rows, teacher movement scores, selected teacher phases, and collection metadata. Graph sizes and phase counts are intentionally ragged across cities.
 
 ## PPO from imitation learning
 
@@ -65,6 +85,16 @@ uv run python scripts\train_rl.py `
 ```
 
 The YAML assigns 10 rollout jobs to each of four training cities, for 40 independent 350-decision-step segments per update, collected by 32 persistent libsumo workers.
+
+## Monitoring
+
+The launcher exposes TensorBoard on port `6006` by default. For a manual session:
+
+```bash
+uv run tensorboard --logdir runs --host 0.0.0.0 --port 6006
+```
+
+Monitor rollout reward, completion, wait density, throughput, and teleports per city together with explained variance, entropy, approximate KL, policy loss, and value loss. Stop and inspect persistent worker failures, teleport spikes, KL early stops, entropy collapse, or simultaneous regression across cities. A rising value loss alone is not necessarily failure when return scale is also changing; explained variance and traffic outcomes provide the more useful context.
 
 ## PPO objective
 
@@ -128,7 +158,7 @@ uv run python scripts\eval_multi_city.py `
   --output-dir reports\city_first_pass_iteration_0085
 ```
 
-The experiment configuration uses six fixed seeds, demand scale `1.0`, and 1,200 decision steps. Evaluation reports throughput, completion, teleports, wait density, queue metrics, and completed-trip waiting/travel metrics.
+The experiment configuration uses six fixed seeds, demand scale `1.0`, and 1,200 simulated seconds: 120 policy decision opportunities at the configured 10-second interval. Evaluation reports throughput, completion, teleports, wait density, queue metrics, and completed-trip waiting/travel metrics.
 
 Completion and congestion must accompany completed-trip averages. Average waiting, travel, and time loss exclude unfinished vehicles and can look artificially favorable when a controller leaves difficult trips in the network.
 

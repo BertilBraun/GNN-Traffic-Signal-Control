@@ -26,7 +26,7 @@ See [Architecture and constraints](docs/architecture.md) for the exact graph and
 
 ## Iteration-85 result
 
-The strongest scratch-trained run used Karlsruhe, Mannheim, Stuttgart, and Heidelberg for PPO rollout generation. Freiburg generated no PPO rollouts and served as a topology-held-out validation city. The iteration-85 checkpoint was evaluated with sampled learned actions over six fixed seeds and a 1,200-decision-step horizon.
+The strongest scratch-trained run used Karlsruhe, Mannheim, Stuttgart, and Heidelberg for PPO rollout generation. Freiburg generated no PPO rollouts and served as a topology-held-out validation city. The iteration-85 checkpoint was evaluated with sampled learned actions over six fixed seeds and 1,200 simulated seconds (120 policy decision opportunities at 10-second intervals).
 
 | city | split | learned | max pressure | queue |
 | --- | --- | ---: | ---: | ---: |
@@ -77,10 +77,17 @@ The GUI runner displays the policy greedily by choosing the highest-scoring curr
 
 To build a different OSM extract, tune pruning, or calibrate demand, follow [City pipeline](docs/city_pipeline.md). To collect imitation data, train from scratch, continue PPO from imitation learning, or evaluate checkpoints, follow [Training and evaluation](docs/training_and_evaluation.md).
 
+On a Linux training machine, [`train.sh`](train.sh) performs dependency setup, reproducible city rebuilds, validation, TensorBoard startup, and the current 85-iteration scratch run:
+
+```bash
+./train.sh
+```
+
 ## Documentation
 
 - [Architecture and constraints](docs/architecture.md)
 - [City-building pipeline](docs/city_pipeline.md)
 - [Training and evaluation](docs/training_and_evaluation.md)
+- [Remote/Linux training operations](docs/remote_training.md)
 - [Iteration-85 results](docs/results/city_first_pass_throughput_scratch_32_worker.md)
 - [Documentation index and archive policy](docs/README.md)

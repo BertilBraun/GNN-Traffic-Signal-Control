@@ -24,7 +24,7 @@ The policy and critic were initialized from random weights. PPO rollouts came fr
 | value warm-up | none |
 | learned evaluation | sampled legal actions, temperature 1.0 |
 | evaluation seeds | 100, 101, 102, 103, 104, 105 |
-| evaluation horizon | 1,200 decision steps |
+| evaluation horizon | 1,200 simulated seconds; 120 decision opportunities |
 | evaluation demand scale | 1.0 |
 | evaluation frequency | every 5 iterations |
 
@@ -103,10 +103,13 @@ Before making a strong generalization claim, repeat training with independent se
 
 ## Evidence and reproduction
 
+- evidence bundle and integrity manifest: [`artifacts/.../README.md`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/README.md)
 - final policy: [`movement_policy_iter_0085_best.pt`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/selected_iteration_0085/movement_policy_iter_0085_best.pt)
 - final PPO state: [`movement_ppo_iter_0085_best.pt`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/selected_iteration_0085/movement_ppo_iter_0085_best.pt)
 - evaluation: [`summary.csv`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/selected_iteration_0085/evaluation/summary.csv) and [`summary.json`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/selected_iteration_0085/evaluation/summary.json)
 - TensorBoard through iteration 85: [`tensorboard_through_iter_0085/`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/tensorboard_through_iter_0085/)
+- training console through iteration 85: [`train_stdout.log`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/runs/train_stdout.log)
+- run metadata: [`run_metadata.json`](../../artifacts/ppo_runs/city_first_pass_throughput_progress_025_sample_eval_v3/runs/run_metadata.json)
 
 Regenerate every result plot:
 

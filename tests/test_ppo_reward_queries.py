@@ -7,7 +7,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
-from src.movement.training.ppo.types import RolloutContext
+from src.movement.training.ppo.types import PpoRewardMode, RolloutContext
 from src.movement.graph_schema import MovementGraph, TypedMovementEdges
 
 
@@ -91,6 +91,10 @@ def test_advance_and_reward_reuses_lane_delay_snapshot() -> None:
         decision_interval=3,
         global_reward_weight=0.1,
         flow_reward_weight=0.1,
+        reward_mode=PpoRewardMode.DELAY_DENSITY,
+        throughput_reward_weight=0.0,
+        progress_reward_weight=0.0,
+        gridlock_penalty_weight=0.0,
         speed_change_weight=0.0,
         reward_sample_interval=3,
         reward_clip=1.0,
@@ -115,6 +119,10 @@ def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() ->
         decision_interval=2,
         global_reward_weight=0.1,
         flow_reward_weight=0.1,
+        reward_mode=PpoRewardMode.DELAY_DENSITY,
+        throughput_reward_weight=0.0,
+        progress_reward_weight=0.0,
+        gridlock_penalty_weight=0.0,
         speed_change_weight=0.02,
         reward_sample_interval=1,
         reward_clip=1.0,
@@ -140,6 +148,10 @@ def test_advance_and_reward_flow_bonus_uses_arrived_vehicles() -> None:
         decision_interval=1,
         global_reward_weight=0.0,
         flow_reward_weight=1.0,
+        reward_mode=PpoRewardMode.DELAY_DENSITY,
+        throughput_reward_weight=0.0,
+        progress_reward_weight=0.0,
+        gridlock_penalty_weight=0.0,
         speed_change_weight=0.0,
         reward_sample_interval=1,
         reward_clip=1.0,

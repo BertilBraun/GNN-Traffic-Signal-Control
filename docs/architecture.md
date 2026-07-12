@@ -50,7 +50,15 @@ Movement         -> output LaneGroup
 
 Message direction is not traffic direction. The output-to-movement edge carries downstream supply and spillback information back to the turn that would feed it.
 
-One macro-hop is `Movement -> LaneGroup -> Movement`. It lets a movement observe immediately adjacent upstream and downstream movements. The reference checkpoint uses one macro-hop.
+At a non-controllable junction, every legal pass-through connection becomes a directed `LaneGroup -> LaneGroup` edge instead of a movement node. Its message is weighted by
+
+```text
+exp(-connector_freeflow_time / 30 seconds)
+```
+
+This lets information cross unsignalized branches without pretending that the policy selects an action there. Signalized junctions never receive these bypass edges: information must pass through their explicit movement nodes.
+
+One macro-hop updates movements from their input/output lane groups, then updates lane groups from movements and unsignalized lane connectors. It lets a movement observe immediately adjacent traffic context while preserving the distinction between controlled and uncontrolled junctions. The reference checkpoint uses one macro-hop.
 
 ## Phase scoring
 
@@ -92,3 +100,14 @@ This is the intended generalization mechanism. Its effectiveness must still be e
 Green edges are directed lane-group connectors through unsignalized junctions. At signalized junctions, blue input edges and amber output edges route information through explicit movement nodes instead.
 
 [Open the interactive 3×3 graph](assets/movement-graph-3x3.html).
+
+Regenerate the synthetic network and documentation views:
+
+```powershell
+uv run python scripts\generate_grid_network.py --rows 3 --cols 3 --out configs\grid_3x3_dedicated
+uv run python scripts\visualize_movement_graph.py `
+  --cfg configs\grid_3x3_dedicated\grid.sumocfg `
+  --out reports\movement_graph_3x3.html
+Copy-Item reports\movement_graph_3x3.html docs\assets\movement-graph-3x3.html
+uv run python scripts\plot_movement_graph_examples.py
+```
