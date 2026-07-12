@@ -91,6 +91,6 @@ This is the intended generalization mechanism. Its effectiveness must still be e
 
 [Open the interactive 3×3 graph](assets/movement-graph-3x3.html).
 
-![Complex center junction](assets/movement-graph-complex-junction.png)
+![Irregular Stuttgart junction](assets/movement-graph-irregular-junction.png)
 
-The second image is deliberately cropped to expose the local representation. Blue edges carry input-lane information into movements; amber edges connect movement choices with output-lane supply. The complex-junction crop should be reviewed for readability before publication.
+The second image is deliberately cropped to expose an irregular local representation with four inputs, five outputs, 16 movements, and five phases. Blue edges carry input-lane information into movements; amber edges connect movement choices with output-lane supply.
