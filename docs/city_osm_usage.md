@@ -4,9 +4,25 @@ The OSM build path now targets the movement-based controller, not the legacy
 fixed-intersection pipeline. It writes movement-safe traffic-light programs,
 city O-D flows, an empty additional file, and a SUMO config.
 
-The planned next step is a replayable network workbench that wraps OSM caching,
-manual topology pruning, inspection, visualization, and GUI demand calibration.
-See `docs/network_build_pipeline_plan.md` for the detailed implementation plan.
+The replayable network workbench wraps OSM caching, topology pruning,
+inspection, visualization, and GUI demand calibration. See
+`docs/network_build_pipeline_plan.md` for its design history.
+
+## City shaping and pruning
+
+Raw OSM road graphs are not assumed to be simulation-ready. Netconvert output
+is inspected and shaped before a city enters training: malformed or infeasible
+junctions and connectors are removed, ambiguous fragments are isolated, signal
+programs are synthesized only for supported movements, and route feasibility is
+checked. Manual prune recipes are committed beside the OSM and build YAML so the
+cleaned topology can be rebuilt instead of being a one-off edit.
+
+Shaping is part of the experimental scenario definition, not a claim that the
+controller accepts every unprocessed OSM extract. After the topology is stable,
+the pipeline samples origin-destination demand, demand scale, and valid routes.
+Training additionally samples target initial occupancy and safe vehicle
+positions, which exposes the policy to varied starting congestion rather than a
+single empty-network transient.
 
 By default, the builder controls only traffic lights imported or guessed from
 OSM/netconvert. It does not turn every 3+-arm city junction into a signal. Use

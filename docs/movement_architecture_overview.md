@@ -15,6 +15,14 @@ movement scores + valid phases -> phase scores -> selected valid phase
 
 A valid phase is a set of compatible movements produced by the existing phase synthesis code. A phase score is computed from the scores of the movements it enables, initially by summing movement scores.
 
+For each junction, the stored phase-incidence matrix maps movement scores to
+phase logits. A phase logit is the sum of the scores of all movements enabled by
+that phase. The runtime then masks phases that are temporarily illegal because
+of minimum-green or transition constraints. PPO rollout collection and sampled
+learned-policy evaluation call the same masking path, so evaluation cannot
+silently choose an action that training would have rejected. Yellow transitions
+and signal-state validity remain deterministic controller responsibilities.
+
 ## Graph Abstraction
 
 The learning graph has two node types:
@@ -68,6 +76,21 @@ downstream 200 metres of the complete corridor, including multiple edges when
 needed.
 
 No explicit conflict edges are needed in the first version because valid phase synthesis already prevents illegal combinations.
+
+## Cross-City Generalization
+
+The model shares one movement scorer and one typed message-passing backbone
+across every junction and city. `LaneGroup` and `Movement` have the same feature
+semantics regardless of the number of roads or traffic lights. The graph may
+therefore grow or shrink without changing learned parameter shapes.
+
+Variable phase counts are handled after the GNN: each junction's own
+phase-incidence matrix reduces its local movement scores to its own legal phase
+set. There is no fixed city-wide action vector and no learned city identity.
+This representation is the intended mechanism for transfer to arbitrary
+OSM-derived topology. Whether it generalizes remains an empirical question;
+see the [current results report](results/city_first_pass_throughput_scratch_32_worker.md)
+for the validation evidence and its limitations.
 
 ## Interactive Graph Inspection
 

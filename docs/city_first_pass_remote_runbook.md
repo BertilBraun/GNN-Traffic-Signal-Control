@@ -1,5 +1,11 @@
 # City First Pass Remote Runbook
 
+> **Operational reference.** This runbook records remote execution and recovery
+> commands. Some examples use earlier worker configurations. It is not the
+> scientific results report; use the
+> [iteration-85 scratch PPO report](results/city_first_pass_throughput_scratch_32_worker.md)
+> for the current result and claims.
+
 This runbook is for the first rented-node city training pass. It assumes a
 Linux machine with SUMO installed, 32 CPU cores, one CUDA GPU, at least 32 GB
 RAM, and the generated city configs already present under `configs/`.
