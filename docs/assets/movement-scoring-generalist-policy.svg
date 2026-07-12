@@ -1,0 +1,227 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">One shared movement-scoring graph policy across heterogeneous traffic networks</title>
+  <desc id="description">Two differently structured OSM-derived traffic networks become LaneGroup and Movement graphs. The same graph neural network scores a variable number of movements. Junction-specific binary phase-incidence matrices sum the movement scores into differently sized phase-logit vectors, after which a legal-action mask selects a phase. A footer shows PPO rollout cities and Freiburg as evaluation-only, with iteration 85 as the completed endpoint.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8.5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#31566d"/>
+    </marker>
+    <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8.5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#087f8c"/>
+    </marker>
+    <style>
+      .title { font: 700 31px Arial, Helvetica, sans-serif; fill: #17324d; }
+      .subtitle { font: 400 17px Arial, Helvetica, sans-serif; fill: #526777; }
+      .step { font: 700 18px Arial, Helvetica, sans-serif; fill: #17324d; }
+      .label { font: 600 16px Arial, Helvetica, sans-serif; fill: #17324d; }
+      .small { font: 400 14px Arial, Helvetica, sans-serif; fill: #445b6a; }
+      .tiny { font: 400 12px Arial, Helvetica, sans-serif; fill: #445b6a; }
+      .mono { font: 500 15px Consolas, Menlo, monospace; fill: #17324d; }
+      .math { font: italic 17px Georgia, 'Times New Roman', serif; fill: #17324d; }
+      .panel { fill: #ffffff; stroke: #a9bbc6; stroke-width: 1.5; }
+      .soft { fill: #f4f7f8; stroke: #c3d0d7; stroke-width: 1.2; }
+      .arrow { fill: none; stroke: #31566d; stroke-width: 2.5; marker-end: url(#arrow); }
+      .arrow-teal { fill: none; stroke: #087f8c; stroke-width: 2.8; marker-end: url(#arrow-teal); }
+      .lane { fill: #286f9b; stroke: #174a68; stroke-width: 1.2; }
+      .move { fill: #e69f00; stroke: #9b6800; stroke-width: 1.2; }
+      .edge-in { fill: none; stroke: #286f9b; stroke-width: 2; }
+      .edge-out { fill: none; stroke: #e69f00; stroke-width: 2; }
+      .road { fill: none; stroke: #b8c1c7; stroke-width: 10; stroke-linecap: round; }
+      .roadline { fill: none; stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 7 6; }
+      .cell { stroke: #8196a3; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#fbfaf7"/>
+  <text x="800" y="48" text-anchor="middle" class="title">One shared policy, different networks and phase spaces</text>
+  <text x="800" y="76" text-anchor="middle" class="subtitle">Learn priorities for common control primitives—Movements—then map them to each junction’s legal phases</text>
+
+  <!-- step headings -->
+  <text x="140" y="119" text-anchor="middle" class="step">1  OSM-derived network</text>
+  <text x="410" y="119" text-anchor="middle" class="step">2  Typed movement graph</text>
+  <text x="738" y="119" text-anchor="middle" class="step">3  Shared GNN</text>
+  <text x="980" y="119" text-anchor="middle" class="step">4  Movement scores</text>
+  <text x="1210" y="119" text-anchor="middle" class="step">5  Local phase map</text>
+  <text x="1480" y="119" text-anchor="middle" class="step">6  Legal action</text>
+
+  <!-- branch backgrounds -->
+  <rect x="24" y="140" width="1552" height="265" rx="16" fill="#f7fafb" stroke="#c8d5dc"/>
+  <rect x="24" y="420" width="1552" height="265" rx="16" fill="#fffaf1" stroke="#dfd1af"/>
+  <rect x="38" y="153" width="66" height="28" rx="14" fill="#286f9b"/>
+  <text x="71" y="173" text-anchor="middle" font-family="Arial" font-size="15" font-weight="700" fill="#fff">City A</text>
+  <rect x="38" y="433" width="66" height="28" rx="14" fill="#d68b00"/>
+  <text x="71" y="453" text-anchor="middle" font-family="Arial" font-size="15" font-weight="700" fill="#fff">City B</text>
+
+  <!-- City A road thumbnail: four-arm -->
+  <rect x="44" y="190" width="194" height="165" rx="10" class="panel"/>
+  <path class="road" d="M56 272 H226 M141 202 V343"/>
+  <path class="roadline" d="M56 272 H226 M141 202 V343"/>
+  <path d="M85 235 L112 245 L101 259 L74 251 Z M179 298 L213 309 L204 330 L171 317 Z" fill="#b8d6a3"/>
+  <circle cx="141" cy="272" r="20" fill="#eef2f4" stroke="#667b87" stroke-width="1.5"/>
+  <path d="M93 265 Q126 265 134 242 M149 301 Q149 283 173 279 M148 242 Q148 263 169 265" fill="none" stroke="#d55e00" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="141" y="378" text-anchor="middle" class="label">4-arm junction</text>
+  <text x="141" y="397" text-anchor="middle" class="small">6 controlled Movements</text>
+
+  <!-- City B road thumbnail: skewed T -->
+  <rect x="44" y="470" width="194" height="165" rx="10" class="panel"/>
+  <path class="road" d="M57 570 H226 M142 482 Q144 528 163 570"/>
+  <path class="roadline" d="M57 570 H226 M142 482 Q144 528 163 570"/>
+  <path d="M75 493 L113 498 L106 520 L69 514 Z M184 602 L221 596 L225 621 L187 626 Z" fill="#b8d6a3"/>
+  <circle cx="163" cy="570" r="19" fill="#eef2f4" stroke="#667b87" stroke-width="1.5"/>
+  <path d="M91 563 Q134 563 153 539 M170 539 Q173 560 199 563" fill="none" stroke="#d55e00" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="141" y="658" text-anchor="middle" class="label">irregular 3-arm junction</text>
+  <text x="141" y="677" text-anchor="middle" class="small">4 controlled Movements</text>
+
+  <!-- arrows network to graph -->
+  <path class="arrow" d="M246 272 H287"/>
+  <path class="arrow" d="M246 552 H287"/>
+
+  <!-- graph A -->
+  <rect x="295" y="172" width="230" height="196" rx="12" class="panel"/>
+  <g>
+    <circle cx="335" cy="222" r="15" class="lane"/><circle cx="335" cy="318" r="15" class="lane"/>
+    <circle cx="485" cy="222" r="15" class="lane"/><circle cx="485" cy="318" r="15" class="lane"/>
+    <circle cx="410" cy="195" r="15" class="lane"/><circle cx="410" cy="345" r="15" class="lane"/>
+    <circle cx="385" cy="252" r="9" class="move"/><circle cx="410" cy="240" r="9" class="move"/>
+    <circle cx="435" cy="252" r="9" class="move"/><circle cx="385" cy="288" r="9" class="move"/>
+    <circle cx="410" cy="300" r="9" class="move"/><circle cx="435" cy="288" r="9" class="move"/>
+    <path class="edge-in" d="M349 225 L379 247 M349 314 L380 293 M410 210 L410 231 M471 225 L441 247 M471 314 L441 293 M410 330 L410 309"/>
+    <path class="edge-out" d="M393 247 L402 241 M393 257 L472 224 M417 240 L479 303 M428 255 L418 294 M393 288 L471 316 M417 301 L410 330"/>
+  </g>
+  <text x="410" y="391" text-anchor="middle" class="small"><tspan fill="#286f9b" font-weight="700">LaneGroup</tspan><tspan> = corridor state  </tspan><tspan fill="#b77800" font-weight="700">Movement</tspan><tspan> = turn</tspan></text>
+
+  <!-- graph B -->
+  <rect x="295" y="452" width="230" height="196" rx="12" class="panel"/>
+  <g>
+    <circle cx="335" cy="550" r="15" class="lane"/><circle cx="485" cy="550" r="15" class="lane"/>
+    <circle cx="410" cy="485" r="15" class="lane"/><circle cx="410" cy="615" r="15" class="lane"/>
+    <circle cx="380" cy="535" r="9" class="move"/><circle cx="410" cy="525" r="9" class="move"/>
+    <circle cx="440" cy="535" r="9" class="move"/><circle cx="410" cy="572" r="9" class="move"/>
+    <path class="edge-in" d="M350 549 L372 538 M410 500 L410 516 M470 549 L448 538 M410 600 L410 581"/>
+    <path class="edge-out" d="M388 533 L471 548 M417 524 L477 540 M432 538 L418 567 M401 571 L343 554"/>
+  </g>
+  <text x="410" y="671" text-anchor="middle" class="small">same node and edge types; different graph size</text>
+
+  <!-- graph to shared GNN arrows -->
+  <path class="arrow-teal" d="M532 270 H626"/>
+  <path class="arrow-teal" d="M532 550 H626"/>
+
+  <!-- central shared GNN -->
+  <rect x="635" y="218" width="205" height="386" rx="22" fill="#087f8c" stroke="#055f69" stroke-width="2"/>
+  <text x="738" y="261" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#fff">Shared GNN</text>
+  <text x="738" y="287" text-anchor="middle" font-family="Georgia" font-size="20" font-style="italic" fill="#fff">f<tspan baseline-shift="sub" font-size="14">θ</tspan>(G, X)</text>
+  <g stroke="#d8f0f2" stroke-width="2" fill="#fff">
+    <line x1="688" y1="350" x2="737" y2="323"/><line x1="737" y1="323" x2="788" y2="350"/><line x1="688" y1="350" x2="714" y2="400"/><line x1="737" y1="323" x2="760" y2="400"/><line x1="788" y1="350" x2="760" y2="400"/><line x1="714" y1="400" x2="760" y2="400"/>
+    <circle cx="688" cy="350" r="9"/><circle cx="737" cy="323" r="9"/><circle cx="788" cy="350" r="9"/><circle cx="714" cy="400" r="9"/><circle cx="760" cy="400" r="9"/>
+  </g>
+  <line x1="670" y1="447" x2="805" y2="447" stroke="#8fd0d5"/>
+  <text x="738" y="481" text-anchor="middle" font-family="Arial" font-size="16" fill="#fff">one parameter set θ</text>
+  <text x="738" y="507" text-anchor="middle" font-family="Arial" font-size="16" fill="#fff">typed message passing</text>
+  <text x="738" y="533" text-anchor="middle" font-family="Arial" font-size="16" fill="#fff">one scalar per Movement</text>
+  <rect x="660" y="554" width="155" height="30" rx="15" fill="#fff" opacity="0.95"/>
+  <text x="738" y="575" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#087f8c">no city-specific head</text>
+
+  <!-- GNN to scores -->
+  <path class="arrow-teal" d="M848 270 H888"/>
+  <path class="arrow-teal" d="M848 550 H888"/>
+
+  <!-- score vectors -->
+  <rect x="896" y="192" width="166" height="158" rx="12" class="panel"/>
+  <text x="979" y="220" text-anchor="middle" class="math">s<tspan baseline-shift="sub" font-size="12">A</tspan> ∈ ℝ⁶</text>
+  <g class="mono" text-anchor="middle">
+    <rect x="920" y="238" width="38" height="34" rx="5" fill="#f7c65b"/><text x="939" y="261">1.2</text>
+    <rect x="962" y="238" width="38" height="34" rx="5" fill="#ffe5a6"/><text x="981" y="261">0.4</text>
+    <rect x="1004" y="238" width="38" height="34" rx="5" fill="#d9e1e5"/><text x="1023" y="261">−.3</text>
+    <rect x="920" y="278" width="38" height="34" rx="5" fill="#f9d27b"/><text x="939" y="301">0.9</text>
+    <rect x="962" y="278" width="38" height="34" rx="5" fill="#f3b432"/><text x="981" y="301">1.5</text>
+    <rect x="1004" y="278" width="38" height="34" rx="5" fill="#ffe5a6"/><text x="1023" y="301">0.5</text>
+  </g>
+  <text x="979" y="334" text-anchor="middle" class="small">6 learned priorities</text>
+
+  <rect x="896" y="472" width="166" height="158" rx="12" class="panel"/>
+  <text x="979" y="500" text-anchor="middle" class="math">s<tspan baseline-shift="sub" font-size="12">B</tspan> ∈ ℝ⁴</text>
+  <g class="mono" text-anchor="middle">
+    <rect x="919" y="526" width="38" height="34" rx="5" fill="#f7c65b"/><text x="938" y="549">1.1</text>
+    <rect x="961" y="526" width="38" height="34" rx="5" fill="#d9e1e5"/><text x="980" y="549">−.2</text>
+    <rect x="1003" y="526" width="38" height="34" rx="5" fill="#f9d27b"/><text x="1022" y="549">0.8</text>
+    <rect x="961" y="566" width="38" height="34" rx="5" fill="#f3b432"/><text x="980" y="589">1.4</text>
+  </g>
+  <text x="979" y="616" text-anchor="middle" class="small">4 learned priorities</text>
+
+  <!-- score-to-matrix multiplication arrows -->
+  <path class="arrow" d="M1070 270 H1094"/>
+  <path class="arrow" d="M1070 550 H1094"/>
+
+  <!-- Incidence A -->
+  <rect x="1102" y="172" width="218" height="198" rx="12" class="panel"/>
+  <text x="1211" y="202" text-anchor="middle" class="math">ℓ<tspan baseline-shift="sub" font-size="12">A</tspan> = A<tspan baseline-shift="sub" font-size="12">A</tspan>s<tspan baseline-shift="sub" font-size="12">A</tspan></text>
+  <text x="1211" y="222" text-anchor="middle" class="tiny">binary Movement → phase incidence</text>
+  <g transform="translate(1134 239)">
+    <rect width="24" height="24" class="cell" fill="#087f8c"/><rect x="24" width="24" height="24" class="cell" fill="#087f8c"/><rect x="48" width="24" height="24" class="cell" fill="#fff"/><rect x="72" width="24" height="24" class="cell" fill="#fff"/><rect x="96" width="24" height="24" class="cell" fill="#fff"/><rect x="120" width="24" height="24" class="cell" fill="#fff"/>
+    <rect y="24" width="24" height="24" class="cell" fill="#fff"/><rect x="24" y="24" width="24" height="24" class="cell" fill="#fff"/><rect x="48" y="24" width="24" height="24" class="cell" fill="#087f8c"/><rect x="72" y="24" width="24" height="24" class="cell" fill="#087f8c"/><rect x="96" y="24" width="24" height="24" class="cell" fill="#fff"/><rect x="120" y="24" width="24" height="24" class="cell" fill="#fff"/>
+    <rect y="48" width="24" height="24" class="cell" fill="#087f8c"/><rect x="24" y="48" width="24" height="24" class="cell" fill="#fff"/><rect x="48" y="48" width="24" height="24" class="cell" fill="#fff"/><rect x="72" y="48" width="24" height="24" class="cell" fill="#fff"/><rect x="96" y="48" width="24" height="24" class="cell" fill="#087f8c"/><rect x="120" y="48" width="24" height="24" class="cell" fill="#087f8c"/>
+  </g>
+  <text x="1211" y="332" text-anchor="middle" class="mono">ℓ<tspan baseline-shift="sub" font-size="11">A</tspan> = [1.6, 0.6, 3.2]</text>
+  <text x="1211" y="354" text-anchor="middle" class="small">3 synthesized phases</text>
+
+  <!-- Incidence B -->
+  <rect x="1102" y="452" width="218" height="198" rx="12" class="panel"/>
+  <text x="1211" y="482" text-anchor="middle" class="math">ℓ<tspan baseline-shift="sub" font-size="12">B</tspan> = A<tspan baseline-shift="sub" font-size="12">B</tspan>s<tspan baseline-shift="sub" font-size="12">B</tspan></text>
+  <text x="1211" y="502" text-anchor="middle" class="tiny">junction-specific; not learned</text>
+  <g transform="translate(1158 527)">
+    <rect width="26" height="26" class="cell" fill="#087f8c"/><rect x="26" width="26" height="26" class="cell" fill="#087f8c"/><rect x="52" width="26" height="26" class="cell" fill="#fff"/><rect x="78" width="26" height="26" class="cell" fill="#fff"/>
+    <rect y="26" width="26" height="26" class="cell" fill="#fff"/><rect x="26" y="26" width="26" height="26" class="cell" fill="#fff"/><rect x="52" y="26" width="26" height="26" class="cell" fill="#087f8c"/><rect x="78" y="26" width="26" height="26" class="cell" fill="#087f8c"/>
+  </g>
+  <text x="1211" y="600" text-anchor="middle" class="mono">ℓ<tspan baseline-shift="sub" font-size="11">B</tspan> = [0.9, 2.2]</text>
+  <text x="1211" y="624" text-anchor="middle" class="small">2 synthesized phases</text>
+
+  <!-- matrices to masks/actions -->
+  <path class="arrow" d="M1328 270 H1350"/>
+  <path class="arrow" d="M1328 550 H1350"/>
+
+  <!-- Legal action A -->
+  <rect x="1358" y="181" width="190" height="178" rx="12" class="panel"/>
+  <text x="1453" y="211" text-anchor="middle" class="label">runtime legal mask</text>
+  <g transform="translate(1381 231)">
+    <rect width="48" height="42" rx="6" fill="#dcefee" stroke="#087f8c"/><text x="24" y="27" text-anchor="middle" class="mono">1.6</text>
+    <rect x="56" width="48" height="42" rx="6" fill="#e6e9eb" stroke="#8b969d"/><text x="80" y="27" text-anchor="middle" class="mono" fill="#6c7479">−∞</text>
+    <rect x="112" width="48" height="42" rx="6" fill="#b7e0bd" stroke="#25883d" stroke-width="2"/><text x="136" y="27" text-anchor="middle" class="mono">3.2</text>
+    <path d="M62 7 L98 35 M98 7 L62 35" stroke="#7d878d" stroke-width="2"/>
+  </g>
+  <text x="1453" y="302" text-anchor="middle" class="small">sample one legal phase</text>
+  <rect x="1400" y="316" width="106" height="28" rx="14" fill="#25883d"/>
+  <text x="1453" y="336" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#fff">choose phase 3</text>
+
+  <!-- Legal action B -->
+  <rect x="1358" y="461" width="190" height="178" rx="12" class="panel"/>
+  <text x="1453" y="491" text-anchor="middle" class="label">runtime legal mask</text>
+  <g transform="translate(1409 511)">
+    <rect width="52" height="42" rx="6" fill="#e6e9eb" stroke="#8b969d"/><text x="26" y="27" text-anchor="middle" class="mono" fill="#6c7479">−∞</text>
+    <rect x="60" width="52" height="42" rx="6" fill="#b7e0bd" stroke="#25883d" stroke-width="2"/><text x="86" y="27" text-anchor="middle" class="mono">2.2</text>
+    <path d="M6 7 L46 35 M46 7 L6 35" stroke="#7d878d" stroke-width="2"/>
+  </g>
+  <text x="1453" y="582" text-anchor="middle" class="tiny">mask enforces minimum green</text>
+  <rect x="1400" y="596" width="106" height="28" rx="14" fill="#25883d"/>
+  <text x="1453" y="616" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#fff">choose phase 2</text>
+
+  <!-- central formula -->
+  <rect x="505" y="702" width="590" height="54" rx="27" fill="#ffffff" stroke="#7fa1b4" stroke-width="1.5"/>
+  <text x="800" y="736" text-anchor="middle" class="math">phase logit ℓ<tspan baseline-shift="sub" font-size="12">j,p</tspan> = Σ<tspan baseline-shift="sub" font-size="12">m</tspan> A<tspan baseline-shift="sub" font-size="12">j,p,m</tspan> s<tspan baseline-shift="sub" font-size="12">m</tspan>     ·     shared θ, local A<tspan baseline-shift="sub" font-size="12">j</tspan></text>
+
+  <!-- training/evaluation provenance footer -->
+  <rect x="24" y="779" width="1552" height="94" rx="14" fill="#edf3f5" stroke="#a9bbc6" stroke-width="1.3"/>
+  <text x="49" y="807" class="label">Training and evaluation provenance</text>
+  <rect x="49" y="821" width="144" height="32" rx="16" fill="#d9ebf4" stroke="#286f9b"/><text x="121" y="842" text-anchor="middle" class="small">Karlsruhe</text>
+  <rect x="203" y="821" width="144" height="32" rx="16" fill="#d9ebf4" stroke="#286f9b"/><text x="275" y="842" text-anchor="middle" class="small">Mannheim</text>
+  <rect x="357" y="821" width="144" height="32" rx="16" fill="#d9ebf4" stroke="#286f9b"/><text x="429" y="842" text-anchor="middle" class="small">Stuttgart</text>
+  <rect x="511" y="821" width="144" height="32" rx="16" fill="#d9ebf4" stroke="#286f9b"/><text x="583" y="842" text-anchor="middle" class="small">Heidelberg</text>
+  <text x="674" y="842" class="small">→ PPO rollouts</text>
+  <line x1="803" y1="796" x2="803" y2="858" stroke="#a9bbc6"/>
+  <rect x="829" y="821" width="144" height="32" rx="16" fill="#fff4da" stroke="#d68b00" stroke-width="1.5"/><text x="901" y="842" text-anchor="middle" class="small">Freiburg</text>
+  <text x="991" y="842" class="small">no PPO rollouts; periodic evaluation</text>
+  <line x1="1241" y1="796" x2="1241" y2="858" stroke="#a9bbc6"/>
+  <circle cx="1276" cy="837" r="10" fill="#087f8c"/>
+  <path d="M1288 837 H1320" class="arrow-teal"/>
+  <circle cx="1336" cy="837" r="10" fill="#087f8c"/>
+  <text x="1360" y="830" class="label">iteration 85</text>
+  <text x="1360" y="851" class="small">completed endpoint</text>
+</svg>
