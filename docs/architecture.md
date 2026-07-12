@@ -62,7 +62,7 @@ One macro-hop updates movements from their input/output lane groups, then update
 
 ## Phase scoring
 
-The GNN outputs one scalar score for every movement in the current city graph. For each junction, a phase-incidence matrix records which local movements receive green in each synthesized phase. Phase logits are sums over enabled movements:
+The GNN outputs one scalar score for every movement in the current city graph. For each junction, a phase-incidence matrix records which local movements receive green in each synthesized phase. These phases are the maximal conflict-free movement sets produced by the [city-building pipeline](city_pipeline.md#signal-and-movement-synthesis), not a fixed universal phase template. Phase logits are sums over enabled movements:
 
 ```text
 phase_logit[p] = sum(movement_score[m] for m enabled by phase p)

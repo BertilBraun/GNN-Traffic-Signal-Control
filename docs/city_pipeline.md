@@ -81,6 +81,49 @@ Only imported or deliberately promoted traffic lights are candidates for control
 
 Junctions that cannot satisfy these requirements remain pass-through, are excluded from policy decisions, or are removed during shaping. The policy never invents signal states for an unsupported junction.
 
+### From OSM geometry to controlled links
+
+Phases are not inferred directly from OSM tags. `netconvert` first turns the shaped OSM road geometry, lane permissions, and junction priorities into a SUMO network with lane-to-lane connections, traffic-light link indices, junction request indices, and a request-conflict (`foes`) matrix. The city builder converts each signal-controlled connection into a link specification containing:
+
+- its traffic-light link index and SUMO request index;
+- its incoming and outgoing lane;
+- its outgoing edge.
+
+Traffic lights with no controlled links are skipped. A junction is also rejected from synthesized control when multiple connections reuse one traffic-light link index, because the current movement representation requires an unambiguous signal-index-to-movement mapping.
+
+### Atomic movement groups
+
+Before searching for phases, controlled links that must activate together are collapsed into atomic groups. Two links belong to the same transitive group when either:
+
+- they share an incoming lane; or
+- parallel lanes from the same incoming edge lead to the same outgoing destination (the outgoing lane when known, otherwise the outgoing edge).
+
+This prevents the synthesizer from opening only part of a shared lane or arbitrarily enabling one of several parallel lanes serving the same destination. If links inside an atomic group conflict, the group cannot become a selectable phase component and the junction must be inspected.
+
+### Conflict and compatibility rules
+
+Two atomic groups are compatible only when every cross-group pair passes both rules:
+
+1. SUMO does not mark the two junction requests as foes in either direction.
+2. The links do not enter the same outgoing edge from different incoming approaches.
+
+The second rule deliberately treats competing merges as conflicts even when SUMO's request matrix does not. Multiple lanes from the same approach may still enter the same outgoing edge together.
+
+The compatible groups form an undirected graph. Phase synthesis enumerates its **maximal cliques** with the Bron–Kerbosch algorithm. Each clique becomes one selectable green phase: its controlled links are `G`, and all other links are `r`.
+
+“Maximal” does not mean “maximum.” A maximal compatible set is one to which no additional atomic group can be added safely. The builder retains every such set, including smaller protected phases, rather than keeping only the phase with the largest number of movements. Duplicate states are removed and phases are ordered deterministically, with larger sets first. Synthesis stops with an error above 128 maximal phases so an excessively complex junction can be simplified or pruned instead of silently truncated.
+
+For the standalone generated SUMO program, each selectable green is followed by a 3-second yellow and a 2-second all-red phase. During learned control, only the synthesized green states are policy actions; runtime minimum-green and yellow-transition logic mediates switches between them.
+
+Inspect the controlled links, conflicts, and resulting maximal states for any built junction:
+
+```powershell
+uv run python scripts\tools\analyze_movement_conflicts.py `
+  --net configs\<city>\<city>.net.xml `
+  --tls <junction-id> `
+  --mode conflict-edge
+```
+
 ## Demand and initial occupancy
 
 The city recipe specifies a base demand rate and a route-count limit. The builder samples valid origin-destination routes over the shaped topology and writes route flows. Runtime demand scale multiplies the base flows without rebuilding the network.
