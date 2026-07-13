@@ -38,6 +38,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--checkpoint', type=Path, default=None, help='Checkpoint for the learned policy')
     parser.add_argument('--output-dir', type=Path, required=True, help='Directory for CSV and JSON outputs')
     parser.add_argument('--device', default='cpu', help='Torch device for learned policy inference')
+    parser.add_argument(
+        '--workers',
+        type=int,
+        default=None,
+        help='Override the configured number of parallel evaluation workers',
+    )
     parser.add_argument('--seeds', nargs='+', type=int, default=None, help='Override experiment evaluation seeds')
     parser.add_argument('--steps', type=int, default=None, help='Override experiment evaluation steps')
     parser.add_argument(
@@ -91,6 +97,11 @@ def main() -> None:
         episode_runner=FileCachedEpisodeRunner(
             cache_dir=parsed_arguments.cache_dir,
             episode_runner=default_episode_runner,
+        ),
+        worker_count=(
+            configuration.proximal_policy_optimization.evaluation_workers
+            if parsed_arguments.workers is None
+            else parsed_arguments.workers
         ),
     )
     parsed_arguments.output_dir.mkdir(parents=True, exist_ok=True)
