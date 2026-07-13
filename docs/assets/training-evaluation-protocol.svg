@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1050" viewBox="0 0 1800 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Multi-city PPO training and periodic evaluation protocol</title>
+  <desc id="desc">A shared movement-scoring GNN policy collects rollouts from four PPO-rollout cities. Their trajectories are combined for one PPO update and returned to the shared policy. Every five iterations, the policy is monitored on those four cities and Freiburg, which is held out from PPO rollouts. The run ends at the completed iteration 85 endpoint after a manual stop.</desc>
+  <defs>
+    <linearGradient id="policyFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f6070"/>
+      <stop offset="1" stop-color="#07879a"/>
+    </linearGradient>
+    <linearGradient id="updateFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#075f73"/>
+      <stop offset="1" stop-color="#0c8b9e"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#17324a" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#086f82"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#235f87"/>
+    </marker>
+    <style>
+      .title{font:700 31px 'Segoe UI',Arial,sans-serif;fill:#132e43}.subtitle{font:400 17px 'Segoe UI',Arial,sans-serif;fill:#51677a}
+      .section{font:700 19px 'Segoe UI',Arial,sans-serif;letter-spacing:.8px;fill:#235f87}.city{font:700 21px 'Segoe UI',Arial,sans-serif;fill:#17324a}
+      .label{font:600 18px 'Segoe UI',Arial,sans-serif;fill:#17324a}.small{font:400 15px 'Segoe UI',Arial,sans-serif;fill:#526a7d}.tiny{font:600 13px 'Segoe UI',Arial,sans-serif;fill:#526a7d}
+      .white{fill:#fff}.panel{fill:#fff;stroke:#b9c8d3;stroke-width:1.5}.soft{fill:#f4f8fa}.road{fill:none;stroke:#bdc8ce;stroke-width:9;stroke-linecap:round}.lane{fill:none;stroke:#fff;stroke-width:1.7;stroke-dasharray:8 7}.water{fill:none;stroke:#8dcee1;stroke-width:16;stroke-linecap:round;opacity:.82}.minor{fill:none;stroke:#d6dee2;stroke-width:3;stroke-linecap:round}.park{fill:#b8d5a4;opacity:.85}.flow{fill:none;stroke:#086f82;stroke-width:4;marker-end:url(#arrowTeal)}
+    </style>
+  </defs>
+
+  <rect width="1800" height="1050" fill="#fbfcfd"/>
+  <text x="900" y="49" text-anchor="middle" class="title">Multi-city PPO training and evaluation protocol</text>
+  <text x="900" y="78" text-anchor="middle" class="subtitle">One movement-scoring policy is updated from four-city rollouts; Freiburg is used for monitoring only</text>
+
+  <!-- shared policy -->
+  <g filter="url(#shadow)">
+    <rect x="720" y="108" width="360" height="116" rx="18" fill="url(#policyFill)"/>
+  </g>
+  <g stroke="#fff" stroke-width="2.5" fill="#fff">
+    <line x1="762" y1="148" x2="799" y2="132"/><line x1="799" y1="132" x2="830" y2="161"/><line x1="762" y1="148" x2="778" y2="184"/><line x1="778" y1="184" x2="830" y2="161"/><line x1="799" y1="132" x2="778" y2="184"/>
+    <circle cx="762" cy="148" r="6"/><circle cx="799" cy="132" r="6"/><circle cx="830" cy="161" r="6"/><circle cx="778" cy="184" r="6"/>
+  </g>
+  <text x="936" y="157" text-anchor="middle" class="white" style="font:700 24px 'Segoe UI',Arial,sans-serif">Shared GNN policy</text>
+  <text x="936" y="188" text-anchor="middle" class="white" style="font:400 16px 'Segoe UI',Arial,sans-serif">same parameters in every city</text>
+
+  <text x="67" y="275" class="section">PPO ROLLOUT GENERATION</text>
+  <path d="M900 224 V254 H215 V298 M900 254 H585 V298 M900 254 H955 V298" fill="none" stroke="#086f82" stroke-width="4"/>
+  <path d="M1325 254 V292 M215 275 V292 M585 275 V292 M955 275 V292" class="flow"/>
+
+  <!-- Four city cards -->
+  <g transform="translate(55 300)">
+    <rect width="320" height="296" rx="15" class="panel"/>
+    <text x="160" y="36" text-anchor="middle" class="city">Karlsruhe</text>
+    <g transform="translate(18 53)"><rect width="284" height="132" rx="10" class="soft"/>
+      <path d="M21 109 C68 80 92 49 130 21" class="water"/><path d="M-2 68 H286" class="road"/><path d="M-2 68 H286" class="lane"/><path d="M61 3 V133 M174 1 V133 M239 10 L194 132" class="minor"/><path d="M18 25 L71 38 L57 63 L8 52 Z M218 83 L269 69 L278 103 L227 116 Z" class="park"/>
+    </g><text x="160" y="213" text-anchor="middle" class="label">10 rollout jobs / update</text><text x="160" y="242" text-anchor="middle" class="small">350 policy decisions each</text><text x="160" y="272" text-anchor="middle" class="tiny">TRAINING CITY</text>
+  </g>
+  <g transform="translate(425 300)">
+    <rect width="320" height="296" rx="15" class="panel"/>
+    <text x="160" y="36" text-anchor="middle" class="city">Mannheim</text>
+    <g transform="translate(18 53)"><rect width="284" height="132" rx="10" class="soft"/>
+      <path d="M176 -5 C164 37 171 79 185 137" class="water"/><path d="M0 22 H284 M0 66 H284 M0 109 H284 M36 0 V132 M85 0 V132 M132 0 V132 M230 0 V132 M276 0 V132" class="minor"/><path d="M-3 86 L285 47" class="road"/><path d="M-3 86 L285 47" class="lane"/><path d="M15 7 H64 V39 H15 Z M218 84 H266 V121 H218 Z" class="park"/>
+    </g><text x="160" y="213" text-anchor="middle" class="label">10 rollout jobs / update</text><text x="160" y="242" text-anchor="middle" class="small">350 policy decisions each</text><text x="160" y="272" text-anchor="middle" class="tiny">TRAINING CITY</text>
+  </g>
+  <g transform="translate(795 300)">
+    <rect width="320" height="296" rx="15" class="panel"/>
+    <text x="160" y="36" text-anchor="middle" class="city">Stuttgart</text>
+    <g transform="translate(18 53)"><rect width="284" height="132" rx="10" class="soft"/>
+      <path d="M-4 101 C52 79 96 77 139 39 C183 1 226 12 288 31" class="road"/><path d="M-4 101 C52 79 96 77 139 39 C183 1 226 12 288 31" class="lane"/><path d="M39 0 L64 131 M111 0 L128 132 M205 0 L183 132 M267 0 L233 132" class="minor"/><path d="M10 12 L48 8 L53 42 L20 52 Z M201 76 L265 66 L273 111 L214 119 Z" class="park"/>
+    </g><text x="160" y="213" text-anchor="middle" class="label">10 rollout jobs / update</text><text x="160" y="242" text-anchor="middle" class="small">350 policy decisions each</text><text x="160" y="272" text-anchor="middle" class="tiny">TRAINING CITY</text>
+  </g>
+  <g transform="translate(1165 300)">
+    <rect width="320" height="296" rx="15" class="panel"/>
+    <text x="160" y="36" text-anchor="middle" class="city">Heidelberg</text>
+    <g transform="translate(18 53)"><rect width="284" height="132" rx="10" class="soft"/>
+      <path d="M-7 30 C62 21 103 39 145 65 C196 97 240 91 292 64" class="water"/><path d="M54 0 V132 M111 0 V132 M214 0 V132 M258 0 V132 M0 16 H284 M0 107 H284" class="minor"/><path d="M-4 78 H289" class="road"/><path d="M-4 78 H289" class="lane"/><path d="M16 91 H62 V123 H16 Z M209 7 H270 V37 H209 Z" class="park"/>
+    </g><text x="160" y="213" text-anchor="middle" class="label">10 rollout jobs / update</text><text x="160" y="242" text-anchor="middle" class="small">350 policy decisions each</text><text x="160" y="272" text-anchor="middle" class="tiny">TRAINING CITY</text>
+  </g>
+
+  <!-- Training loop -->
+  <path d="M215 596 V642 H770 M585 596 V642 M955 596 V642 M1325 596 V642 H770 V686" fill="none" stroke="#235f87" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <g filter="url(#shadow)"><path d="M636 689 h268 v155 c0 28-60 51-134 51s-134-23-134-51z" fill="#edf5fa" stroke="#235f87" stroke-width="2"/><ellipse cx="770" cy="689" rx="134" ry="30" fill="#fff" stroke="#235f87" stroke-width="2"/></g>
+  <text x="770" y="747" text-anchor="middle" class="label">Trajectory buffer</text>
+  <text x="770" y="777" text-anchor="middle" class="small">40 rollouts per update</text>
+  <g fill="#528bb2"><circle cx="709" cy="821" r="6"/><circle cx="729" cy="821" r="6"/><circle cx="749" cy="821" r="6"/><circle cx="769" cy="821" r="6"/><circle cx="789" cy="821" r="6"/><circle cx="809" cy="821" r="6"/><circle cx="829" cy="821" r="6"/></g>
+  <path d="M905 789 H1008" class="flow"/>
+  <g filter="url(#shadow)"><rect x="1015" y="692" width="340" height="190" rx="17" fill="url(#updateFill)"/></g>
+  <text x="1185" y="762" text-anchor="middle" class="white" style="font:700 28px 'Segoe UI',Arial,sans-serif">Multi-city PPO update</text>
+  <text x="1185" y="797" text-anchor="middle" class="white" style="font:400 18px 'Segoe UI',Arial,sans-serif">2 epochs · scratch initialization</text>
+  <path d="M1158 835 a31 31 0 0 1 50-26" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M1204 799 l12 19 -22 2 z" fill="#fff"/>
+  <path d="M1210 843 a31 31 0 0 1-50 25" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M1165 878 l-13-18 22-3 z" fill="#fff"/>
+  <path d="M1355 787 H1543 V166 H1080" fill="none" stroke="#086f82" stroke-width="4" marker-end="url(#arrowTeal)"/>
+  <text x="1467" y="765" text-anchor="middle" class="small">updated weights</text>
+
+  <!-- Evaluation column -->
+  <line x1="1558" y1="105" x2="1558" y2="935" stroke="#8da4b5" stroke-width="2" stroke-dasharray="9 9"/>
+  <text x="1675" y="135" text-anchor="middle" class="section" style="font-size:17px">PERIODIC MONITORING</text>
+  <path d="M1080 184 H1518 V258 H1591" class="flow"/>
+  <g transform="translate(1595 178)">
+    <rect width="175" height="615" rx="16" class="panel" filter="url(#shadow)"/>
+    <text x="87.5" y="40" text-anchor="middle" class="label">Evaluate every</text><text x="87.5" y="65" text-anchor="middle" class="label">5 iterations</text>
+    <g transform="translate(17 88)">
+      <g><rect width="141" height="57" rx="9" fill="#f3f7f9" stroke="#c2ced6"/><circle cx="22" cy="29" r="11" fill="#2e789f"/><path d="M15 29h14M22 22v14" stroke="#fff" stroke-width="2"/><text x="43" y="35" class="small">Karlsruhe</text></g>
+      <g transform="translate(0 67)"><rect width="141" height="57" rx="9" fill="#f3f7f9" stroke="#c2ced6"/><circle cx="22" cy="29" r="11" fill="#2e789f"/><path d="M15 29h14M22 22v14" stroke="#fff" stroke-width="2"/><text x="43" y="35" class="small">Mannheim</text></g>
+      <g transform="translate(0 134)"><rect width="141" height="57" rx="9" fill="#f3f7f9" stroke="#c2ced6"/><circle cx="22" cy="29" r="11" fill="#2e789f"/><path d="M15 29h14M22 22v14" stroke="#fff" stroke-width="2"/><text x="43" y="35" class="small">Stuttgart</text></g>
+      <g transform="translate(0 201)"><rect width="141" height="57" rx="9" fill="#f3f7f9" stroke="#c2ced6"/><circle cx="22" cy="29" r="11" fill="#2e789f"/><path d="M15 29h14M22 22v14" stroke="#fff" stroke-width="2"/><text x="43" y="35" class="small">Heidelberg</text></g>
+      <g transform="translate(0 280)"><rect width="141" height="91" rx="9" fill="#fff8e8" stroke="#d69200" stroke-width="2" stroke-dasharray="7 5"/><circle cx="22" cy="29" r="11" fill="#d69200"/><path d="M15 29h14M22 22v14" stroke="#fff" stroke-width="2"/><text x="43" y="28" class="small" style="font-weight:700">Freiburg</text><text x="43" y="50" class="small">validation</text><text x="70" y="76" text-anchor="middle" class="tiny">0 PPO rollouts</text></g>
+    </g>
+    <line x1="22" y1="487" x2="153" y2="487" stroke="#d3dce2"/>
+    <text x="87.5" y="517" text-anchor="middle" class="small">Fixed seeds 100–105</text>
+    <text x="87.5" y="544" text-anchor="middle" class="small">sampled actions</text>
+    <text x="87.5" y="574" text-anchor="middle" class="tiny">MONITORING ONLY</text>
+  </g>
+
+  <!-- Endpoint -->
+  <path d="M1683 797 V875" class="flow"/>
+  <g transform="translate(1512 891)">
+    <rect width="258" height="115" rx="16" fill="#edf7ef" stroke="#4c9660" stroke-width="2"/>
+    <circle cx="34" cy="42" r="17" fill="#4c9660"/><path d="M25 42 l7 7 13-16" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="61" y="37" class="label">Iteration 85</text><text x="61" y="63" class="small">completed endpoint</text><text x="129" y="91" text-anchor="middle" class="tiny">MANUAL STOP · NOT MODEL SELECTION</text>
+  </g>
+</svg>
