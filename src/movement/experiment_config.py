@@ -18,6 +18,8 @@ class ExperimentEvaluationPolicy(str, Enum):
     LEARNED = 'learned'
     MAX_PRESSURE = 'max-pressure'
     QUEUE = 'queue'
+    UNIFORM_RANDOM = 'uniform-random'
+    FIXED_TIME = 'fixed-time'
 
 
 class ExperimentPpoRewardMode(str, Enum):
@@ -76,6 +78,7 @@ class ExperimentSimulationConfiguration(BaseModel):
     decision_interval: int = Field(gt=0)
     time_to_teleport: int
     yellow_duration: int = Field(ge=0)
+    yellow_start_delay: int = Field(ge=0, default=0)
     minimum_green_steps: int = Field(gt=0, alias='min_green_steps')
     minimum_initial_occupancy: float = Field(ge=0.0, alias='initial_occupancy_min')
     maximum_initial_occupancy: float = Field(ge=0.0, alias='initial_occupancy_max')
@@ -84,6 +87,8 @@ class ExperimentSimulationConfiguration(BaseModel):
     def validate_initial_occupancy_range(self) -> 'ExperimentSimulationConfiguration':
         if self.minimum_initial_occupancy > self.maximum_initial_occupancy:
             raise ValueError('initial_occupancy_min must be less than or equal to initial_occupancy_max')
+        if self.yellow_start_delay + self.yellow_duration > self.decision_interval:
+            raise ValueError('yellow_start_delay plus yellow_duration must not exceed decision_interval')
         return self
 
 
@@ -152,6 +157,7 @@ class ExperimentEvaluationConfiguration(BaseModel):
     policies: tuple[ExperimentEvaluationPolicy, ...] = Field(min_length=1)
     seeds: tuple[int, ...] = Field(min_length=1)
     steps: int = Field(gt=0)
+    fixed_time_phase_duration: int = Field(gt=0, default=10)
 
 
 class ExperimentConfiguration(BaseModel):
@@ -177,6 +183,14 @@ class ExperimentConfiguration(BaseModel):
             raise ValueError(f'exactly one held-out city is required, found {len(held_out_cities)}')
         if self.proximal_policy_optimization.reward_sample_interval > self.simulation.decision_interval:
             raise ValueError('ppo.reward_sample_interval must not exceed simulation.decision_interval')
+        if ExperimentEvaluationPolicy.FIXED_TIME in self.evaluation.policies:
+            if self.evaluation.fixed_time_phase_duration % self.simulation.decision_interval != 0:
+                raise ValueError(
+                    'evaluation.fixed_time_phase_duration must be divisible by simulation.decision_interval'
+                )
+            fixed_time_phase_decisions = self.evaluation.fixed_time_phase_duration // self.simulation.decision_interval
+            if fixed_time_phase_decisions < self.simulation.minimum_green_steps:
+                raise ValueError('evaluation.fixed_time_phase_duration must satisfy simulation.min_green_steps')
         return self
 
     @property

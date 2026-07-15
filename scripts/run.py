@@ -188,6 +188,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds to run')
     parser.add_argument('--decision-interval', type=int, default=10, help='Seconds between phase decisions')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow seconds inserted before a new green')
+    parser.add_argument('--yellow-start-delay', type=int, default=0, help='Seconds to retain green before yellow')
     parser.add_argument(
         '--min-green-steps',
         type=int,
@@ -239,6 +240,7 @@ def main() -> None:
         gui=args.gui,
         seed=args.seed,
         yellow_duration=args.yellow_duration,
+        yellow_start_delay=args.yellow_start_delay,
         min_green_steps=args.min_green_steps,
         time_to_teleport=args.time_to_teleport,
         additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),

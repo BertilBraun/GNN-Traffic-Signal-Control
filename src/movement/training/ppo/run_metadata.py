@@ -47,6 +47,10 @@ class PpoRunMetadata(BaseModel):
     rollout_workers: int
     sumo_backend: str
     steps_per_rollout: int
+    decision_interval: int
+    yellow_duration: int
+    yellow_start_delay: int
+    minimum_green_steps: int
     demand_scale_min: float
     demand_scale_max: float
     reward_mode: str
@@ -59,6 +63,7 @@ class PpoRunMetadata(BaseModel):
     evaluation_every_iterations: int
     evaluation_steps: int
     evaluation_seeds: tuple[int, ...]
+    evaluation_fixed_time_phase_duration: int
     evaluation_workers: int
     evaluation_learned_device: str
     evaluation_learned_action_mode: str
@@ -106,6 +111,10 @@ def build_run_metadata(
         rollout_workers=config.num_workers,
         sumo_backend=config.sumo_backend.value,
         steps_per_rollout=config.steps_per_rollout,
+        decision_interval=config.decision_interval,
+        yellow_duration=config.yellow_duration,
+        yellow_start_delay=config.yellow_start_delay,
+        minimum_green_steps=config.min_green_steps,
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
         reward_mode=config.reward_mode.value,
@@ -118,6 +127,7 @@ def build_run_metadata(
         evaluation_every_iterations=config.eval_every,
         evaluation_steps=config.eval_steps,
         evaluation_seeds=config.eval_seeds,
+        evaluation_fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
         evaluation_workers=config.eval_worker_count,
         evaluation_learned_device=config.eval_learned_device,
         evaluation_learned_action_mode=config.eval_learned_action_mode.value,

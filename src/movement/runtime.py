@@ -29,6 +29,7 @@ class MovementControlRuntime:
     gui: bool = False
     seed: int = 42
     yellow_duration: int = 3
+    yellow_start_delay: int = 0
     min_green_steps: int = 2
     time_to_teleport: int | None = None
     additional_sumo_args: Sequence[str] = ()
@@ -39,7 +40,10 @@ class MovementControlRuntime:
     _backend: SumoBackend = field(init=False)
 
     def __post_init__(self) -> None:
-        self._transition_controller = SignalTransitionController(yellow_duration=self.yellow_duration)
+        self._transition_controller = SignalTransitionController(
+            yellow_duration=self.yellow_duration,
+            yellow_start_delay=self.yellow_start_delay,
+        )
         self._min_green_controller = MinGreenController(min_green_steps=self.min_green_steps)
         self._backend = create_sumo_backend(self.backend_kind)
 

@@ -402,6 +402,7 @@ def collect_rollout(
         gui=config.gui,
         seed=rollout_seed,
         yellow_duration=config.yellow_duration,
+        yellow_start_delay=config.yellow_start_delay,
         min_green_steps=config.min_green_steps,
         time_to_teleport=config.time_to_teleport,
         additional_sumo_args=route_file_sumo_args((*demand_route_files.route_files, initial_population.route_file)),

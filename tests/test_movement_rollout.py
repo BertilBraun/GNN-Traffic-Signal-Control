@@ -13,7 +13,9 @@ from src.movement.dataset import MovementDatasetSample, MovementEdgeIndices, Sto
 from src.movement.evaluation import EvaluationMetrics, EvaluationPolicy, LearnedEvaluationActionMode
 from src.movement.evaluation import LearnedPolicyConfig
 from src.movement.evaluation.multi_city import (
+    BASELINE_POLICY_IMPLEMENTATION_VERSION,
     FileCachedEpisodeRunner,
+    MultiCityEvaluationCacheKey,
     MultiCityEvaluationAggregate,
     MultiCityEvaluationRunRequest,
 )
@@ -470,6 +472,17 @@ def test_file_cached_episode_runner_caches_baselines_only(tmp_path: Path) -> Non
 
     assert calls.count(EvaluationPolicy.MAX_PRESSURE) == 1
     assert calls.count(EvaluationPolicy.LEARNED) == 2
+
+
+def test_baseline_cache_key_includes_policy_version_and_transition_timing() -> None:
+    immediate_request = _multi_city_request(policy=EvaluationPolicy.MAX_PRESSURE)
+    delayed_request = replace(immediate_request, yellow_start_delay=2)
+
+    immediate_key = MultiCityEvaluationCacheKey.from_request(immediate_request)
+    delayed_key = MultiCityEvaluationCacheKey.from_request(delayed_request)
+
+    assert immediate_key.baseline_policy_implementation_version == BASELINE_POLICY_IMPLEMENTATION_VERSION
+    assert immediate_key.sha256() != delayed_key.sha256()
 
 
 def test_serialized_rollout_round_trip_removes_handoff_file(tmp_path: Path) -> None:
@@ -1000,6 +1013,7 @@ def _ppo_config(
         transitions_per_batch=32,
         update_batch_workers=0,
         yellow_duration=3,
+        yellow_start_delay=0,
         min_green_steps=2,
         demand_scale_min=0.8,
         demand_scale_max=1.2,
@@ -1024,6 +1038,7 @@ def _ppo_config(
         eval_steps=600,
         eval_seeds=(42,),
         eval_policies=(EvaluationPolicy.MAX_PRESSURE,),
+        eval_fixed_time_phase_duration=10,
         eval_worker_count=1,
         eval_learned_device='cpu',
         eval_learned_action_mode=LearnedEvaluationActionMode.DETERMINISTIC,
@@ -1119,7 +1134,9 @@ def _multi_city_request(policy: EvaluationPolicy) -> MultiCityEvaluationRunReque
         steps=120,
         decision_interval=10,
         yellow_duration=3,
+        yellow_start_delay=0,
         minimum_green_steps=2,
+        fixed_time_phase_duration=10,
         minimum_initial_occupancy=0.05,
         maximum_initial_occupancy=0.08,
         time_to_teleport=-1,

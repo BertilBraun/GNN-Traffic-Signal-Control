@@ -46,11 +46,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--steps', type=int, default=1800, help='Maximum simulation seconds per episode')
     parser.add_argument('--decision-interval', type=int, default=10, help='Seconds between policy decisions')
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration in seconds')
+    parser.add_argument('--yellow-start-delay', type=int, default=0, help='Seconds to retain green before yellow')
     parser.add_argument(
         '--min-green-steps',
         type=int,
         default=2,
         help='Minimum accepted decision intervals before switching',
+    )
+    parser.add_argument(
+        '--fixed-time-phase-duration',
+        type=int,
+        default=10,
+        help='Seconds each fixed-time phase remains selected',
     )
     parser.add_argument('--out-dir', type=Path, default=DEFAULT_OUTPUT_DIR, help='Directory for JSON and CSV outputs')
     parser.add_argument(
@@ -96,12 +103,14 @@ def main() -> None:
                 steps=args.steps,
                 decision_interval=args.decision_interval,
                 yellow_duration=args.yellow_duration,
+                yellow_start_delay=args.yellow_start_delay,
                 min_green_steps=args.min_green_steps,
                 learned_policy_config=learned_policy_config,
                 demand_scale=args.demand_scale,
                 initial_occupancy_min=args.initial_occupancy_min,
                 initial_occupancy_max=args.initial_occupancy_max,
                 time_to_teleport=args.time_to_teleport,
+                fixed_time_phase_duration=args.fixed_time_phase_duration,
             )
             records.append(
                 EvaluationRecord(

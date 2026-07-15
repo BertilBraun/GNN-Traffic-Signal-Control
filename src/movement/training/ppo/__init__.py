@@ -12,6 +12,7 @@ from time import perf_counter
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from src.movement.evaluation import EvaluationPolicy
 from src.movement.experiment_config import CitySplit
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo.checkpoint import (
@@ -176,6 +177,18 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('eval_learned_device must not be empty.')
     if config.eval_learned_temperature <= 0.0:
         raise ValueError('eval_learned_temperature must be positive.')
+    if config.yellow_start_delay < 0:
+        raise ValueError('yellow_start_delay must not be negative.')
+    if config.yellow_start_delay + config.yellow_duration > config.decision_interval:
+        raise ValueError('yellow_start_delay plus yellow_duration must not exceed decision_interval.')
+    if EvaluationPolicy.FIXED_TIME in config.eval_policies:
+        if config.eval_fixed_time_phase_duration <= 0:
+            raise ValueError('eval_fixed_time_phase_duration must be positive.')
+        if config.eval_fixed_time_phase_duration % config.decision_interval != 0:
+            raise ValueError('eval_fixed_time_phase_duration must be divisible by decision_interval.')
+        fixed_time_phase_decisions = config.eval_fixed_time_phase_duration // config.decision_interval
+        if fixed_time_phase_decisions < config.min_green_steps:
+            raise ValueError('eval_fixed_time_phase_duration must satisfy min_green_steps.')
     if not config.eval_demand_scales:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:

@@ -63,6 +63,28 @@ def test_throughput_scratch_config_uses_sampled_learned_eval() -> None:
     assert configuration.proximal_policy_optimization.gridlock_penalty_weight == 0.08
 
 
+def test_five_second_control_config_uses_late_yellow_and_expanded_baselines() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker_5s_control.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert configuration.simulation.decision_interval == 5
+    assert configuration.simulation.yellow_duration == 3
+    assert configuration.simulation.yellow_start_delay == 2
+    assert configuration.proximal_policy_optimization.steps_per_rollout == 500
+    assert configuration.evaluation.fixed_time_phase_duration == 10
+    assert configuration.evaluation.policies == (
+        ExperimentEvaluationPolicy.LEARNED,
+        ExperimentEvaluationPolicy.MAX_PRESSURE,
+        ExperimentEvaluationPolicy.QUEUE,
+        ExperimentEvaluationPolicy.UNIFORM_RANDOM,
+        ExperimentEvaluationPolicy.FIXED_TIME,
+    )
+
+
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:
     _write_referenced_files(project_root=tmp_path)
     configuration_path = tmp_path / 'experiment.yaml'

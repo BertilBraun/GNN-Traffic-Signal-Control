@@ -29,6 +29,8 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 
+BASELINE_POLICY_IMPLEMENTATION_VERSION = 2
+
 
 @dataclass(frozen=True)
 class MultiCityEvaluationRunRequest:
@@ -41,7 +43,9 @@ class MultiCityEvaluationRunRequest:
     steps: int
     decision_interval: int
     yellow_duration: int
+    yellow_start_delay: int
     minimum_green_steps: int
+    fixed_time_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
@@ -128,11 +132,14 @@ class MultiCityEvaluationCacheKey(BaseModel):
     steps: int
     decision_interval: int
     yellow_duration: int
+    yellow_start_delay: int
     minimum_green_steps: int
+    fixed_time_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
     backend_kind: str
+    baseline_policy_implementation_version: int
 
     @classmethod
     def from_request(cls, request: MultiCityEvaluationRunRequest) -> 'MultiCityEvaluationCacheKey':
@@ -146,11 +153,14 @@ class MultiCityEvaluationCacheKey(BaseModel):
             steps=request.steps,
             decision_interval=request.decision_interval,
             yellow_duration=request.yellow_duration,
+            yellow_start_delay=request.yellow_start_delay,
             minimum_green_steps=request.minimum_green_steps,
+            fixed_time_phase_duration=request.fixed_time_phase_duration,
             minimum_initial_occupancy=request.minimum_initial_occupancy,
             maximum_initial_occupancy=request.maximum_initial_occupancy,
             time_to_teleport=request.time_to_teleport,
             backend_kind=request.backend_kind.value,
+            baseline_policy_implementation_version=BASELINE_POLICY_IMPLEMENTATION_VERSION,
         )
 
     def sha256(self) -> str:
@@ -376,12 +386,14 @@ def default_episode_runner(
         steps=request.steps,
         decision_interval=request.decision_interval,
         yellow_duration=request.yellow_duration,
+        yellow_start_delay=request.yellow_start_delay,
         min_green_steps=request.minimum_green_steps,
         learned_policy_config=learned_policy_config,
         demand_scale=request.demand_scale,
         initial_occupancy_min=request.minimum_initial_occupancy,
         initial_occupancy_max=request.maximum_initial_occupancy,
         time_to_teleport=request.time_to_teleport,
+        fixed_time_phase_duration=request.fixed_time_phase_duration,
         backend_kind=request.backend_kind,
     )
 
@@ -559,7 +571,9 @@ def _run_request(
         steps=steps,
         decision_interval=configuration.simulation.decision_interval,
         yellow_duration=configuration.simulation.yellow_duration,
+        yellow_start_delay=configuration.simulation.yellow_start_delay,
         minimum_green_steps=configuration.simulation.minimum_green_steps,
+        fixed_time_phase_duration=configuration.evaluation.fixed_time_phase_duration,
         minimum_initial_occupancy=configuration.simulation.minimum_initial_occupancy,
         maximum_initial_occupancy=configuration.simulation.maximum_initial_occupancy,
         time_to_teleport=configuration.simulation.time_to_teleport,

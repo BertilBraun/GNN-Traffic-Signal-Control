@@ -31,9 +31,17 @@ class SignalTransitionController:
     """Hold selected greens and insert yellow when targets change."""
 
     yellow_duration: int = 3
+    yellow_start_delay: int = 0
     _current_states: dict[str, str] = field(default_factory=dict)
     _pending_green_states: dict[str, str] = field(default_factory=dict)
+    _green_hold_remaining: dict[str, int] = field(default_factory=dict)
     _yellow_remaining: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.yellow_duration < 0:
+            raise ValueError('yellow_duration must not be negative.')
+        if self.yellow_start_delay < 0:
+            raise ValueError('yellow_start_delay must not be negative.')
 
     def set_targets(self, target_states: dict[str, str]) -> None:
         """Update desired green states for each traffic light."""
@@ -42,18 +50,22 @@ class SignalTransitionController:
             if current_state is None or current_state == target_state:
                 self._current_states[tls_id] = target_state
                 self._pending_green_states.pop(tls_id, None)
+                self._green_hold_remaining[tls_id] = 0
                 self._yellow_remaining[tls_id] = 0
                 continue
 
-            if self.yellow_duration <= 0:
+            if self.yellow_duration == 0 and self.yellow_start_delay == 0:
                 self._current_states[tls_id] = target_state
                 self._pending_green_states.pop(tls_id, None)
+                self._green_hold_remaining[tls_id] = 0
                 self._yellow_remaining[tls_id] = 0
                 continue
 
-            self._current_states[tls_id] = transition_yellow_state(current_state, target_state)
             self._pending_green_states[tls_id] = target_state
+            self._green_hold_remaining[tls_id] = self.yellow_start_delay
             self._yellow_remaining[tls_id] = self.yellow_duration
+            if self.yellow_start_delay == 0:
+                self._begin_yellow_or_green(tls_id)
 
     def current_states(self) -> dict[str, str]:
         """Return states that should be applied this simulation step."""
@@ -61,7 +73,21 @@ class SignalTransitionController:
 
     def advance(self) -> None:
         """Advance one simulation second after current states were applied."""
+        started_transitions: set[str] = set()
+        for tls_id in list(self._green_hold_remaining):
+            remaining = self._green_hold_remaining[tls_id]
+            if remaining <= 0:
+                continue
+
+            remaining -= 1
+            self._green_hold_remaining[tls_id] = remaining
+            if remaining == 0:
+                self._begin_yellow_or_green(tls_id)
+                started_transitions.add(tls_id)
+
         for tls_id in list(self._yellow_remaining):
+            if tls_id in started_transitions or self._green_hold_remaining.get(tls_id, 0) > 0:
+                continue
             remaining = self._yellow_remaining[tls_id]
             if remaining <= 0:
                 continue
@@ -72,3 +98,13 @@ class SignalTransitionController:
                 pending = self._pending_green_states.pop(tls_id, None)
                 if pending is not None:
                     self._current_states[tls_id] = pending
+
+    def _begin_yellow_or_green(self, tls_id: str) -> None:
+        pending = self._pending_green_states.get(tls_id)
+        if pending is None:
+            return
+        if self.yellow_duration == 0:
+            self._current_states[tls_id] = pending
+            self._pending_green_states.pop(tls_id, None)
+            return
+        self._current_states[tls_id] = transition_yellow_state(self._current_states[tls_id], pending)

@@ -49,6 +49,8 @@ from src.movement.training.normalizer_state import normalizer_from_state
 class EvaluationPolicy(str, Enum):
     MAX_PRESSURE = 'max-pressure'
     QUEUE = 'queue'
+    UNIFORM_RANDOM = 'uniform-random'
+    FIXED_TIME = 'fixed-time'
     LEARNED = 'learned'
 
 
@@ -87,6 +89,7 @@ class BaselinePolicyContext:
     lane_ids_by_edge: dict[str, tuple[str, ...]]
     lane_geometries: dict[str, LaneGroupGeometry]
     vehicle_snapshot_collector: VehicleSnapshotCollector
+    random_generator: random.Random
 
 
 def run_evaluation_episode(
@@ -102,6 +105,8 @@ def run_evaluation_episode(
     initial_occupancy_min: float,
     initial_occupancy_max: float,
     time_to_teleport: int | None = None,
+    yellow_start_delay: int = 0,
+    fixed_time_phase_duration: int = 10,
     backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
@@ -142,6 +147,7 @@ def run_evaluation_episode(
         gui=False,
         seed=seed,
         yellow_duration=yellow_duration,
+        yellow_start_delay=yellow_start_delay,
         min_green_steps=min_green_steps,
         time_to_teleport=time_to_teleport,
         additional_sumo_args=additional_sumo_args,
@@ -160,6 +166,13 @@ def run_evaluation_episode(
     simulated_steps = 0
     accepted_targets: dict[str, str] = {}
     progression_tracker = GreenWaveTracker(approach_distance_m=150.0, stop_speed_mps=0.1)
+    fixed_time_phase_decisions = 1
+    if policy == EvaluationPolicy.FIXED_TIME:
+        if fixed_time_phase_duration <= 0:
+            raise ValueError('fixed_time_phase_duration must be positive.')
+        if fixed_time_phase_duration % decision_interval != 0:
+            raise ValueError('fixed_time_phase_duration must be divisible by decision_interval.')
+        fixed_time_phase_decisions = fixed_time_phase_duration // decision_interval
 
     try:
         runtime.start()
@@ -211,6 +224,7 @@ def run_evaluation_episode(
             lane_geometries=lane_geometries,
             net_path=net_path,
             vehicle_api=vehicle_api,
+            seed=seed,
         )
         for step in range(1, steps):
             if (step - 1) % decision_interval == 0:
@@ -221,6 +235,8 @@ def run_evaluation_episode(
                     baseline_context=baseline_context,
                     learned_context=learned_context,
                     accepted_targets=accepted_targets,
+                    decision_index=(step - 1) // decision_interval,
+                    fixed_time_phase_decisions=fixed_time_phase_decisions,
                 )
                 next_accepted_targets = runtime.request_targets(desired_states)
                 _record_phase_counts(
@@ -339,12 +355,28 @@ def _desired_states(
     baseline_context: BaselinePolicyContext | None,
     learned_context: LearnedPolicyContext | None,
     accepted_targets: Mapping[str, str],
+    decision_index: int,
+    fixed_time_phase_decisions: int,
 ) -> dict[str, str]:
     match policy:
         case EvaluationPolicy.MAX_PRESSURE:
             return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.MAX_PRESSURE)
         case EvaluationPolicy.QUEUE:
             return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.QUEUE)
+        case EvaluationPolicy.UNIFORM_RANDOM:
+            return _uniform_random_states(
+                programs=programs,
+                baseline_context=baseline_context,
+                allowed_target_states_by_traffic_light=_allowed_target_states(runtime=runtime, programs=programs),
+            )
+        case EvaluationPolicy.FIXED_TIME:
+            return _fixed_time_states(
+                programs=programs,
+                accepted_targets=accepted_targets,
+                allowed_target_states_by_traffic_light=_allowed_target_states(runtime=runtime, programs=programs),
+                decision_index=decision_index,
+                fixed_time_phase_decisions=fixed_time_phase_decisions,
+            )
         case EvaluationPolicy.LEARNED:
             if learned_context is None:
                 raise ValueError('learned_policy_config is required for learned evaluation.')
@@ -357,10 +389,7 @@ def _desired_states(
                 programs=programs,
                 learned_context=learned_context,
                 control_state=control_state,
-                allowed_target_states_by_traffic_light={
-                    traffic_light_id: frozenset(runtime.allowed_target_states(traffic_light_id))
-                    for traffic_light_id in programs
-                },
+                allowed_target_states_by_traffic_light=_allowed_target_states(runtime=runtime, programs=programs),
             )
 
 
@@ -394,15 +423,96 @@ def _baseline_states(
     for traffic_light_id, program in programs.items():
         incidence = baseline_context.graph.phase_incidences[program.traffic_light_id]
         movement_ids = tuple(int(value) for value in incidence.movement_ids)
-        best_local_idx = 0
-        best_score = _phase_score(incidence.rows[0], movement_ids, graph_movement_scores)
-        for local_idx, row in enumerate(incidence.rows[1:], start=1):
-            score = _phase_score(row, movement_ids, graph_movement_scores)
-            if score > best_score:
-                best_local_idx = local_idx
-                best_score = score
+        phase_scores = tuple(_phase_score(row, movement_ids, graph_movement_scores) for row in incidence.rows)
+        current_state = accepted_targets.get(traffic_light_id)
+        current_local_index = next(
+            (
+                local_index
+                for local_index, phase in enumerate(program.selectable_phases)
+                if phase.state == current_state
+            ),
+            None,
+        )
+        best_local_idx = _sticky_best_phase_index(
+            phase_scores=phase_scores,
+            current_local_index=current_local_index,
+        )
         states[traffic_light_id] = program.selectable_phases[best_local_idx].state
     return states
+
+
+def _sticky_best_phase_index(
+    phase_scores: Sequence[float],
+    current_local_index: int | None,
+) -> int:
+    if not phase_scores:
+        raise ValueError('phase_scores must not be empty.')
+    best_score = max(phase_scores)
+    if current_local_index is not None and phase_scores[current_local_index] == best_score:
+        return current_local_index
+    return next(local_index for local_index, score in enumerate(phase_scores) if score == best_score)
+
+
+def _uniform_random_states(
+    programs: Mapping[str, TrafficLightProgram],
+    baseline_context: BaselinePolicyContext | None,
+    allowed_target_states_by_traffic_light: Mapping[str, frozenset[str]],
+) -> dict[str, str]:
+    if baseline_context is None:
+        raise ValueError('baseline_context is required for uniform-random evaluation.')
+    states: dict[str, str] = {}
+    for traffic_light_id, program in programs.items():
+        allowed_states = allowed_target_states_by_traffic_light[traffic_light_id]
+        states[traffic_light_id] = _uniform_random_phase_state(
+            program=program,
+            allowed_states=allowed_states,
+            random_generator=baseline_context.random_generator,
+        )
+    return states
+
+
+def _uniform_random_phase_state(
+    program: TrafficLightProgram,
+    allowed_states: frozenset[str],
+    random_generator: random.Random,
+) -> str:
+    candidates = tuple(phase.state for phase in program.selectable_phases if phase.state in allowed_states)
+    if not candidates:
+        raise ValueError(f'No selectable phase is currently allowed for traffic light {program.traffic_light_id!r}.')
+    return random_generator.choice(candidates)
+
+
+def _fixed_time_states(
+    programs: Mapping[str, TrafficLightProgram],
+    accepted_targets: Mapping[str, str],
+    allowed_target_states_by_traffic_light: Mapping[str, frozenset[str]],
+    decision_index: int,
+    fixed_time_phase_decisions: int,
+) -> dict[str, str]:
+    if fixed_time_phase_decisions <= 0:
+        raise ValueError('fixed_time_phase_decisions must be positive.')
+    states: dict[str, str] = {}
+    for traffic_light_id, program in programs.items():
+        phase_index = (decision_index // fixed_time_phase_decisions) % len(program.selectable_phases)
+        scheduled_state = program.selectable_phases[phase_index].state
+        allowed_states = allowed_target_states_by_traffic_light[traffic_light_id]
+        if scheduled_state in allowed_states:
+            states[traffic_light_id] = scheduled_state
+            continue
+        current_state = accepted_targets.get(traffic_light_id)
+        if current_state is None:
+            raise ValueError(f'Fixed-time phase is not allowed for uninitialized traffic light {traffic_light_id!r}.')
+        states[traffic_light_id] = current_state
+    return states
+
+
+def _allowed_target_states(
+    runtime: MovementControlRuntime,
+    programs: Mapping[str, TrafficLightProgram],
+) -> dict[str, frozenset[str]]:
+    return {
+        traffic_light_id: frozenset(runtime.allowed_target_states(traffic_light_id)) for traffic_light_id in programs
+    }
 
 
 def _phase_score(
@@ -420,6 +530,7 @@ def _baseline_context(
     lane_geometries: dict[str, LaneGroupGeometry],
     net_path: Path,
     vehicle_api: VehicleApi,
+    seed: int,
 ) -> BaselinePolicyContext | None:
     if policy == EvaluationPolicy.LEARNED:
         return None
@@ -428,6 +539,7 @@ def _baseline_context(
         lane_ids_by_edge=lane_ids_by_edge,
         lane_geometries=lane_geometries,
         vehicle_snapshot_collector=VehicleSnapshotCollector(vehicle_api),
+        random_generator=random.Random(seed + 89_173),
     )
 
 

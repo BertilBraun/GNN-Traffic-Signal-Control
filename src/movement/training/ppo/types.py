@@ -71,6 +71,7 @@ class MovementPpoConfig:
     transitions_per_batch: int
     update_batch_workers: int
     yellow_duration: int
+    yellow_start_delay: int
     min_green_steps: int
     demand_scale_min: float
     demand_scale_max: float
@@ -95,6 +96,7 @@ class MovementPpoConfig:
     eval_steps: int
     eval_seeds: tuple[int, ...]
     eval_policies: tuple[EvaluationPolicy, ...]
+    eval_fixed_time_phase_duration: int
     eval_worker_count: int
     eval_learned_device: str
     eval_learned_action_mode: LearnedEvaluationActionMode

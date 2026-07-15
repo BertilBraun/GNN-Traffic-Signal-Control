@@ -68,3 +68,22 @@ def test_transition_controller_switches_directly_when_yellow_duration_is_zero() 
     controller.set_targets({'J0': 'rGr'})
 
     assert controller.current_states() == {'J0': 'rGr'}
+
+
+def test_transition_controller_delays_yellow_until_end_of_decision_interval() -> None:
+    controller = SignalTransitionController(yellow_duration=3, yellow_start_delay=2)
+    controller.set_targets({'J0': 'Grr'})
+
+    controller.set_targets({'J0': 'rGr'})
+
+    assert controller.current_states() == {'J0': 'Grr'}
+    controller.advance()
+    assert controller.current_states() == {'J0': 'Grr'}
+    controller.advance()
+    assert controller.current_states() == {'J0': 'yrr'}
+    controller.advance()
+    assert controller.current_states() == {'J0': 'yrr'}
+    controller.advance()
+    assert controller.current_states() == {'J0': 'yrr'}
+    controller.advance()
+    assert controller.current_states() == {'J0': 'rGr'}

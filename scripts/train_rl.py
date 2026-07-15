@@ -175,6 +175,12 @@ def parse_args() -> argparse.Namespace:
         help='PyTorch DataLoader workers for packing PPO update minibatches',
     )
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
+    parser.add_argument(
+        '--yellow-start-delay',
+        type=int,
+        default=None,
+        help='Simulation seconds to retain the current green before starting yellow',
+    )
     parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
     parser.add_argument(
         '--demand-scale',
@@ -303,6 +309,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--eval-steps', type=int, default=None, help='Evaluation simulation seconds')
     parser.add_argument('--eval-seeds', nargs='+', type=int, default=None, help='Evaluation SUMO seeds')
     parser.add_argument(
+        '--eval-fixed-time-phase-duration',
+        type=int,
+        default=None,
+        help='Seconds each phase remains selected by the fixed-time evaluation baseline',
+    )
+    parser.add_argument(
         '--eval-policies',
         nargs='+',
         choices=tuple(policy.value for policy in EvaluationPolicy),
@@ -418,6 +430,7 @@ def main() -> None:
             transitions_per_batch=ppo_settings.transitions_per_batch,
             update_batch_workers=ppo_settings.update_batch_workers,
             yellow_duration=args.yellow_duration,
+            yellow_start_delay=yellow_start_delay(args, experiment_configuration),
             min_green_steps=args.min_green_steps,
             demand_scale_min=demand_scale_min,
             demand_scale_max=demand_scale_max,
@@ -442,6 +455,7 @@ def main() -> None:
             eval_steps=evaluation_steps(args, experiment_configuration),
             eval_seeds=evaluation_seeds(args, experiment_configuration),
             eval_policies=evaluation_policies(args, experiment_configuration),
+            eval_fixed_time_phase_duration=evaluation_fixed_time_phase_duration(args, experiment_configuration),
             eval_worker_count=ppo_settings.eval_workers,
             eval_learned_device=ppo_settings.eval_learned_device,
             eval_learned_action_mode=ppo_settings.eval_learned_action_mode,
@@ -740,6 +754,17 @@ def evaluation_steps(
     return 600
 
 
+def yellow_start_delay(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if args.yellow_start_delay is not None:
+        return args.yellow_start_delay
+    if experiment_configuration is not None:
+        return experiment_configuration.simulation.yellow_start_delay
+    return 0
+
+
 def evaluation_seeds(
     args: argparse.Namespace,
     experiment_configuration: ExperimentConfiguration | None,
@@ -749,6 +774,17 @@ def evaluation_seeds(
     if experiment_configuration is not None:
         return experiment_configuration.evaluation.seeds
     return (42,)
+
+
+def evaluation_fixed_time_phase_duration(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if args.eval_fixed_time_phase_duration is not None:
+        return args.eval_fixed_time_phase_duration
+    if experiment_configuration is not None:
+        return experiment_configuration.evaluation.fixed_time_phase_duration
+    return 10
 
 
 def evaluation_policies(
