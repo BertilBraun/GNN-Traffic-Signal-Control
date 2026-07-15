@@ -97,6 +97,7 @@ class MovementPpoConfig:
     eval_seeds: tuple[int, ...]
     eval_policies: tuple[EvaluationPolicy, ...]
     eval_fixed_time_phase_duration: int
+    eval_queue_pressure_phase_duration: int
     eval_worker_count: int
     eval_learned_device: str
     eval_learned_action_mode: LearnedEvaluationActionMode

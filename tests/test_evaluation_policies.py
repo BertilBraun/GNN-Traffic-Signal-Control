@@ -7,9 +7,11 @@ sys.path.insert(0, str(ROOT))
 
 from src.movement.evaluation.runner import (  # noqa: E402
     _fixed_time_states,
+    _queue_pressure_states,
     _sticky_best_phase_index,
     _uniform_random_phase_state,
 )
+from src.movement.policies import MovementScoringMethod  # noqa: E402
 from src.movement.schema import (  # noqa: E402
     PhaseState,
     SelectablePhase,
@@ -61,6 +63,21 @@ def test_fixed_time_phase_cycles_every_two_decisions() -> None:
     )
 
     assert states == ('Grr', 'Grr', 'rGr', 'rGr', 'rrG', 'rrG', 'Grr')
+
+
+def test_queue_pressure_phase_is_retained_between_scoring_decisions() -> None:
+    program = _program()
+
+    states = _queue_pressure_states(
+        programs={'J0': program},
+        baseline_context=None,
+        accepted_targets={'J0': 'rGr'},
+        scoring_method=MovementScoringMethod.QUEUE,
+        decision_index=1,
+        phase_decisions=2,
+    )
+
+    assert states == {'J0': 'rGr'}
 
 
 def _program() -> TrafficLightProgram:

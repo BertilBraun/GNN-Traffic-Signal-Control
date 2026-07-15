@@ -29,7 +29,7 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 
-BASELINE_POLICY_IMPLEMENTATION_VERSION = 2
+BASELINE_POLICY_IMPLEMENTATION_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,7 @@ class MultiCityEvaluationRunRequest:
     yellow_start_delay: int
     minimum_green_steps: int
     fixed_time_phase_duration: int
+    queue_pressure_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
@@ -135,6 +136,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
     yellow_start_delay: int
     minimum_green_steps: int
     fixed_time_phase_duration: int
+    queue_pressure_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
     time_to_teleport: int | None
@@ -156,6 +158,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
             yellow_start_delay=request.yellow_start_delay,
             minimum_green_steps=request.minimum_green_steps,
             fixed_time_phase_duration=request.fixed_time_phase_duration,
+            queue_pressure_phase_duration=request.queue_pressure_phase_duration,
             minimum_initial_occupancy=request.minimum_initial_occupancy,
             maximum_initial_occupancy=request.maximum_initial_occupancy,
             time_to_teleport=request.time_to_teleport,
@@ -394,6 +397,7 @@ def default_episode_runner(
         initial_occupancy_max=request.maximum_initial_occupancy,
         time_to_teleport=request.time_to_teleport,
         fixed_time_phase_duration=request.fixed_time_phase_duration,
+        queue_pressure_phase_duration=request.queue_pressure_phase_duration,
         backend_kind=request.backend_kind,
     )
 
@@ -574,6 +578,7 @@ def _run_request(
         yellow_start_delay=configuration.simulation.yellow_start_delay,
         minimum_green_steps=configuration.simulation.minimum_green_steps,
         fixed_time_phase_duration=configuration.evaluation.fixed_time_phase_duration,
+        queue_pressure_phase_duration=configuration.evaluation.queue_pressure_phase_duration,
         minimum_initial_occupancy=configuration.simulation.minimum_initial_occupancy,
         maximum_initial_occupancy=configuration.simulation.maximum_initial_occupancy,
         time_to_teleport=configuration.simulation.time_to_teleport,

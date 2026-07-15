@@ -88,3 +88,4 @@ evaluation:
   seeds: [100, 101, 102, 103, 104, 105]
   steps: 1800
   fixed_time_phase_duration: 10
+  queue_pressure_phase_duration: 10

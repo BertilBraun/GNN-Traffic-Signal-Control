@@ -64,6 +64,7 @@ class PpoRunMetadata(BaseModel):
     evaluation_steps: int
     evaluation_seeds: tuple[int, ...]
     evaluation_fixed_time_phase_duration: int
+    evaluation_queue_pressure_phase_duration: int
     evaluation_workers: int
     evaluation_learned_device: str
     evaluation_learned_action_mode: str
@@ -128,6 +129,7 @@ def build_run_metadata(
         evaluation_steps=config.eval_steps,
         evaluation_seeds=config.eval_seeds,
         evaluation_fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
+        evaluation_queue_pressure_phase_duration=config.eval_queue_pressure_phase_duration,
         evaluation_workers=config.eval_worker_count,
         evaluation_learned_device=config.eval_learned_device,
         evaluation_learned_action_mode=config.eval_learned_action_mode.value,

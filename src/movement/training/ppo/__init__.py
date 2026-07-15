@@ -189,6 +189,12 @@ def validate_config(config: MovementPpoConfig) -> None:
         fixed_time_phase_decisions = config.eval_fixed_time_phase_duration // config.decision_interval
         if fixed_time_phase_decisions < config.min_green_steps:
             raise ValueError('eval_fixed_time_phase_duration must satisfy min_green_steps.')
+    score_based_policies = {EvaluationPolicy.MAX_PRESSURE, EvaluationPolicy.QUEUE}
+    if score_based_policies.intersection(config.eval_policies):
+        if config.eval_queue_pressure_phase_duration <= 0:
+            raise ValueError('eval_queue_pressure_phase_duration must be positive.')
+        if config.eval_queue_pressure_phase_duration % config.decision_interval != 0:
+            raise ValueError('eval_queue_pressure_phase_duration must be divisible by decision_interval.')
     if not config.eval_demand_scales:
         raise ValueError('eval_demand_scales must contain at least one demand scale.')
     if config.gui and config.num_workers > 1:

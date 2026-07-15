@@ -59,6 +59,12 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help='Seconds each fixed-time phase remains selected',
     )
+    parser.add_argument(
+        '--queue-pressure-phase-duration',
+        type=int,
+        default=10,
+        help='Seconds between queue and max-pressure phase selections',
+    )
     parser.add_argument('--out-dir', type=Path, default=DEFAULT_OUTPUT_DIR, help='Directory for JSON and CSV outputs')
     parser.add_argument(
         '--demand-scale',
@@ -111,6 +117,7 @@ def main() -> None:
                 initial_occupancy_max=args.initial_occupancy_max,
                 time_to_teleport=args.time_to_teleport,
                 fixed_time_phase_duration=args.fixed_time_phase_duration,
+                queue_pressure_phase_duration=args.queue_pressure_phase_duration,
             )
             records.append(
                 EvaluationRecord(

@@ -315,6 +315,12 @@ def parse_args() -> argparse.Namespace:
         help='Seconds each phase remains selected by the fixed-time evaluation baseline',
     )
     parser.add_argument(
+        '--eval-queue-pressure-phase-duration',
+        type=int,
+        default=None,
+        help='Seconds between queue and max-pressure evaluation decisions',
+    )
+    parser.add_argument(
         '--eval-policies',
         nargs='+',
         choices=tuple(policy.value for policy in EvaluationPolicy),
@@ -456,6 +462,7 @@ def main() -> None:
             eval_seeds=evaluation_seeds(args, experiment_configuration),
             eval_policies=evaluation_policies(args, experiment_configuration),
             eval_fixed_time_phase_duration=evaluation_fixed_time_phase_duration(args, experiment_configuration),
+            eval_queue_pressure_phase_duration=evaluation_queue_pressure_phase_duration(args, experiment_configuration),
             eval_worker_count=ppo_settings.eval_workers,
             eval_learned_device=ppo_settings.eval_learned_device,
             eval_learned_action_mode=ppo_settings.eval_learned_action_mode,
@@ -784,6 +791,17 @@ def evaluation_fixed_time_phase_duration(
         return args.eval_fixed_time_phase_duration
     if experiment_configuration is not None:
         return experiment_configuration.evaluation.fixed_time_phase_duration
+    return 10
+
+
+def evaluation_queue_pressure_phase_duration(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> int:
+    if args.eval_queue_pressure_phase_duration is not None:
+        return args.eval_queue_pressure_phase_duration
+    if experiment_configuration is not None:
+        return experiment_configuration.evaluation.queue_pressure_phase_duration
     return 10
 
 

@@ -76,6 +76,7 @@ def test_five_second_control_config_uses_late_yellow_and_expanded_baselines() ->
     assert configuration.simulation.yellow_start_delay == 2
     assert configuration.proximal_policy_optimization.steps_per_rollout == 500
     assert configuration.evaluation.fixed_time_phase_duration == 10
+    assert configuration.evaluation.queue_pressure_phase_duration == 10
     assert configuration.evaluation.policies == (
         ExperimentEvaluationPolicy.LEARNED,
         ExperimentEvaluationPolicy.MAX_PRESSURE,

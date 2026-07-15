@@ -402,6 +402,7 @@ def _evaluation_records(
                         initial_occupancy_max=config.initial_occupancy_max,
                         time_to_teleport=config.time_to_teleport,
                         fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
+                        queue_pressure_phase_duration=config.eval_queue_pressure_phase_duration,
                         backend_kind=config.sumo_backend,
                     ),
                 )
@@ -424,6 +425,7 @@ def cached_baseline_record(
         yellow_start_delay=config.yellow_start_delay,
         min_green_steps=config.min_green_steps,
         fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
+        queue_pressure_phase_duration=config.eval_queue_pressure_phase_duration,
         eval_demand_scale=config.eval_demand_scale,
         initial_occupancy_min=config.initial_occupancy_min,
         initial_occupancy_max=config.initial_occupancy_max,
@@ -443,6 +445,7 @@ def _cached_baseline_record(
     yellow_start_delay: int,
     min_green_steps: int,
     fixed_time_phase_duration: int,
+    queue_pressure_phase_duration: int,
     eval_demand_scale: float,
     initial_occupancy_min: float,
     initial_occupancy_max: float,
@@ -467,6 +470,7 @@ def _cached_baseline_record(
             initial_occupancy_max=initial_occupancy_max,
             time_to_teleport=time_to_teleport,
             fixed_time_phase_duration=fixed_time_phase_duration,
+            queue_pressure_phase_duration=queue_pressure_phase_duration,
             backend_kind=backend_kind,
         ),
     )

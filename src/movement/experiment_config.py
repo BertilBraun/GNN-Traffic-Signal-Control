@@ -158,6 +158,7 @@ class ExperimentEvaluationConfiguration(BaseModel):
     seeds: tuple[int, ...] = Field(min_length=1)
     steps: int = Field(gt=0)
     fixed_time_phase_duration: int = Field(gt=0, default=10)
+    queue_pressure_phase_duration: int = Field(gt=0, default=10)
 
 
 class ExperimentConfiguration(BaseModel):
@@ -191,6 +192,15 @@ class ExperimentConfiguration(BaseModel):
             fixed_time_phase_decisions = self.evaluation.fixed_time_phase_duration // self.simulation.decision_interval
             if fixed_time_phase_decisions < self.simulation.minimum_green_steps:
                 raise ValueError('evaluation.fixed_time_phase_duration must satisfy simulation.min_green_steps')
+        score_based_policies = {
+            ExperimentEvaluationPolicy.MAX_PRESSURE,
+            ExperimentEvaluationPolicy.QUEUE,
+        }
+        if score_based_policies.intersection(self.evaluation.policies):
+            if self.evaluation.queue_pressure_phase_duration % self.simulation.decision_interval != 0:
+                raise ValueError(
+                    'evaluation.queue_pressure_phase_duration must be divisible by simulation.decision_interval'
+                )
         return self
 
     @property

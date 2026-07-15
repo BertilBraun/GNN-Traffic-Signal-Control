@@ -107,6 +107,7 @@ def run_evaluation_episode(
     time_to_teleport: int | None = None,
     yellow_start_delay: int = 0,
     fixed_time_phase_duration: int = 10,
+    queue_pressure_phase_duration: int = 10,
     backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
@@ -173,6 +174,13 @@ def run_evaluation_episode(
         if fixed_time_phase_duration % decision_interval != 0:
             raise ValueError('fixed_time_phase_duration must be divisible by decision_interval.')
         fixed_time_phase_decisions = fixed_time_phase_duration // decision_interval
+    queue_pressure_phase_decisions = 1
+    if policy in (EvaluationPolicy.MAX_PRESSURE, EvaluationPolicy.QUEUE):
+        if queue_pressure_phase_duration <= 0:
+            raise ValueError('queue_pressure_phase_duration must be positive.')
+        if queue_pressure_phase_duration % decision_interval != 0:
+            raise ValueError('queue_pressure_phase_duration must be divisible by decision_interval.')
+        queue_pressure_phase_decisions = queue_pressure_phase_duration // decision_interval
 
     try:
         runtime.start()
@@ -237,6 +245,7 @@ def run_evaluation_episode(
                     accepted_targets=accepted_targets,
                     decision_index=(step - 1) // decision_interval,
                     fixed_time_phase_decisions=fixed_time_phase_decisions,
+                    queue_pressure_phase_decisions=queue_pressure_phase_decisions,
                 )
                 next_accepted_targets = runtime.request_targets(desired_states)
                 _record_phase_counts(
@@ -357,12 +366,27 @@ def _desired_states(
     accepted_targets: Mapping[str, str],
     decision_index: int,
     fixed_time_phase_decisions: int,
+    queue_pressure_phase_decisions: int,
 ) -> dict[str, str]:
     match policy:
         case EvaluationPolicy.MAX_PRESSURE:
-            return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.MAX_PRESSURE)
+            return _queue_pressure_states(
+                programs=programs,
+                baseline_context=baseline_context,
+                accepted_targets=accepted_targets,
+                scoring_method=MovementScoringMethod.MAX_PRESSURE,
+                decision_index=decision_index,
+                phase_decisions=queue_pressure_phase_decisions,
+            )
         case EvaluationPolicy.QUEUE:
-            return _baseline_states(programs, baseline_context, accepted_targets, MovementScoringMethod.QUEUE)
+            return _queue_pressure_states(
+                programs=programs,
+                baseline_context=baseline_context,
+                accepted_targets=accepted_targets,
+                scoring_method=MovementScoringMethod.QUEUE,
+                decision_index=decision_index,
+                phase_decisions=queue_pressure_phase_decisions,
+            )
         case EvaluationPolicy.UNIFORM_RANDOM:
             return _uniform_random_states(
                 programs=programs,
@@ -439,6 +463,21 @@ def _baseline_states(
         )
         states[traffic_light_id] = program.selectable_phases[best_local_idx].state
     return states
+
+
+def _queue_pressure_states(
+    programs: Mapping[str, TrafficLightProgram],
+    baseline_context: BaselinePolicyContext | None,
+    accepted_targets: Mapping[str, str],
+    scoring_method: MovementScoringMethod,
+    decision_index: int,
+    phase_decisions: int,
+) -> dict[str, str]:
+    if phase_decisions <= 0:
+        raise ValueError('phase_decisions must be positive.')
+    if decision_index % phase_decisions == 0:
+        return _baseline_states(programs, baseline_context, accepted_targets, scoring_method)
+    return {traffic_light_id: accepted_targets[traffic_light_id] for traffic_light_id in programs}
 
 
 def _sticky_best_phase_index(
