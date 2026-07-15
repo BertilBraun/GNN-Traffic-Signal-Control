@@ -142,6 +142,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('max_teleports_per_rollout must not be negative.')
     if config.speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
+    if config.switch_penalty_weight < 0.0:
+        raise ValueError('switch_penalty_weight must not be negative.')
     if config.flow_reward_weight < 0.0:
         raise ValueError('flow_reward_weight must not be negative.')
     if config.throughput_reward_weight < 0.0:
@@ -498,6 +500,7 @@ def print_iteration_summary(
         f'flow={rollout_stats.mean_flow_rate_per_signal:.4f} '
         f'progress={rollout_stats.mean_progress_density:.4f} '
         f'speedchg={rollout_stats.mean_speed_change_density:.4f} '
+        f'switch={rollout_stats.mean_phase_switch_fraction:.3f} '
         f'demand={rollout_stats.mean_demand_scale:.2f}'
         f'[{rollout_stats.minimum_demand_scale:.2f}, {rollout_stats.maximum_demand_scale:.2f}] '
         f'clip={rollout_stats.reward_clip_fraction:.1%}/{update_stats.ratio_clip_fraction:.1%} '

@@ -7,7 +7,12 @@ import pytest
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.movement.evaluation.runner import _sample_phase_index  # noqa: E402
+from src.movement.evaluation.runner import EvaluationPolicy, _sample_phase_index, is_learned_evaluation_policy  # noqa: E402
+
+
+@pytest.mark.parametrize('policy', (EvaluationPolicy.LEARNED, EvaluationPolicy.LEARNED_GREEDY))
+def test_learned_evaluation_policy_variants(policy: EvaluationPolicy) -> None:
+    assert is_learned_evaluation_policy(policy)
 
 
 def test_sample_phase_index_is_reproducible_for_seed() -> None:

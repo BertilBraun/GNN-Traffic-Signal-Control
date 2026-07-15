@@ -639,6 +639,8 @@ def test_delay_density_reward_penalizes_local_and_global_delay() -> None:
         global_reward_weight=0.1,
         flow_reward_weight=0.1,
         speed_change_weight=0.02,
+        switch_penalty_weight=0.0,
+        phase_switched=False,
         teleport_penalty=0.5,
         teleport_count=2,
     ) == pytest.approx(-1.216)
@@ -653,9 +655,29 @@ def test_delay_density_reward_adds_departure_flow_bonus() -> None:
         global_reward_weight=0.1,
         flow_reward_weight=0.1,
         speed_change_weight=0.02,
+        switch_penalty_weight=0.0,
+        phase_switched=False,
         teleport_penalty=0.5,
         teleport_count=2,
     ) == pytest.approx(-1.166)
+
+
+def test_delay_density_reward_penalizes_phase_switch() -> None:
+    reward = delay_density_reward(
+        local_delay_density=0.0,
+        global_delay_density=0.0,
+        flow_rate_per_signal=0.0,
+        speed_change_density=0.0,
+        global_reward_weight=0.0,
+        flow_reward_weight=0.0,
+        speed_change_weight=0.0,
+        switch_penalty_weight=0.25,
+        phase_switched=True,
+        teleport_penalty=0.0,
+        teleport_count=0,
+    )
+
+    assert reward == pytest.approx(-0.25)
 
 
 def test_speed_deficit_density_counts_slow_moving_vehicles() -> None:
@@ -1024,6 +1046,7 @@ def _ppo_config(
         progress_reward_weight=0.03,
         gridlock_penalty_weight=0.02,
         speed_change_weight=0.02,
+        switch_penalty_weight=0.0,
         reward_sample_interval=10,
         reward_clip=1.0,
         teleport_penalty=0.0,
@@ -1189,6 +1212,7 @@ def _rollout_stats() -> RolloutStats:
         mean_flow_rate_per_signal=0.0,
         mean_progress_density=0.0,
         mean_speed_change_density=0.0,
+        mean_phase_switch_fraction=0.0,
         normalized_entropy=1.0,
         mean_top_action_probability=1.0,
         policy_decision_fraction=1.0,

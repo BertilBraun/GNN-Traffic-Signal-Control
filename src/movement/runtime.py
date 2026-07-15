@@ -116,6 +116,11 @@ class MovementControlRuntime:
             return tuple(str(phase.state) for phase in program.selectable_phases)
         return (current_target,)
 
+    def current_target_state(self, traffic_light_id: str) -> str | None:
+        """Return the most recently accepted green target."""
+        self._require_started()
+        return self._min_green_controller.current_target(traffic_light_id)
+
     def current_states(self) -> dict[str, str]:
         return self._transition_controller.current_states()
 

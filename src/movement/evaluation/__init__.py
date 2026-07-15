@@ -14,7 +14,13 @@ from .display import (
     print_evaluation_result,
     print_evaluation_start,
 )
-from .runner import EvaluationPolicy, LearnedEvaluationActionMode, LearnedPolicyConfig, run_evaluation_episode
+from .runner import (
+    EvaluationPolicy,
+    LearnedEvaluationActionMode,
+    LearnedPolicyConfig,
+    is_learned_evaluation_policy,
+    run_evaluation_episode,
+)
 from .multi_city import (
     MultiCityEvaluationAggregate,
     MultiCityEvaluationRecord,
@@ -36,6 +42,7 @@ __all__ = [
     'EvaluationRecord',
     'LearnedEvaluationActionMode',
     'LearnedPolicyConfig',
+    'is_learned_evaluation_policy',
     'MultiCityEvaluationAggregate',
     'MultiCityEvaluationRecord',
     'MultiCityEvaluationResult',

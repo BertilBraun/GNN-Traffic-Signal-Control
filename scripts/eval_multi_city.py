@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.movement.evaluation import EvaluationPolicy, LearnedPolicyConfig  # noqa: E402
+from src.movement.evaluation import EvaluationPolicy, LearnedPolicyConfig, is_learned_evaluation_policy  # noqa: E402
 from src.movement.evaluation.multi_city import (  # noqa: E402
     FileCachedEpisodeRunner,
     default_episode_runner,
@@ -130,7 +130,7 @@ def _learned_policy_config(
     checkpoint_path: Path | None,
     device: str,
 ) -> LearnedPolicyConfig | None:
-    if EvaluationPolicy.LEARNED not in policies:
+    if not any(is_learned_evaluation_policy(policy) for policy in policies):
         return None
     if checkpoint_path is None:
         raise SystemExit('--checkpoint is required when evaluating the learned policy')

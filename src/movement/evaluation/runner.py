@@ -52,11 +52,16 @@ class EvaluationPolicy(str, Enum):
     UNIFORM_RANDOM = 'uniform-random'
     FIXED_TIME = 'fixed-time'
     LEARNED = 'learned'
+    LEARNED_GREEDY = 'learned-greedy'
 
 
 class LearnedEvaluationActionMode(str, Enum):
     DETERMINISTIC = 'deterministic'
     SAMPLE = 'sample'
+
+
+def is_learned_evaluation_policy(policy: EvaluationPolicy) -> bool:
+    return policy in (EvaluationPolicy.LEARNED, EvaluationPolicy.LEARNED_GREEDY)
 
 
 @dataclass(frozen=True)
@@ -401,7 +406,7 @@ def _desired_states(
                 decision_index=decision_index,
                 fixed_time_phase_decisions=fixed_time_phase_decisions,
             )
-        case EvaluationPolicy.LEARNED:
+        case EvaluationPolicy.LEARNED | EvaluationPolicy.LEARNED_GREEDY:
             if learned_context is None:
                 raise ValueError('learned_policy_config is required for learned evaluation.')
             control_state = movement_control_state_from_targets(
@@ -571,7 +576,7 @@ def _baseline_context(
     vehicle_api: VehicleApi,
     seed: int,
 ) -> BaselinePolicyContext | None:
-    if policy == EvaluationPolicy.LEARNED:
+    if is_learned_evaluation_policy(policy):
         return None
     return BaselinePolicyContext(
         graph=build_movement_graph(programs, net_path=net_path),
@@ -593,7 +598,7 @@ def _learned_context(
     vehicle_api: VehicleApi,
     seed: int,
 ) -> LearnedPolicyContext | None:
-    if policy != EvaluationPolicy.LEARNED:
+    if not is_learned_evaluation_policy(policy):
         return None
     if learned_policy_config is None:
         raise ValueError('learned_policy_config is required for learned evaluation.')
@@ -604,6 +609,11 @@ def _learned_context(
         device=learned_policy_config.device,
     )
     graph = build_movement_graph(programs, net_path=net_path)
+    action_mode = (
+        LearnedEvaluationActionMode.DETERMINISTIC
+        if policy is EvaluationPolicy.LEARNED_GREEDY
+        else learned_policy_config.action_mode
+    )
     return LearnedPolicyContext(
         model=model,
         graph=graph,
@@ -619,7 +629,7 @@ def _learned_context(
             decision_interval_s=decision_interval,
         ),
         device=learned_policy_config.device,
-        action_mode=learned_policy_config.action_mode,
+        action_mode=action_mode,
         temperature=learned_policy_config.temperature,
         random_generator=random.Random(seed + 17_213),
     )

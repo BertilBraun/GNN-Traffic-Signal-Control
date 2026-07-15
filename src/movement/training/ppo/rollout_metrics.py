@@ -21,6 +21,7 @@ class RolloutMetrics:
     flow_rates_per_signal: list[float]
     progress_densities: list[float]
     speed_change_densities: list[float]
+    phase_switches: list[bool]
     normalized_entropies: list[float]
     top_action_probabilities: list[float]
     policy_decision_count: int
@@ -55,6 +56,7 @@ class RolloutMetrics:
         self.flow_rates_per_signal = []
         self.progress_densities = []
         self.speed_change_densities = []
+        self.phase_switches = []
         self.normalized_entropies = []
         self.top_action_probabilities = []
         self.policy_decision_count = 0
@@ -109,6 +111,7 @@ class RolloutMetrics:
         self.flow_rates_per_signal.append(interval_reward.flow_rate_per_signal)
         self.progress_densities.extend(interval_reward.progress_densities)
         self.speed_change_densities.extend(interval_reward.speed_change_densities)
+        self.phase_switches.extend(interval_reward.phase_switches)
         self.reward_sumo_step_seconds += interval_reward.reward_sumo_step_seconds
         self.reward_lane_query_seconds += interval_reward.reward_lane_query_seconds
         self.reward_vehicle_query_seconds += interval_reward.reward_vehicle_query_seconds
@@ -164,6 +167,7 @@ class RolloutMetrics:
             mean_flow_rate_per_signal=sum(self.flow_rates_per_signal) / max(1, len(self.flow_rates_per_signal)),
             mean_progress_density=sum(self.progress_densities) / max(1, len(self.progress_densities)),
             mean_speed_change_density=sum(self.speed_change_densities) / max(1, len(self.speed_change_densities)),
+            mean_phase_switch_fraction=sum(self.phase_switches) / max(1, len(self.phase_switches)),
             normalized_entropy=sum(self.normalized_entropies) / max(1, len(self.normalized_entropies)),
             mean_top_action_probability=sum(self.top_action_probabilities) / max(1, len(self.top_action_probabilities)),
             policy_decision_fraction=self.policy_decision_count / max(1, self.total_decision_count),

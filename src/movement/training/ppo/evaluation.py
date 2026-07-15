@@ -16,6 +16,7 @@ from src.movement.evaluation import (
     EvaluationRecord,
     LearnedPolicyConfig,
     aggregate_records,
+    is_learned_evaluation_policy,
     print_aggregate_metric_table,
     run_evaluation_episode,
     write_aggregate_json,
@@ -65,6 +66,7 @@ def write_training_scalars(
     writer.add_scalar('episode/mean_flow_rate_per_signal', rollout_stats.mean_flow_rate_per_signal, iteration)
     writer.add_scalar('episode/mean_progress_density', rollout_stats.mean_progress_density, iteration)
     writer.add_scalar('episode/mean_speed_change_density', rollout_stats.mean_speed_change_density, iteration)
+    writer.add_scalar('episode/mean_phase_switch_fraction', rollout_stats.mean_phase_switch_fraction, iteration)
     writer.add_scalar('episode/mean_return', diagnostics.mean_return, iteration)
     writer.add_scalar('episode/return_standard_deviation', diagnostics.return_standard_deviation, iteration)
     writer.add_scalar('episode/mean_value', diagnostics.mean_value, iteration)
@@ -281,11 +283,11 @@ def write_separated_multi_city_evaluation_outputs(
 ) -> None:
     learned_result = filtered_multi_city_result(
         result=result,
-        policies=(EvaluationPolicy.LEARNED.value,),
+        policies=(EvaluationPolicy.LEARNED.value, EvaluationPolicy.LEARNED_GREEDY.value),
     )
     baseline_result = filtered_multi_city_result(
         result=result,
-        policies=tuple(policy.value for policy in EvaluationPolicy if policy != EvaluationPolicy.LEARNED),
+        policies=tuple(policy.value for policy in EvaluationPolicy if not is_learned_evaluation_policy(policy)),
     )
     if learned_result.records:
         write_multi_city_json(output_dir / 'learned_summary.json', learned_result)
@@ -380,7 +382,7 @@ def _evaluation_records(
     records: list[EvaluationRecord] = []
     for policy in config.eval_policies:
         for seed in config.eval_seeds:
-            if policy != EvaluationPolicy.LEARNED:
+            if not is_learned_evaluation_policy(policy):
                 records.append(cached_baseline_record(config=config, policy=policy, seed=seed))
                 continue
             records.append(

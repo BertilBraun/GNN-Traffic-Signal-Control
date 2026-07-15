@@ -47,6 +47,8 @@ DEFAULT_THROUGHPUT_REWARD_WEIGHT = 1.0
 DEFAULT_PROGRESS_REWARD_WEIGHT = 0.03
 DEFAULT_GRIDLOCK_PENALTY_WEIGHT = 0.02
 DEFAULT_SPEED_CHANGE_WEIGHT = 0.02
+DEFAULT_SWITCH_PENALTY_WEIGHT = 0.0
+DEFAULT_ENTROPY_COEFFICIENT = 0.01
 DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
 DEFAULT_EVAL_EVERY = 10
 DEFAULT_EVAL_WORKERS = 1
@@ -160,7 +162,12 @@ def parse_args() -> argparse.Namespace:
         help='Update epochs during value warmup',
     )
     parser.add_argument('--value-coeff', type=float, default=0.5, help='Value loss coefficient')
-    parser.add_argument('--entropy-coeff', type=float, default=0.01, help='Entropy bonus coefficient')
+    parser.add_argument(
+        '--entropy-coeff',
+        type=float,
+        default=DEFAULT_ENTROPY_COEFFICIENT,
+        help='Entropy bonus coefficient',
+    )
     parser.add_argument('--grad-clip', type=float, default=0.5, help='Gradient clipping norm')
     parser.add_argument(
         '--transitions-per-batch',
@@ -241,6 +248,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_SPEED_CHANGE_WEIGHT,
         help='Auxiliary penalty weight for lane mean-speed changes on incoming lanes',
+    )
+    parser.add_argument(
+        '--switch-penalty-weight',
+        type=float,
+        default=DEFAULT_SWITCH_PENALTY_WEIGHT,
+        help='Penalty applied when a traffic light changes its accepted phase target',
     )
     parser.add_argument(
         '--reward-sample-interval',
@@ -431,7 +444,7 @@ def main() -> None:
             value_warmup_iterations=ppo_settings.value_warmup_iterations,
             warmup_epochs=ppo_settings.warmup_epochs,
             value_coefficient=args.value_coeff,
-            entropy_coefficient=args.entropy_coeff,
+            entropy_coefficient=entropy_coefficient(args, experiment_configuration),
             max_grad_norm=args.grad_clip,
             transitions_per_batch=ppo_settings.transitions_per_batch,
             update_batch_workers=ppo_settings.update_batch_workers,
@@ -447,6 +460,7 @@ def main() -> None:
             progress_reward_weight=progress_reward_weight(args, experiment_configuration),
             gridlock_penalty_weight=gridlock_penalty_weight(args, experiment_configuration),
             speed_change_weight=speed_change_weight(args, experiment_configuration),
+            switch_penalty_weight=switch_penalty_weight(args, experiment_configuration),
             reward_sample_interval=reward_sample_interval(args, experiment_configuration),
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
@@ -721,6 +735,24 @@ def speed_change_weight(
     if experiment_configuration is not None and args.speed_change_weight == DEFAULT_SPEED_CHANGE_WEIGHT:
         return experiment_configuration.proximal_policy_optimization.speed_change_weight
     return args.speed_change_weight
+
+
+def switch_penalty_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.switch_penalty_weight == DEFAULT_SWITCH_PENALTY_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.switch_penalty_weight
+    return args.switch_penalty_weight
+
+
+def entropy_coefficient(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.entropy_coeff == DEFAULT_ENTROPY_COEFFICIENT:
+        return experiment_configuration.proximal_policy_optimization.entropy_coefficient
+    return args.entropy_coeff
 
 
 def num_workers(

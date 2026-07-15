@@ -602,6 +602,9 @@ def collect_decision_transition(
         )
         action_seconds = perf_counter() - action_started
     apply_started = perf_counter()
+    previous_target_states = tuple(
+        runtime.current_target_state(traffic_light_id) for traffic_light_id in context.traffic_light_ids
+    )
     accepted_states = request_runtime_targets(
         runtime=runtime,
         context=context,
@@ -611,6 +614,10 @@ def collect_decision_transition(
         graph=context.graph,
         programs=runtime.programs,
         target_states=accepted_states,
+    )
+    phase_switches = tuple(
+        previous_target is not None and accepted_states[traffic_light_id] != previous_target
+        for traffic_light_id, previous_target in zip(context.traffic_light_ids, previous_target_states)
     )
     apply_seconds = perf_counter() - apply_started
     reward_started = perf_counter()
@@ -627,6 +634,8 @@ def collect_decision_transition(
         progress_reward_weight=config.progress_reward_weight,
         gridlock_penalty_weight=config.gridlock_penalty_weight,
         speed_change_weight=config.speed_change_weight,
+        switch_penalty_weight=config.switch_penalty_weight,
+        phase_switches=phase_switches,
         reward_sample_interval=config.reward_sample_interval,
         reward_clip=config.reward_clip,
         teleport_penalty=config.teleport_penalty,

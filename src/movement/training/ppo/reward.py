@@ -24,6 +24,8 @@ def advance_and_reward(
     progress_reward_weight: float,
     gridlock_penalty_weight: float,
     speed_change_weight: float,
+    switch_penalty_weight: float,
+    phase_switches: Sequence[bool],
     reward_sample_interval: int,
     reward_clip: float,
     teleport_penalty: float,
@@ -41,6 +43,10 @@ def advance_and_reward(
         raise ValueError('gridlock_penalty_weight must not be negative.')
     if speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
+    if switch_penalty_weight < 0.0:
+        raise ValueError('switch_penalty_weight must not be negative.')
+    if len(phase_switches) != len(context.traffic_light_ids):
+        raise ValueError('phase_switches must contain one value per traffic light.')
     if reward_sample_interval <= 0:
         raise ValueError('reward_sample_interval must be positive.')
     if reward_sample_interval > decision_interval:
@@ -138,15 +144,18 @@ def advance_and_reward(
             progress_reward_weight=progress_reward_weight,
             gridlock_penalty_weight=gridlock_penalty_weight,
             speed_change_weight=speed_change_weight,
+            switch_penalty_weight=switch_penalty_weight,
+            phase_switched=phase_switched,
             global_reward_weight=global_reward_weight,
             flow_reward_weight=flow_reward_weight,
             teleport_penalty=teleport_penalty,
             teleport_count=teleport_count,
         )
-        for local_delay_density, progress_density, speed_change_density_value in zip(
+        for local_delay_density, progress_density, speed_change_density_value, phase_switched in zip(
             local_delay_densities,
             progress_densities,
             speed_change_densities,
+            phase_switches,
         )
     )
     rewards = tuple(clip_reward(reward, reward_clip=reward_clip) for reward in raw_rewards)
@@ -158,6 +167,7 @@ def advance_and_reward(
         flow_rate_per_signal=flow_rate_per_signal,
         progress_densities=progress_densities,
         speed_change_densities=speed_change_densities,
+        phase_switches=tuple(phase_switches),
         teleport_count=teleport_count,
         simulated_steps=simulated_steps,
         reward_sumo_step_seconds=reward_sumo_step_seconds,
@@ -180,6 +190,8 @@ def interval_reward(
     global_reward_weight: float,
     flow_reward_weight: float,
     speed_change_weight: float,
+    switch_penalty_weight: float,
+    phase_switched: bool,
     teleport_penalty: float,
     teleport_count: int,
 ) -> float:
@@ -193,6 +205,8 @@ def interval_reward(
                 global_reward_weight=global_reward_weight,
                 flow_reward_weight=flow_reward_weight,
                 speed_change_weight=speed_change_weight,
+                switch_penalty_weight=switch_penalty_weight,
+                phase_switched=phase_switched,
                 teleport_penalty=teleport_penalty,
                 teleport_count=teleport_count,
             )
@@ -208,6 +222,8 @@ def interval_reward(
                 gridlock_penalty_weight=gridlock_penalty_weight,
                 global_reward_weight=global_reward_weight,
                 speed_change_weight=speed_change_weight,
+                switch_penalty_weight=switch_penalty_weight,
+                phase_switched=phase_switched,
                 teleport_penalty=teleport_penalty,
                 teleport_count=teleport_count,
             )
@@ -221,6 +237,8 @@ def delay_density_reward(
     global_reward_weight: float,
     flow_reward_weight: float,
     speed_change_weight: float,
+    switch_penalty_weight: float,
+    phase_switched: bool,
     teleport_penalty: float,
     teleport_count: int,
 ) -> float:
@@ -229,6 +247,7 @@ def delay_density_reward(
         - global_reward_weight * global_delay_density
         + flow_reward_weight * flow_rate_per_signal
         - speed_change_weight * speed_change_density
+        - switch_penalty_weight * int(phase_switched)
         - teleport_penalty * teleport_count
     )
 
@@ -244,6 +263,8 @@ def throughput_reward(
     gridlock_penalty_weight: float,
     global_reward_weight: float,
     speed_change_weight: float,
+    switch_penalty_weight: float,
+    phase_switched: bool,
     teleport_penalty: float,
     teleport_count: int,
 ) -> float:
@@ -253,6 +274,7 @@ def throughput_reward(
         + progress_reward_weight * progress_density
         - gridlock_penalty_weight * gridlock_density
         - speed_change_weight * speed_change_density
+        - switch_penalty_weight * int(phase_switched)
         - teleport_penalty * teleport_count
     )
 

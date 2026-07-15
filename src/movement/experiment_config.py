@@ -16,6 +16,7 @@ class CitySplit(str, Enum):
 
 class ExperimentEvaluationPolicy(str, Enum):
     LEARNED = 'learned'
+    LEARNED_GREEDY = 'learned-greedy'
     MAX_PRESSURE = 'max-pressure'
     QUEUE = 'queue'
     UNIFORM_RANDOM = 'uniform-random'
@@ -140,6 +141,8 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     progress_reward_weight: float = Field(ge=0.0, default=0.03)
     gridlock_penalty_weight: float = Field(ge=0.0, default=0.02)
     speed_change_weight: float = Field(ge=0.0, default=0.02)
+    switch_penalty_weight: float = Field(ge=0.0, default=0.0)
+    entropy_coefficient: float = Field(ge=0.0, default=0.01)
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')
     evaluation_workers: int = Field(gt=0, default=1, alias='eval_workers')
     evaluation_learned_device: str = Field(min_length=1, default='cpu', alias='eval_learned_device')

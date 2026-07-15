@@ -34,6 +34,7 @@ from src.movement.evaluation import (  # noqa: E402
     LearnedPolicyConfig,
     aggregate_records,
     current_timer_s,
+    is_learned_evaluation_policy,
     print_aggregate_metric_table,
     print_evaluation_result,
     print_evaluation_start,
@@ -262,7 +263,9 @@ class TrainingEvaluationObserver:
             loss=snapshot.loss,
         )
         records = self._run_epoch_evaluation(checkpoint_path)
-        self.baseline_records = tuple(record for record in records if record.policy != EvaluationPolicy.LEARNED.value)
+        self.baseline_records = tuple(
+            record for record in records if not is_learned_evaluation_policy(EvaluationPolicy(record.policy))
+        )
         aggregates = aggregate_records(records)
         self._write_tensorboard(snapshot.epoch, aggregates)
         write_aggregate_json(epoch_dir / 'summary.json', records, aggregates)
@@ -303,7 +306,7 @@ class TrainingEvaluationObserver:
             (policy, seed)
             for policy in self.policies
             for seed in self.seeds
-            if policy == EvaluationPolicy.LEARNED or (policy.value, seed) not in cached_baseline_keys
+            if is_learned_evaluation_policy(policy) or (policy.value, seed) not in cached_baseline_keys
         )
         total_runs = len(pending_runs)
         run_index = 0
@@ -406,7 +409,7 @@ class MultiCityTrainingEvaluationObserver:
         )
         result = self._run_epoch_evaluation(checkpoint_path)
         self.baseline_records = tuple(
-            record for record in result.records if record.policy != EvaluationPolicy.LEARNED.value
+            record for record in result.records if not is_learned_evaluation_policy(EvaluationPolicy(record.policy))
         )
         write_multi_city_json(epoch_dir / 'summary.json', result)
         write_multi_city_csv(epoch_dir / 'summary.csv', result)
@@ -441,7 +444,7 @@ class MultiCityTrainingEvaluationObserver:
             device=self.device,
         )
         pending_policies = tuple(
-            policy for policy in self.policies if policy == EvaluationPolicy.LEARNED or not self.baseline_records
+            policy for policy in self.policies if is_learned_evaluation_policy(policy) or not self.baseline_records
         )
         if not pending_policies:
             return MultiCityEvaluationResult(
@@ -455,7 +458,11 @@ class MultiCityTrainingEvaluationObserver:
             seeds=self.seeds,
             steps=self.steps,
             demand_scales=self.demand_scales,
-            learned_policy_config=learned_policy_config if EvaluationPolicy.LEARNED in pending_policies else None,
+            learned_policy_config=(
+                learned_policy_config
+                if any(is_learned_evaluation_policy(policy) for policy in pending_policies)
+                else None
+            ),
             episode_runner=default_episode_runner,
         )
         records = (*self.baseline_records, *pending_result.records)

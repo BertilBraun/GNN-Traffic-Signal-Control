@@ -20,7 +20,12 @@ from src.movement.evaluation.metrics import (
     EvaluationRecord,
     aggregate_records,
 )
-from src.movement.evaluation.runner import EvaluationPolicy, LearnedPolicyConfig, run_evaluation_episode
+from src.movement.evaluation.runner import (
+    EvaluationPolicy,
+    LearnedPolicyConfig,
+    is_learned_evaluation_policy,
+    run_evaluation_episode,
+)
 from src.movement.experiment_config import (
     CitySplit,
     ExperimentCityConfiguration,
@@ -101,7 +106,7 @@ class FileCachedEpisodeRunner:
         request: MultiCityEvaluationRunRequest,
         learned_policy_config: LearnedPolicyConfig | None,
     ) -> EvaluationMetrics:
-        if request.policy == EvaluationPolicy.LEARNED:
+        if is_learned_evaluation_policy(request.policy):
             return self.episode_runner(request, learned_policy_config)
         key = MultiCityEvaluationCacheKey.from_request(request)
         path = self.cache_dir / f'{key.sha256()}.json'
@@ -254,7 +259,7 @@ def run_multi_city_evaluation(
         raise ValueError('at least one evaluation seed is required')
     if not demand_scales:
         raise ValueError('at least one evaluation demand scale is required')
-    if EvaluationPolicy.LEARNED in policies and learned_policy_config is None:
+    if any(is_learned_evaluation_policy(policy) for policy in policies) and learned_policy_config is None:
         raise ValueError('learned_policy_config is required when evaluating the learned policy')
 
     requests = _build_run_requests(
@@ -285,7 +290,10 @@ def run_multi_city_evaluation(
             run_index=run_index,
             total_runs=total_runs,
         )
-        metrics = episode_runner(request, learned_policy_config if request.policy == EvaluationPolicy.LEARNED else None)
+        metrics = episode_runner(
+            request,
+            learned_policy_config if is_learned_evaluation_policy(request.policy) else None,
+        )
         records.append(
             MultiCityEvaluationRecord(
                 city_name=request.city_name,
@@ -330,7 +338,7 @@ def run_parallel_multi_city_evaluation(
                 run_index,
                 total_runs,
                 request,
-                learned_policy_config if request.policy == EvaluationPolicy.LEARNED else None,
+                learned_policy_config if is_learned_evaluation_policy(request.policy) else None,
                 episode_runner,
             ): request
             for run_index, request in enumerate(requests, start=1)

@@ -86,6 +86,37 @@ def test_multi_city_learned_policy_requires_checkpoint() -> None:
         )
 
 
+def test_multi_city_passes_checkpoint_to_sampled_and_greedy_learned_policies() -> None:
+    configuration = load_experiment_configuration(
+        configuration_path=ROOT / 'configs' / 'training' / 'city_first_pass.yaml',
+        project_root=ROOT,
+    )
+    received_policies: list[EvaluationPolicy] = []
+    learned_policy_config = LearnedPolicyConfig(checkpoint_path=Path('movement_policy.pt'), device='cpu')
+
+    def fake_episode_runner(
+        request: MultiCityEvaluationRunRequest,
+        received_config: LearnedPolicyConfig | None,
+    ) -> EvaluationMetrics:
+        assert received_config == learned_policy_config
+        received_policies.append(request.policy)
+        return _metrics(completed_vehicles=10, departed_vehicles=12)
+
+    run_multi_city_evaluation(
+        configuration=configuration,
+        project_root=ROOT,
+        policies=(EvaluationPolicy.LEARNED, EvaluationPolicy.LEARNED_GREEDY),
+        seeds=(100,),
+        steps=300,
+        demand_scales=(1.0,),
+        learned_policy_config=learned_policy_config,
+        episode_runner=fake_episode_runner,
+    )
+
+    assert received_policies.count(EvaluationPolicy.LEARNED) == 5
+    assert received_policies.count(EvaluationPolicy.LEARNED_GREEDY) == 5
+
+
 def test_multi_city_writers_include_city_split_policy_seed_and_demand(tmp_path: Path) -> None:
     configuration = load_experiment_configuration(
         configuration_path=ROOT / 'configs' / 'training' / 'city_first_pass.yaml',

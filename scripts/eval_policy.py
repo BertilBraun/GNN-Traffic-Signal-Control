@@ -14,6 +14,7 @@ from src.movement.evaluation import (  # noqa: E402
     EvaluationRecord,
     LearnedPolicyConfig,
     aggregate_records,
+    is_learned_evaluation_policy,
     current_timer_s,
     print_aggregate_metric_table,
     print_evaluation_result,
@@ -152,7 +153,7 @@ def _learned_policy_config(
     checkpoint_path: Path | None,
     device: str,
 ) -> LearnedPolicyConfig | None:
-    if EvaluationPolicy.LEARNED not in policies:
+    if not any(is_learned_evaluation_policy(policy) for policy in policies):
         return None
     if checkpoint_path is None:
         raise SystemExit('--checkpoint is required when evaluating the learned policy')

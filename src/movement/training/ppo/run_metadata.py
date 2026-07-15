@@ -51,6 +51,16 @@ class PpoRunMetadata(BaseModel):
     yellow_duration: int
     yellow_start_delay: int
     minimum_green_steps: int
+    learning_rate: float
+    discount_factor: float
+    gae_lambda: float
+    clip_epsilon: float
+    update_epochs: int
+    value_coefficient: float
+    entropy_coefficient: float
+    maximum_gradient_norm: float
+    transitions_per_batch: int
+    target_kl: float
     demand_scale_min: float
     demand_scale_max: float
     reward_mode: str
@@ -60,6 +70,9 @@ class PpoRunMetadata(BaseModel):
     progress_reward_weight: float
     gridlock_penalty_weight: float
     speed_change_weight: float
+    switch_penalty_weight: float
+    reward_sample_interval: int
+    reward_clip: float
     evaluation_every_iterations: int
     evaluation_steps: int
     evaluation_seeds: tuple[int, ...]
@@ -116,6 +129,16 @@ def build_run_metadata(
         yellow_duration=config.yellow_duration,
         yellow_start_delay=config.yellow_start_delay,
         minimum_green_steps=config.min_green_steps,
+        learning_rate=config.learning_rate,
+        discount_factor=config.gamma,
+        gae_lambda=config.lam,
+        clip_epsilon=config.clip_epsilon,
+        update_epochs=config.update_epochs,
+        value_coefficient=config.value_coefficient,
+        entropy_coefficient=config.entropy_coefficient,
+        maximum_gradient_norm=config.max_grad_norm,
+        transitions_per_batch=config.transitions_per_batch,
+        target_kl=config.target_kl,
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
         reward_mode=config.reward_mode.value,
@@ -125,6 +148,9 @@ def build_run_metadata(
         progress_reward_weight=config.progress_reward_weight,
         gridlock_penalty_weight=config.gridlock_penalty_weight,
         speed_change_weight=config.speed_change_weight,
+        switch_penalty_weight=config.switch_penalty_weight,
+        reward_sample_interval=config.reward_sample_interval,
+        reward_clip=config.reward_clip,
         evaluation_every_iterations=config.eval_every,
         evaluation_steps=config.eval_steps,
         evaluation_seeds=config.eval_seeds,

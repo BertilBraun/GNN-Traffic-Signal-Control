@@ -82,6 +82,7 @@ class MovementPpoConfig:
     progress_reward_weight: float
     gridlock_penalty_weight: float
     speed_change_weight: float
+    switch_penalty_weight: float
     reward_sample_interval: int
     reward_clip: float
     teleport_penalty: float
@@ -181,6 +182,7 @@ class RolloutStats:
     mean_flow_rate_per_signal: float
     mean_progress_density: float
     mean_speed_change_density: float
+    mean_phase_switch_fraction: float
     normalized_entropy: float
     mean_top_action_probability: float
     policy_decision_fraction: float
@@ -252,6 +254,7 @@ class IntervalRewardResult:
     flow_rate_per_signal: float
     progress_densities: tuple[float, ...]
     speed_change_densities: tuple[float, ...]
+    phase_switches: tuple[bool, ...]
     teleport_count: int
     simulated_steps: int = 0
     reward_sumo_step_seconds: float = 0.0

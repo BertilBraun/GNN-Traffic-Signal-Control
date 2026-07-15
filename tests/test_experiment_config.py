@@ -86,6 +86,32 @@ def test_five_second_control_config_uses_late_yellow_and_expanded_baselines() ->
     )
 
 
+def test_balanced_five_second_config_uses_immediate_yellow_and_dual_learned_eval() -> None:
+    configuration_path = (
+        ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker_5s_balanced_300.yaml'
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert configuration.simulation.decision_interval == 5
+    assert configuration.simulation.yellow_duration == 3
+    assert configuration.simulation.yellow_start_delay == 0
+    assert configuration.proximal_policy_optimization.iterations == 300
+    assert configuration.proximal_policy_optimization.update_epochs == 4
+    assert configuration.proximal_policy_optimization.throughput_reward_weight == 0.1
+    assert configuration.proximal_policy_optimization.progress_reward_weight == 27.0
+    assert configuration.proximal_policy_optimization.speed_change_weight == 15.0
+    assert configuration.proximal_policy_optimization.switch_penalty_weight == 0.003
+    assert configuration.proximal_policy_optimization.entropy_coefficient == 0.001
+    assert configuration.evaluation.policies[:2] == (
+        ExperimentEvaluationPolicy.LEARNED,
+        ExperimentEvaluationPolicy.LEARNED_GREEDY,
+    )
+
+
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:
     _write_referenced_files(project_root=tmp_path)
     configuration_path = tmp_path / 'experiment.yaml'
