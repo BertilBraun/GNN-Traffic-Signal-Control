@@ -81,6 +81,11 @@ If the gate succeeds, the complete train-shape × evaluation-shape matrix will c
 an approximately equal total junction/action-sample budget. The final mixed design will use at least
 three independent training seeds.
 
+The final size/shape matrix uses fresh evaluation seeds `7101–7106` at demand scales `0.6`, `0.7`, and
+`0.8`. These seeds are not used for periodic checkpoint selection. Matrix comparisons use the common
+training seed `5101`; the full mixed design is additionally repeated with training seeds `5102` and
+`5103`.
+
 ## Signal coverage ablation
 
 The separate 6×6 coverage suite keeps node coordinates, roads, lane counts, routes, base demand, and
@@ -88,7 +93,8 @@ evaluation demand fixed while retaining 32, 24, 16, or 8 signals. Signal sets ar
 distributed. Removing a signal does not reduce incoming lane capacity.
 
 The coverage study runs only after the size/shape gate. It reports the same traffic outcomes against
-signal coverage `88.9%`, `66.7%`, `44.4%`, and `22.2%`.
+signal coverage `88.9%`, `66.7%`, `44.4%`, and `22.2%`. It uses fresh evaluation seeds `8101–8106`
+at fixed demand scale `0.7`.
 
 ## Validation and outputs
 
