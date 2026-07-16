@@ -25,6 +25,7 @@ Result: 2 × 4-way (B2, C2) + 10 × 3-way  —  ~4 % of directed edges removed.
 
 This script is importable; call build() directly for programmatic use.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,17 +35,18 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
+sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 import sumolib
 
-HERE   = Path(__file__).parent
-NETGEN = sumolib.checkBinary("netgenerate")
-NETCON = sumolib.checkBinary("netconvert")
+HERE = Path(__file__).parent
+NETGEN = sumolib.checkBinary('netgenerate')
+NETCON = sumolib.checkBinary('netconvert')
 
 
 # ---------------------------------------------------------------------------
 # Connectivity check
 # ---------------------------------------------------------------------------
+
 
 def _is_connected(adj: dict[str, set[str]]) -> tuple[bool, set[str]]:
     """Return (connected, unreachable_nodes)."""
@@ -56,17 +58,18 @@ def _is_connected(adj: dict[str, set[str]]) -> tuple[bool, set[str]]:
         n = queue.pop()
         for nb in adj[n]:
             if nb not in seen:
-                seen.add(nb); queue.append(nb)
+                seen.add(nb)
+                queue.append(nb)
     unreachable = adj.keys() - seen
     return not unreachable, unreachable
 
 
-def _build_adj(edge_map: dict[str, tuple[str, str]],
-               nodes: set[str]) -> dict[str, set[str]]:
+def _build_adj(edge_map: dict[str, tuple[str, str]], nodes: set[str]) -> dict[str, set[str]]:
     adj: dict[str, set[str]] = {n: set() for n in nodes}
     for frm, to in edge_map.values():
         if frm in nodes and to in nodes:
-            adj[frm].add(to); adj[to].add(frm)
+            adj[frm].add(to)
+            adj[to].add(frm)
     return adj
 
 
@@ -74,16 +77,17 @@ def _build_adj(edge_map: dict[str, tuple[str, str]],
 # Core builder
 # ---------------------------------------------------------------------------
 
+
 def build(
-    size:            int   = 4,
-    length:          float = 200.0,
-    lanes:           int   = 2,
-    speed:           float = 13.89,
-    remove_nodes:    list[str] | None = None,
+    size: int = 4,
+    length: float = 200.0,
+    lanes: int = 2,
+    speed: float = 13.89,
+    remove_nodes: list[str] | None = None,
     remove_segments: list[tuple[str, str]] | None = None,
-    out_dir:         Path  = HERE,
-    net_name:        str   = "grid.net.xml",
-    verbose:         bool  = True,
+    out_dir: Path = HERE,
+    net_name: str = 'grid.net.xml',
+    verbose: bool = True,
 ) -> Path:
     """Build the irregular grid .net.xml and return its path.
 
@@ -99,35 +103,44 @@ def build(
     net_name         : Filename for the final .net.xml.
     verbose          : Print topology summary.
     """
-    if remove_nodes    is None: remove_nodes    = []
-    if remove_segments is None: remove_segments = []
+    if remove_nodes is None:
+        remove_nodes = []
+    if remove_segments is None:
+        remove_segments = []
 
     out_dir = Path(out_dir)
-    prefix  = out_dir / "plain"
+    prefix = out_dir / 'plain'
     out_net = out_dir / net_name
 
     # 1. Regular grid plain XML -------------------------------------------
-    subprocess.run([
-        NETGEN,
-        "--grid", f"--grid.number={size}", f"--grid.length={length}",
-        f"--default.lanenumber={lanes}", f"--default.speed={speed}",
-        "--no-turnarounds", "--tls.guess=true",
-        "--plain-output-prefix", str(prefix),
-    ], check=True, capture_output=True)
+    subprocess.run(
+        [
+            NETGEN,
+            '--grid',
+            f'--grid.number={size}',
+            f'--grid.length={length}',
+            f'--default.lanenumber={lanes}',
+            f'--default.speed={speed}',
+            '--no-turnarounds',
+            '--tls.guess=true',
+            '--plain-output-prefix',
+            str(prefix),
+        ],
+        check=True,
+        capture_output=True,
+    )
 
     # 2. Load edge + node data --------------------------------------------
-    edg_tree = ET.parse(out_dir / "plain.edg.xml")
+    edg_tree = ET.parse(out_dir / 'plain.edg.xml')
     edg_root = edg_tree.getroot()
-    nod_tree = ET.parse(out_dir / "plain.nod.xml")
+    nod_tree = ET.parse(out_dir / 'plain.nod.xml')
     nod_root = nod_tree.getroot()
 
-    edge_map: dict[str, tuple[str, str]] = {
-        el.get("id"): (el.get("from"), el.get("to")) for el in edg_root
-    }
+    edge_map: dict[str, tuple[str, str]] = {el.get('id'): (el.get('from'), el.get('to')) for el in edg_root}
 
     # 3. Collect all edge IDs to remove -----------------------------------
     remove_node_set = set(remove_nodes)
-    remove_ids:  set[str] = set()
+    remove_ids: set[str] = set()
 
     # Edges incident to removed nodes
     for eid, (frm, to) in edge_map.items():
@@ -136,27 +149,26 @@ def build(
 
     # Explicit segment cuts (both directions)
     for a, b in remove_segments:
-        found = {eid for eid, (frm, to) in edge_map.items()
-                 if (frm == a and to == b) or (frm == b and to == a)}
+        found = {eid for eid, (frm, to) in edge_map.items() if (frm == a and to == b) or (frm == b and to == a)}
         if not found:
-            print(f"  WARNING: no edge found for {a}<->{b}; skipping")
+            print(f'  WARNING: no edge found for {a}<->{b}; skipping')
         remove_ids |= found
 
     for eid in sorted(remove_ids):
         frm, to = edge_map[eid]
         if verbose:
-            print(f"  Removed edge: {eid}  ({frm} -> {to})")
+            print(f'  Removed edge: {eid}  ({frm} -> {to})')
 
     for nid in sorted(remove_node_set):
         if verbose:
-            print(f"  Removed node: {nid}")
+            print(f'  Removed node: {nid}')
 
     # 4. Write filtered node + edge files ---------------------------------
     for el in list(nod_root):
-        if el.get("id") in remove_node_set:
+        if el.get('id') in remove_node_set:
             nod_root.remove(el)
     for el in list(edg_root):
-        if el.get("id") in remove_ids:
+        if el.get('id') in remove_ids:
             edg_root.remove(el)
 
     # Count incoming edges in the remaining network
@@ -167,52 +179,60 @@ def build(
 
     # Demote any TL node with < 3 remaining incoming edges to priority
     for node_el in nod_root:
-        nid = node_el.get("id")
-        if node_el.get("type") == "traffic_light" and remaining_in.get(nid, 0) < 3:
-            node_el.set("type", "priority")
-            node_el.attrib.pop("tl", None)
+        nid = node_el.get('id')
+        if node_el.get('type') == 'traffic_light' and remaining_in.get(nid, 0) < 3:
+            node_el.set('type', 'priority')
+            node_el.attrib.pop('tl', None)
             if verbose:
-                print(f"  Demoted {nid} to priority ({remaining_in.get(nid,0)} connections)")
+                print(f'  Demoted {nid} to priority ({remaining_in.get(nid, 0)} connections)')
 
-    irr_nod = out_dir / "irregular.nod.xml"
-    irr_edg = out_dir / "irregular.edg.xml"
+    irr_nod = out_dir / 'irregular.nod.xml'
+    irr_edg = out_dir / 'irregular.edg.xml'
     nod_tree.write(irr_nod)
     edg_tree.write(irr_edg)
 
     # 5. Connectivity check on remaining TL nodes -------------------------
-    tl_nodes   = {el.get("id") for el in nod_root if el.get("type") == "traffic_light"}
-    adj        = _build_adj(remaining, tl_nodes)
+    tl_nodes = {el.get('id') for el in nod_root if el.get('type') == 'traffic_light'}
+    adj = _build_adj(remaining, tl_nodes)
     ok, unreachable = _is_connected(adj)
     if not ok:
-        print(f"  WARNING: TL sub-graph disconnected — unreachable: {unreachable}")
+        print(f'  WARNING: TL sub-graph disconnected — unreachable: {unreachable}')
 
     # 6. Reconvert --------------------------------------------------------
-    subprocess.run([
-        NETCON,
-        "--node-files",  str(irr_nod),
-        "--edge-files",  str(irr_edg),
-        "--output-file", str(out_net),
-        "--no-turnarounds",
-    ], check=True, capture_output=True)
+    subprocess.run(
+        [
+            NETCON,
+            '--node-files',
+            str(irr_nod),
+            '--edge-files',
+            str(irr_edg),
+            '--output-file',
+            str(out_net),
+            '--no-turnarounds',
+        ],
+        check=True,
+        capture_output=True,
+    )
 
     # 6. Summary ----------------------------------------------------------
     if verbose:
-        net  = sumolib.net.readNet(str(out_net))
-        tls  = sorted([n for n in net.getNodes() if n.getType() == "traffic_light"],
-                      key=lambda n: n.getID())
+        net = sumolib.net.readNet(str(out_net))
+        tls = sorted([n for n in net.getNodes() if n.getType() == 'traffic_light'], key=lambda n: n.getID())
         ways = {3: 0, 4: 0}
         for n in tls:
             k = len(n.getIncoming())
             ways[k] = ways.get(k, 0) + 1
 
         pct = 100 * len(remove_ids) / max(len(edge_map), 1)
-        print(f"\nFinal: {out_net.name}  |  {len(tls)} TL junctions  "
-              f"|  removed {len(remove_ids)}/{len(edge_map)} edges ({pct:.1f} %)")
-        print(f"  4-way: {ways.get(4,0)}   3-way: {ways.get(3,0)}")
+        print(
+            f'\nFinal: {out_net.name}  |  {len(tls)} TL junctions  '
+            f'|  removed {len(remove_ids)}/{len(edge_map)} edges ({pct:.1f} %)'
+        )
+        print(f'  4-way: {ways.get(4, 0)}   3-way: {ways.get(3, 0)}')
         for n in tls:
             inc = len(n.getIncoming())
-            xy  = tuple(round(v) for v in n.getCoord())
-            print(f"    {n.getID():6s}  {inc}-way  {xy}")
+            xy = tuple(round(v) for v in n.getCoord())
+            print(f'    {n.getID():6s}  {inc}-way  {xy}')
 
     return out_net
 
@@ -221,20 +241,20 @@ def build(
 # CLI
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build irregular grid network")
-    parser.add_argument("--size",   type=int,   default=4,     help="Nodes per side")
-    parser.add_argument("--length", type=float, default=200.0, help="Segment length (m)")
-    parser.add_argument("--lanes",  type=int,   default=2,     help="Lanes per direction")
-    parser.add_argument("--speed",  type=float, default=13.89, help="Speed limit (m/s)")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Build irregular grid network')
+    parser.add_argument('--size', type=int, default=4, help='Nodes per side')
+    parser.add_argument('--length', type=float, default=200.0, help='Segment length (m)')
+    parser.add_argument('--lanes', type=int, default=2, help='Lanes per direction')
+    parser.add_argument('--speed', type=float, default=13.89, help='Speed limit (m/s)')
     args = parser.parse_args()
 
     build(
-        size    = args.size,
-        length  = args.length,
-        lanes   = args.lanes,
-        speed   = args.speed,
+        size=args.size,
+        length=args.length,
+        lanes=args.lanes,
+        speed=args.speed,
         # Remove node B1, edge C2<->D2, and upper-right corner stub (A3 + its roads)
-        remove_nodes    = ["B1", "A3"],
-        remove_segments = [("C2", "D2")],
+        remove_nodes=['B1', 'A3'],
+        remove_segments=[('C2', 'D2')],
     )
