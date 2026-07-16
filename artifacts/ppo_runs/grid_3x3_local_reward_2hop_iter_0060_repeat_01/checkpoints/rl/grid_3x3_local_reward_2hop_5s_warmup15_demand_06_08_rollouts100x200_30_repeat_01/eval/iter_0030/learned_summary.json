@@ -1,0 +1,1430 @@
+{
+  "records": [
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 100,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1166,
+        "completed_vehicles": 1091,
+        "vehicles_remaining": 75,
+        "completion_rate": 0.9356775300171527,
+        "teleport_count": 0,
+        "throughput_per_hour": 2182.0,
+        "average_waiting_time_s": 56.82034830430798,
+        "average_travel_time_s": 145.77360219981668,
+        "average_time_loss_s": 81.30457378551787,
+        "average_queue_length_vehicles": 0.36189444444444546,
+        "max_queue_length_vehicles": 12.0,
+        "average_wait_density_s_per_m": 0.09589874605055294,
+        "phase_switch_frequency_per_junction_per_minute": 5.333333333333333,
+        "average_tls_passes_per_vehicle": 2.4289642529789184,
+        "average_stops_before_tls_per_vehicle": 1.3455545371219064,
+        "nonstop_tls_pass_rate": 0.4460377358490566,
+        "average_best_nonstop_tls_streak": 1.0329972502291476,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.13303891036655224,
+          "N1_0": 0.2531603486540666,
+          "N1_1": 0.05296033249158245,
+          "N1_2": 0.18708879223940408,
+          "N2_1": 0.35892217926689596
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 11.0,
+          "N1_0": 12.0,
+          "N1_1": 11.0,
+          "N1_2": 10.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            62,
+            4,
+            103,
+            82,
+            109
+          ],
+          "N1_0": [
+            6,
+            54,
+            87,
+            100,
+            113
+          ],
+          "N1_1": [
+            31,
+            15,
+            46,
+            13,
+            10,
+            8,
+            15,
+            8,
+            21,
+            13,
+            43,
+            5,
+            29,
+            12,
+            40,
+            12,
+            39
+          ],
+          "N1_2": [
+            127,
+            4,
+            80,
+            61,
+            88
+          ],
+          "N2_1": [
+            69,
+            3,
+            118,
+            58,
+            112
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 101,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1162,
+        "completed_vehicles": 1065,
+        "vehicles_remaining": 97,
+        "completion_rate": 0.9165232358003442,
+        "teleport_count": 0,
+        "throughput_per_hour": 2130.0,
+        "average_waiting_time_s": 56.50892018779343,
+        "average_travel_time_s": 145.1661971830986,
+        "average_time_loss_s": 81.19276995305165,
+        "average_queue_length_vehicles": 0.3608833333333331,
+        "max_queue_length_vehicles": 15.0,
+        "average_wait_density_s_per_m": 0.09506714060031607,
+        "phase_switch_frequency_per_junction_per_minute": 5.3933333333333335,
+        "average_tls_passes_per_vehicle": 2.407511737089202,
+        "average_stops_before_tls_per_vehicle": 1.2816901408450705,
+        "nonstop_tls_pass_rate": 0.4676287051482059,
+        "average_best_nonstop_tls_streak": 1.0835680751173709,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.13287156357388297,
+          "N1_0": 0.24160805054410048,
+          "N1_1": 0.0654729587542086,
+          "N1_2": 0.28926430054410124,
+          "N2_1": 0.24608614332760645
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 15.0,
+          "N1_1": 11.0,
+          "N1_2": 12.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            66,
+            8,
+            139,
+            84,
+            63
+          ],
+          "N1_0": [
+            4,
+            65,
+            73,
+            160,
+            58
+          ],
+          "N1_1": [
+            32,
+            15,
+            29,
+            10,
+            8,
+            12,
+            17,
+            6,
+            13,
+            7,
+            58,
+            9,
+            42,
+            14,
+            36,
+            14,
+            38
+          ],
+          "N1_2": [
+            141,
+            5,
+            92,
+            60,
+            62
+          ],
+          "N2_1": [
+            77,
+            6,
+            163,
+            60,
+            54
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 102,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1145,
+        "completed_vehicles": 1058,
+        "vehicles_remaining": 87,
+        "completion_rate": 0.9240174672489083,
+        "teleport_count": 0,
+        "throughput_per_hour": 2116.0,
+        "average_waiting_time_s": 56.19659735349716,
+        "average_travel_time_s": 145.99054820415878,
+        "average_time_loss_s": 81.01751417769376,
+        "average_queue_length_vehicles": 0.35072777777777725,
+        "max_queue_length_vehicles": 20.0,
+        "average_wait_density_s_per_m": 0.09487843108214826,
+        "phase_switch_frequency_per_junction_per_minute": 5.406666666666666,
+        "average_tls_passes_per_vehicle": 2.4801512287334595,
+        "average_stops_before_tls_per_vehicle": 1.339319470699433,
+        "nonstop_tls_pass_rate": 0.45998475609756095,
+        "average_best_nonstop_tls_streak": 1.108695652173913,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.3564289805269188,
+          "N1_0": 0.16148249570446707,
+          "N1_1": 0.05443839436026924,
+          "N1_2": 0.16708771835624284,
+          "N2_1": 0.23512090134593366
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 20.0,
+          "N1_0": 11.0,
+          "N1_1": 9.0,
+          "N1_2": 10.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            57,
+            7,
+            133,
+            68,
+            95
+          ],
+          "N1_0": [
+            7,
+            49,
+            98,
+            133,
+            73
+          ],
+          "N1_1": [
+            57,
+            22,
+            32,
+            6,
+            7,
+            6,
+            18,
+            3,
+            16,
+            14,
+            41,
+            7,
+            48,
+            18,
+            32,
+            4,
+            29
+          ],
+          "N1_2": [
+            118,
+            4,
+            78,
+            68,
+            92
+          ],
+          "N2_1": [
+            90,
+            2,
+            132,
+            67,
+            69
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 103,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1127,
+        "completed_vehicles": 1070,
+        "vehicles_remaining": 57,
+        "completion_rate": 0.9494232475598935,
+        "teleport_count": 0,
+        "throughput_per_hour": 2140.0,
+        "average_waiting_time_s": 57.90093457943925,
+        "average_travel_time_s": 146.03644859813085,
+        "average_time_loss_s": 82.35517757009345,
+        "average_queue_length_vehicles": 0.3526222222222215,
+        "max_queue_length_vehicles": 14.0,
+        "average_wait_density_s_per_m": 0.094035182991048,
+        "phase_switch_frequency_per_junction_per_minute": 5.346666666666667,
+        "average_tls_passes_per_vehicle": 2.4504672897196262,
+        "average_stops_before_tls_per_vehicle": 1.3046728971962618,
+        "nonstop_tls_pass_rate": 0.467581998474447,
+        "average_best_nonstop_tls_streak": 1.1158878504672898,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.1669288731386025,
+          "N1_0": 0.29851043456471926,
+          "N1_1": 0.04447916666666666,
+          "N1_2": 0.2274189218213055,
+          "N2_1": 0.24012877648911782
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 8.0,
+          "N1_2": 14.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            66,
+            4,
+            128,
+            70,
+            92
+          ],
+          "N1_0": [
+            4,
+            60,
+            87,
+            126,
+            83
+          ],
+          "N1_1": [
+            41,
+            25,
+            39,
+            4,
+            8,
+            5,
+            16,
+            5,
+            11,
+            11,
+            55,
+            6,
+            39,
+            21,
+            31,
+            13,
+            30
+          ],
+          "N1_2": [
+            116,
+            8,
+            89,
+            61,
+            86
+          ],
+          "N2_1": [
+            104,
+            12,
+            114,
+            68,
+            62
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 104,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1172,
+        "completed_vehicles": 1085,
+        "vehicles_remaining": 87,
+        "completion_rate": 0.9257679180887372,
+        "teleport_count": 0,
+        "throughput_per_hour": 2170.0,
+        "average_waiting_time_s": 49.89216589861751,
+        "average_travel_time_s": 136.1594470046083,
+        "average_time_loss_s": 72.05747465437788,
+        "average_queue_length_vehicles": 0.3257499999999999,
+        "max_queue_length_vehicles": 14.0,
+        "average_wait_density_s_per_m": 0.09857211032122173,
+        "phase_switch_frequency_per_junction_per_minute": 5.046666666666667,
+        "average_tls_passes_per_vehicle": 2.4534562211981568,
+        "average_stops_before_tls_per_vehicle": 1.159447004608295,
+        "nonstop_tls_pass_rate": 0.5274229902329076,
+        "average_best_nonstop_tls_streak": 1.223963133640553,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.1949254546105383,
+          "N1_0": 0.382110001431844,
+          "N1_1": 0.05378866792929282,
+          "N1_2": 0.17030578823024034,
+          "N2_1": 0.22359500286368786
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 14.0,
+          "N1_2": 11.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            68,
+            4,
+            169,
+            80,
+            39
+          ],
+          "N1_0": [
+            3,
+            63,
+            87,
+            165,
+            42
+          ],
+          "N1_1": [
+            44,
+            15,
+            38,
+            5,
+            14,
+            11,
+            16,
+            7,
+            18,
+            9,
+            41,
+            13,
+            23,
+            15,
+            47,
+            11,
+            33
+          ],
+          "N1_2": [
+            166,
+            1,
+            93,
+            57,
+            43
+          ],
+          "N2_1": [
+            105,
+            6,
+            161,
+            56,
+            32
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "seed": 105,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1102,
+        "completed_vehicles": 1049,
+        "vehicles_remaining": 53,
+        "completion_rate": 0.9519056261343013,
+        "teleport_count": 0,
+        "throughput_per_hour": 2098.0,
+        "average_waiting_time_s": 55.94661582459485,
+        "average_travel_time_s": 142.94089609151573,
+        "average_time_loss_s": 79.68571973307913,
+        "average_queue_length_vehicles": 0.33148333333333163,
+        "max_queue_length_vehicles": 14.0,
+        "average_wait_density_s_per_m": 0.08338948953396537,
+        "phase_switch_frequency_per_junction_per_minute": 5.266666666666667,
+        "average_tls_passes_per_vehicle": 2.4928503336510963,
+        "average_stops_before_tls_per_vehicle": 1.2497616777883698,
+        "nonstop_tls_pass_rate": 0.49866156787762905,
+        "average_best_nonstop_tls_streak": 1.1887511916110582,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.1637729989977091,
+          "N1_0": 0.2249489905498279,
+          "N1_1": 0.0708417508417507,
+          "N1_2": 0.15485708404925533,
+          "N2_1": 0.22095951460481053
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 11.0,
+          "N1_0": 12.0,
+          "N1_1": 9.0,
+          "N1_2": 13.0,
+          "N2_1": 14.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            62,
+            6,
+            137,
+            96,
+            59
+          ],
+          "N1_0": [
+            2,
+            58,
+            98,
+            129,
+            73
+          ],
+          "N1_1": [
+            27,
+            12,
+            45,
+            13,
+            9,
+            9,
+            16,
+            3,
+            13,
+            9,
+            51,
+            5,
+            43,
+            18,
+            39,
+            11,
+            37
+          ],
+          "N1_2": [
+            135,
+            5,
+            93,
+            67,
+            60
+          ],
+          "N2_1": [
+            75,
+            7,
+            159,
+            66,
+            53
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 100,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1166,
+        "completed_vehicles": 1101,
+        "vehicles_remaining": 65,
+        "completion_rate": 0.9442538593481989,
+        "teleport_count": 0,
+        "throughput_per_hour": 2202.0,
+        "average_waiting_time_s": 42.36148955495005,
+        "average_travel_time_s": 125.49682107175295,
+        "average_time_loss_s": 61.32379654859219,
+        "average_queue_length_vehicles": 0.2975500000000011,
+        "max_queue_length_vehicles": 16.0,
+        "average_wait_density_s_per_m": 0.2954683797393366,
+        "phase_switch_frequency_per_junction_per_minute": 2.5133333333333336,
+        "average_tls_passes_per_vehicle": 2.4850136239782015,
+        "average_stops_before_tls_per_vehicle": 0.8828337874659401,
+        "nonstop_tls_pass_rate": 0.6447368421052632,
+        "average_best_nonstop_tls_streak": 1.514078110808356,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.7130602090492568,
+          "N1_0": 0.8999172215063,
+          "N1_1": 0.048155250420875324,
+          "N1_2": 0.6880154639175255,
+          "N2_1": 0.8192936533505142
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 9.0,
+          "N1_2": 9.0,
+          "N2_1": 16.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            51,
+            0,
+            216,
+            75,
+            18
+          ],
+          "N1_0": [
+            0,
+            46,
+            90,
+            219,
+            5
+          ],
+          "N1_1": [
+            114,
+            0,
+            26,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            57,
+            0,
+            57,
+            1,
+            20,
+            0,
+            82
+          ],
+          "N1_2": [
+            214,
+            0,
+            71,
+            63,
+            12
+          ],
+          "N2_1": [
+            106,
+            0,
+            192,
+            58,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 101,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1162,
+        "completed_vehicles": 1084,
+        "vehicles_remaining": 78,
+        "completion_rate": 0.9328743545611016,
+        "teleport_count": 0,
+        "throughput_per_hour": 2168.0,
+        "average_waiting_time_s": 46.72970479704797,
+        "average_travel_time_s": 128.7047970479705,
+        "average_time_loss_s": 65.06739852398523,
+        "average_queue_length_vehicles": 0.3133055555555555,
+        "max_queue_length_vehicles": 12.0,
+        "average_wait_density_s_per_m": 0.18255171307266957,
+        "phase_switch_frequency_per_junction_per_minute": 2.8,
+        "average_tls_passes_per_vehicle": 2.503690036900369,
+        "average_stops_before_tls_per_vehicle": 0.8846863468634686,
+        "nonstop_tls_pass_rate": 0.6466470154753132,
+        "average_best_nonstop_tls_streak": 1.5350553505535056,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.30838881729667816,
+          "N1_0": 0.5858753042668947,
+          "N1_1": 0.0439354482323232,
+          "N1_2": 0.3857339096506306,
+          "N2_1": 0.6207174434421537
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 11.0,
+          "N1_2": 12.0,
+          "N2_1": 10.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            79,
+            0,
+            168,
+            96,
+            17
+          ],
+          "N1_0": [
+            0,
+            48,
+            86,
+            207,
+            19
+          ],
+          "N1_1": [
+            69,
+            0,
+            41,
+            0,
+            1,
+            0,
+            1,
+            1,
+            1,
+            2,
+            63,
+            1,
+            59,
+            1,
+            51,
+            0,
+            69
+          ],
+          "N1_2": [
+            174,
+            0,
+            115,
+            59,
+            12
+          ],
+          "N2_1": [
+            78,
+            0,
+            225,
+            52,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 102,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1145,
+        "completed_vehicles": 1075,
+        "vehicles_remaining": 70,
+        "completion_rate": 0.9388646288209607,
+        "teleport_count": 0,
+        "throughput_per_hour": 2150.0,
+        "average_waiting_time_s": 39.66139534883721,
+        "average_travel_time_s": 122.3506976744186,
+        "average_time_loss_s": 58.04617674418605,
+        "average_queue_length_vehicles": 0.25706666666666667,
+        "max_queue_length_vehicles": 12.0,
+        "average_wait_density_s_per_m": 0.09597970971563972,
+        "phase_switch_frequency_per_junction_per_minute": 2.92,
+        "average_tls_passes_per_vehicle": 2.4948837209302326,
+        "average_stops_before_tls_per_vehicle": 0.8790697674418605,
+        "nonstop_tls_pass_rate": 0.6476510067114094,
+        "average_best_nonstop_tls_streak": 1.533953488372093,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.3200131550687282,
+          "N1_0": 0.21159301617983953,
+          "N1_1": 0.0489015151515151,
+          "N1_2": 0.20365612471363131,
+          "N2_1": 0.209319068585338
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 11.0,
+          "N1_0": 10.0,
+          "N1_1": 11.0,
+          "N1_2": 12.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            79,
+            0,
+            114,
+            86,
+            81
+          ],
+          "N1_0": [
+            0,
+            54,
+            104,
+            111,
+            91
+          ],
+          "N1_1": [
+            65,
+            0,
+            30,
+            0,
+            2,
+            0,
+            0,
+            2,
+            2,
+            0,
+            52,
+            0,
+            79,
+            0,
+            71,
+            0,
+            57
+          ],
+          "N1_2": [
+            123,
+            0,
+            78,
+            59,
+            100
+          ],
+          "N2_1": [
+            88,
+            0,
+            105,
+            57,
+            110
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 103,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1127,
+        "completed_vehicles": 1076,
+        "vehicles_remaining": 51,
+        "completion_rate": 0.9547471162377995,
+        "teleport_count": 0,
+        "throughput_per_hour": 2152.0,
+        "average_waiting_time_s": 47.28624535315985,
+        "average_travel_time_s": 130.07063197026022,
+        "average_time_loss_s": 66.12616171003718,
+        "average_queue_length_vehicles": 0.3185166666666662,
+        "max_queue_length_vehicles": 13.0,
+        "average_wait_density_s_per_m": 0.36353627731700877,
+        "phase_switch_frequency_per_junction_per_minute": 2.433333333333333,
+        "average_tls_passes_per_vehicle": 2.4275092936802976,
+        "average_stops_before_tls_per_vehicle": 0.8633828996282528,
+        "nonstop_tls_pass_rate": 0.6443338437978561,
+        "average_best_nonstop_tls_streak": 1.4972118959107807,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 1.4265642898052695,
+          "N1_0": 1.0152585373711347,
+          "N1_1": 0.061308659511784366,
+          "N1_2": 0.9134154853951888,
+          "N2_1": 0.4792852412657507
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 8.0,
+          "N1_2": 12.0,
+          "N2_1": 13.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            54,
+            0,
+            213,
+            85,
+            8
+          ],
+          "N1_0": [
+            0,
+            57,
+            76,
+            221,
+            6
+          ],
+          "N1_1": [
+            75,
+            8,
+            46,
+            0,
+            0,
+            0,
+            2,
+            0,
+            0,
+            1,
+            76,
+            0,
+            68,
+            0,
+            31,
+            1,
+            52
+          ],
+          "N1_2": [
+            231,
+            0,
+            68,
+            56,
+            5
+          ],
+          "N2_1": [
+            83,
+            0,
+            216,
+            52,
+            9
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 104,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1167,
+        "completed_vehicles": 1097,
+        "vehicles_remaining": 70,
+        "completion_rate": 0.9400171379605827,
+        "teleport_count": 0,
+        "throughput_per_hour": 2194.0,
+        "average_waiting_time_s": 45.627164995442115,
+        "average_travel_time_s": 128.5013673655424,
+        "average_time_loss_s": 64.22342752962626,
+        "average_queue_length_vehicles": 0.3428277777777766,
+        "max_queue_length_vehicles": 12.0,
+        "average_wait_density_s_per_m": 0.33456313355713496,
+        "phase_switch_frequency_per_junction_per_minute": 2.58,
+        "average_tls_passes_per_vehicle": 2.4430264357338194,
+        "average_stops_before_tls_per_vehicle": 0.8723792160437557,
+        "nonstop_tls_pass_rate": 0.642910447761194,
+        "average_best_nonstop_tls_streak": 1.4977210574293527,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.9632839347079044,
+          "N1_0": 0.7628552763459333,
+          "N1_1": 0.054326862373737295,
+          "N1_2": 1.272122888029779,
+          "N2_1": 0.5386132588774339
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 12.0,
+          "N1_0": 12.0,
+          "N1_1": 7.0,
+          "N1_2": 12.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            46,
+            0,
+            230,
+            79,
+            5
+          ],
+          "N1_0": [
+            0,
+            65,
+            85,
+            201,
+            9
+          ],
+          "N1_1": [
+            59,
+            0,
+            29,
+            1,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            62,
+            3,
+            65,
+            2,
+            47,
+            0,
+            89
+          ],
+          "N1_2": [
+            220,
+            0,
+            93,
+            41,
+            6
+          ],
+          "N2_1": [
+            85,
+            0,
+            211,
+            52,
+            12
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "seed": 105,
+      "demand_scale": 0.7,
+      "metrics": {
+        "departed_vehicles": 1102,
+        "completed_vehicles": 1052,
+        "vehicles_remaining": 50,
+        "completion_rate": 0.9546279491833031,
+        "teleport_count": 0,
+        "throughput_per_hour": 2104.0,
+        "average_waiting_time_s": 43.702471482889734,
+        "average_travel_time_s": 124.89353612167301,
+        "average_time_loss_s": 61.95591254752852,
+        "average_queue_length_vehicles": 0.27136111111111155,
+        "max_queue_length_vehicles": 12.0,
+        "average_wait_density_s_per_m": 0.17011613842811985,
+        "phase_switch_frequency_per_junction_per_minute": 3.1666666666666665,
+        "average_tls_passes_per_vehicle": 2.552281368821293,
+        "average_stops_before_tls_per_vehicle": 0.9942965779467681,
+        "nonstop_tls_pass_rate": 0.6104283054003724,
+        "average_best_nonstop_tls_streak": 1.4743346007604563,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.7469470396620848,
+          "N1_0": 0.23216772265177502,
+          "N1_1": 0.0489675399831649,
+          "N1_2": 0.5610587593069872,
+          "N2_1": 0.21976079252577296
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 9.0,
+          "N1_0": 12.0,
+          "N1_1": 7.0,
+          "N1_2": 10.0,
+          "N2_1": 12.0
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            88,
+            0,
+            149,
+            114,
+            9
+          ],
+          "N1_0": [
+            0,
+            63,
+            110,
+            150,
+            37
+          ],
+          "N1_1": [
+            56,
+            0,
+            29,
+            0,
+            0,
+            0,
+            4,
+            1,
+            0,
+            0,
+            58,
+            0,
+            82,
+            2,
+            55,
+            0,
+            73
+          ],
+          "N1_2": [
+            182,
+            0,
+            78,
+            69,
+            31
+          ],
+          "N2_1": [
+            93,
+            0,
+            173,
+            53,
+            41
+          ]
+        }
+      }
+    }
+  ],
+  "aggregates": [
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned",
+      "demand_scale": 0.7,
+      "seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "mean": {
+        "departed_vehicles": 1146,
+        "completed_vehicles": 1070,
+        "vehicles_remaining": 76,
+        "completion_rate": 0.9338858374748895,
+        "teleport_count": 0,
+        "throughput_per_hour": 2139.3333333333335,
+        "average_waiting_time_s": 55.54426369137503,
+        "average_travel_time_s": 143.67785654688817,
+        "average_time_loss_s": 79.60220497896896,
+        "average_queue_length_vehicles": 0.3472268518518515,
+        "max_queue_length_vehicles": 14.833333333333334,
+        "average_wait_density_s_per_m": 0.0936401834298754,
+        "phase_switch_frequency_per_junction_per_minute": 5.2988888888888885,
+        "average_tls_passes_per_vehicle": 2.452233510561743,
+        "average_stops_before_tls_per_vehicle": 1.2800742880432228,
+        "nonstop_tls_pass_rate": 0.4778862922799679,
+        "average_best_nonstop_tls_streak": 1.125643858873222,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.19132779686903398,
+          "N1_0": 0.2603033869081709,
+          "N1_1": 0.056996878507295075,
+          "N1_2": 0.1993371008734249,
+          "N2_1": 0.2541354196496754
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 13.0,
+          "N1_0": 12.333333333333334,
+          "N1_1": 10.333333333333334,
+          "N1_2": 11.666666666666666,
+          "N2_1": 12.333333333333334
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            381,
+            33,
+            809,
+            480,
+            457
+          ],
+          "N1_0": [
+            26,
+            349,
+            530,
+            813,
+            442
+          ],
+          "N1_1": [
+            232,
+            104,
+            229,
+            51,
+            56,
+            51,
+            98,
+            32,
+            92,
+            63,
+            289,
+            45,
+            224,
+            98,
+            225,
+            65,
+            206
+          ],
+          "N1_2": [
+            803,
+            27,
+            525,
+            374,
+            431
+          ],
+          "N2_1": [
+            520,
+            36,
+            847,
+            375,
+            382
+          ]
+        }
+      },
+      "standard_deviation": {
+        "departed_vehicles": 25,
+        "completed_vehicles": 15,
+        "vehicles_remaining": 16,
+        "completion_rate": 0.013128082753087454,
+        "teleport_count": 0,
+        "throughput_per_hour": 29.158570304838715,
+        "average_waiting_time_s": 2.602770564700702,
+        "average_travel_time_s": 3.525819044685128,
+        "average_time_loss_s": 3.4626542105424796,
+        "average_queue_length_vehicles": 0.01385711492036981,
+        "max_queue_length_vehicles": 2.4776781245530843,
+        "average_wait_density_s_per_m": 0.004799778154399637,
+        "phase_switch_frequency_per_junction_per_minute": 0.12155880556289009,
+        "average_tls_passes_per_vehicle": 0.028795934997078575,
+        "average_stops_before_tls_per_vehicle": 0.0630808384657713,
+        "nonstop_tls_pass_rate": 0.02717746808558734,
+        "average_best_nonstop_tls_streak": 0.0637513428856136,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.07685553965302797,
+          "N1_0": 0.06796159492655988,
+          "N1_1": 0.008692426742236168,
+          "N1_2": 0.04634440393394692,
+          "N2_1": 0.04767275869988441
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 3.1622776601683795,
+          "N1_0": 1.247219128924647,
+          "N1_1": 1.9720265943665387,
+          "N1_2": 1.4907119849998598,
+          "N2_1": 0.7453559924999299
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            381,
+            33,
+            809,
+            480,
+            457
+          ],
+          "N1_0": [
+            26,
+            349,
+            530,
+            813,
+            442
+          ],
+          "N1_1": [
+            232,
+            104,
+            229,
+            51,
+            56,
+            51,
+            98,
+            32,
+            92,
+            63,
+            289,
+            45,
+            224,
+            98,
+            225,
+            65,
+            206
+          ],
+          "N1_2": [
+            803,
+            27,
+            525,
+            374,
+            431
+          ],
+          "N2_1": [
+            520,
+            36,
+            847,
+            375,
+            382
+          ]
+        }
+      }
+    },
+    {
+      "city_name": "grid_3x3",
+      "city_split": "train",
+      "policy": "learned-greedy",
+      "demand_scale": 0.7,
+      "seeds": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "mean": {
+        "departed_vehicles": 1145,
+        "completed_vehicles": 1081,
+        "vehicles_remaining": 64,
+        "completion_rate": 0.9442308410186578,
+        "teleport_count": 0,
+        "throughput_per_hour": 2161.6666666666665,
+        "average_waiting_time_s": 44.228078588721154,
+        "average_travel_time_s": 126.66964187526962,
+        "average_time_loss_s": 62.790478933992574,
+        "average_queue_length_vehicles": 0.30010462962962964,
+        "max_queue_length_vehicles": 12.833333333333334,
+        "average_wait_density_s_per_m": 0.24036922530498492,
+        "phase_switch_frequency_per_junction_per_minute": 2.7355555555555555,
+        "average_tls_passes_per_vehicle": 2.4844007466740354,
+        "average_stops_before_tls_per_vehicle": 0.8961080992316743,
+        "nonstop_tls_pass_rate": 0.6394512435419014,
+        "average_best_nonstop_tls_streak": 1.5087257506390908,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.7463762409316536,
+          "N1_0": 0.6179445130536462,
+          "N1_1": 0.0509325459455667,
+          "N1_2": 0.6706671051689571,
+          "N2_1": 0.48116490967449393
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 11.333333333333334,
+          "N1_0": 11.666666666666666,
+          "N1_1": 8.833333333333334,
+          "N1_2": 11.166666666666666,
+          "N2_1": 12.5
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            397,
+            0,
+            1090,
+            535,
+            138
+          ],
+          "N1_0": [
+            0,
+            333,
+            551,
+            1109,
+            167
+          ],
+          "N1_1": [
+            438,
+            8,
+            201,
+            1,
+            4,
+            0,
+            8,
+            6,
+            4,
+            4,
+            368,
+            4,
+            410,
+            6,
+            275,
+            1,
+            422
+          ],
+          "N1_2": [
+            1144,
+            0,
+            503,
+            347,
+            166
+          ],
+          "N2_1": [
+            533,
+            0,
+            1122,
+            324,
+            181
+          ]
+        }
+      },
+      "standard_deviation": {
+        "departed_vehicles": 24,
+        "completed_vehicles": 16,
+        "vehicles_remaining": 10,
+        "completion_rate": 0.008105694952609604,
+        "teleport_count": 0,
+        "throughput_per_hour": 32.3195847058027,
+        "average_waiting_time_s": 2.651508177211238,
+        "average_travel_time_s": 2.6535243158893254,
+        "average_time_loss_s": 2.699399489413771,
+        "average_queue_length_vehicles": 0.028935322088564593,
+        "max_queue_length_vehicles": 1.4624940645653537,
+        "average_wait_density_s_per_m": 0.096786039817317,
+        "phase_switch_frequency_per_junction_per_minute": 0.25460693501557385,
+        "average_tls_passes_per_vehicle": 0.04090353484703755,
+        "average_stops_before_tls_per_vehicle": 0.04448210214795832,
+        "nonstop_tls_pass_rate": 0.01307089399763171,
+        "average_best_nonstop_tls_streak": 0.021582236737185914,
+        "per_junction_wait_density_s_per_m": {
+          "N0_1": 0.38393434280059907,
+          "N1_0": 0.30912238049193325,
+          "N1_1": 0.00553540420253125,
+          "N1_2": 0.3493510583083963,
+          "N2_1": 0.21577074127421303
+        },
+        "per_junction_max_queue_length_vehicles": {
+          "N0_1": 1.1055415967851332,
+          "N1_0": 0.7453559924999299,
+          "N1_1": 1.6749792701868151,
+          "N1_2": 1.2133516482134197,
+          "N2_1": 1.8027756377319946
+        },
+        "per_junction_phase_counts": {
+          "N0_1": [
+            397,
+            0,
+            1090,
+            535,
+            138
+          ],
+          "N1_0": [
+            0,
+            333,
+            551,
+            1109,
+            167
+          ],
+          "N1_1": [
+            438,
+            8,
+            201,
+            1,
+            4,
+            0,
+            8,
+            6,
+            4,
+            4,
+            368,
+            4,
+            410,
+            6,
+            275,
+            1,
+            422
+          ],
+          "N1_2": [
+            1144,
+            0,
+            503,
+            347,
+            166
+          ],
+          "N2_1": [
+            533,
+            0,
+            1122,
+            324,
+            181
+          ]
+        }
+      }
+    }
+  ]
+}

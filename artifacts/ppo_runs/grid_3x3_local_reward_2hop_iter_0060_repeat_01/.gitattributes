@@ -1,0 +1,4 @@
+*.csv binary
+*.log binary
+*.pt binary
+events.out.tfevents.* binary

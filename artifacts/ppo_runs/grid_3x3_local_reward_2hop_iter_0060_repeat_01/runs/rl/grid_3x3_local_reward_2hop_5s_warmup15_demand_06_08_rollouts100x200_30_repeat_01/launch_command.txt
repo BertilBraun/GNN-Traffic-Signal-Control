@@ -1,0 +1,1 @@
+uv run python scripts/train_rl.py --experiment-config configs/training/grid_3x3_local_reward_2hop_30.yaml --scratch-random --scratch-num-hops 2 --iterations 30 --device cuda --ckpt-dir checkpoints/rl/grid_3x3_local_reward_2hop_5s_warmup15_demand_06_08_rollouts100x200_30_repeat_01 --log-dir runs/rl/grid_3x3_local_reward_2hop_5s_warmup15_demand_06_08_rollouts100x200_30_repeat_01
