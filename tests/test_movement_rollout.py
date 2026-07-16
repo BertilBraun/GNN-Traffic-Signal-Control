@@ -929,6 +929,56 @@ def test_ppo_batch_collation_reuses_cached_phase_tensors() -> None:
     assert batch.phase_logit_groups[0].incidence_matrices.tolist() == [[[1.0]]]
 
 
+def test_ppo_batches_can_be_packed_by_actual_junction_action_samples() -> None:
+    one_action_transition = MovementTransition(
+        tensor_sample=_tensor_sample(),
+        actions=(0,),
+        old_log_probs=(0.0,),
+        action_masks=((True,),),
+        rewards=(1.0,),
+        values=(0.0,),
+        done=True,
+    )
+    two_action_transition = MovementTransition(
+        tensor_sample=_two_traffic_light_tensor_sample(),
+        actions=(0, 1),
+        old_log_probs=(0.0, 0.0),
+        action_masks=((True,), (True, True)),
+        rewards=(1.0, 1.0),
+        values=(0.0, 0.0),
+        done=True,
+    )
+    transitions = (
+        one_action_transition,
+        two_action_transition,
+        one_action_transition,
+        two_action_transition,
+    )
+    loader = ppo_batch_data_loader(
+        transitions=transitions,
+        advantages=(
+            torch.tensor((0.0,)),
+            torch.tensor((0.0, 0.0)),
+            torch.tensor((0.0,)),
+            torch.tensor((0.0, 0.0)),
+        ),
+        returns=(
+            torch.tensor((1.0,)),
+            torch.tensor((1.0, 1.0)),
+            torch.tensor((1.0,)),
+            torch.tensor((1.0, 1.0)),
+        ),
+        transitions_per_batch=99,
+        update_batch_workers=0,
+        action_samples_per_batch=3,
+    )
+
+    batches = tuple(loader)
+
+    assert sum(batch.policy_value_count for batch in batches) == 6
+    assert all(batch.policy_value_count <= 3 for batch in batches)
+
+
 def test_rollout_bootstraps_truncated_returns_from_next_state_value() -> None:
     buffer = MovementRolloutBuffer(traffic_light_count=1, gamma=0.5, lam=1.0)
     for reward, value in ((1.0, 0.25), (2.0, 0.5)):

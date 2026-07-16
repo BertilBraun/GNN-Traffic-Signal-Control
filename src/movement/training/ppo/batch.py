@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+import math
 
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from src.movement.training.movement_batch import (
     MovementTensorSample,
@@ -92,23 +93,65 @@ class MovementPpoDataset(Dataset[MovementPpoBatchRow]):
         return len(self.transitions)
 
 
+class ActionSampleBatchSampler(Sampler[list[int]]):
+    def __init__(
+        self,
+        transitions: Sequence[MovementTransition],
+        action_samples_per_batch: int,
+    ) -> None:
+        if action_samples_per_batch <= 0:
+            raise ValueError('action_samples_per_batch must be positive.')
+        self.action_counts = tuple(len(transition.actions) for transition in transitions)
+        self.action_samples_per_batch = action_samples_per_batch
+
+    def __iter__(self) -> Iterator[list[int]]:
+        pending_indices: list[int] = []
+        pending_action_count = 0
+        for index in torch.randperm(len(self.action_counts)).tolist():
+            action_count = self.action_counts[index]
+            if pending_indices and pending_action_count + action_count > self.action_samples_per_batch:
+                yield pending_indices
+                pending_indices = []
+                pending_action_count = 0
+            pending_indices.append(index)
+            pending_action_count += action_count
+        if pending_indices:
+            yield pending_indices
+
+    def __len__(self) -> int:
+        total_action_count = sum(self.action_counts)
+        return max(1, math.ceil(total_action_count / self.action_samples_per_batch))
+
+
 def ppo_batch_data_loader(
     transitions: Sequence[MovementTransition],
     advantages: Sequence[torch.Tensor],
     returns: Sequence[torch.Tensor],
     transitions_per_batch: int,
     update_batch_workers: int,
+    action_samples_per_batch: int | None = None,
 ) -> DataLoader[MovementPpoBatchRow]:
     normalized_advantages = normalize_update_advantages(
         transitions=transitions,
         advantages=advantages,
     )
+    dataset = MovementPpoDataset(
+        transitions=transitions,
+        advantages=normalized_advantages,
+        returns=returns,
+    )
+    if action_samples_per_batch is not None:
+        return DataLoader(
+            dataset,
+            batch_sampler=ActionSampleBatchSampler(
+                transitions=transitions,
+                action_samples_per_batch=action_samples_per_batch,
+            ),
+            num_workers=update_batch_workers,
+            collate_fn=collate_movement_ppo_batch,
+        )
     return DataLoader(
-        MovementPpoDataset(
-            transitions=transitions,
-            advantages=normalized_advantages,
-            returns=returns,
-        ),
+        dataset,
         batch_size=max(1, transitions_per_batch),
         shuffle=True,
         num_workers=update_batch_workers,

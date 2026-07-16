@@ -60,6 +60,7 @@ class PpoRunMetadata(BaseModel):
     entropy_coefficient: float
     maximum_gradient_norm: float
     transitions_per_batch: int
+    action_samples_per_batch: int | None
     warmup_steps: int
     target_kl: float
     demand_scale_min: float
@@ -142,6 +143,7 @@ def build_run_metadata(
         entropy_coefficient=config.entropy_coefficient,
         maximum_gradient_norm=config.max_grad_norm,
         transitions_per_batch=config.transitions_per_batch,
+        action_samples_per_batch=config.action_samples_per_batch,
         warmup_steps=config.warmup_steps,
         target_kl=config.target_kl,
         demand_scale_min=config.demand_scale_min,

@@ -86,6 +86,7 @@ class PpoCommandSettings:
     value_warmup_iterations: int
     warmup_epochs: int
     transitions_per_batch: int
+    action_samples_per_batch: int | None
     update_batch_workers: int
     warmup_steps: int
     decision_interval: int
@@ -557,6 +558,7 @@ def main() -> None:
             experiment_configuration_text=experiment_configuration_text(args.experiment_config),
             experiment_configuration_sha256=experiment_configuration_sha256(args.experiment_config),
             project_root=ROOT,
+            action_samples_per_batch=ppo_settings.action_samples_per_batch,
         )
     )
     print(f'PPO training complete: iterations={result.iterations} checkpoint={result.checkpoint_path}')
@@ -633,6 +635,7 @@ def ppo_command_settings(
             value_warmup_iterations=args.value_warmup_iterations,
             warmup_epochs=args.warmup_epochs,
             transitions_per_batch=args.transitions_per_batch,
+            action_samples_per_batch=None,
             update_batch_workers=args.update_batch_workers,
             warmup_steps=args.warmup_steps,
             decision_interval=args.decision_interval,
@@ -666,6 +669,7 @@ def ppo_command_settings(
             if args.transitions_per_batch == DEFAULT_TRANSITIONS_PER_BATCH
             else args.transitions_per_batch
         ),
+        action_samples_per_batch=ppo.action_samples_per_batch,
         update_batch_workers=(
             ppo.update_batch_workers
             if args.update_batch_workers == DEFAULT_UPDATE_BATCH_WORKERS

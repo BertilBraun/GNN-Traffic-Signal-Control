@@ -221,6 +221,7 @@ def _run_update_epoch(
         returns=buffer.returns,
         transitions_per_batch=config.transitions_per_batch,
         update_batch_workers=config.update_batch_workers,
+        action_samples_per_batch=config.action_samples_per_batch,
     )
     loader_iterator = iter(loader)
     while True:

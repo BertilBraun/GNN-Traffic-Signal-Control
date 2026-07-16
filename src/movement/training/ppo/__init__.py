@@ -361,6 +361,17 @@ def combine_city_rollout_stats(collected_rollouts: tuple[CollectedRollout, ...])
                 city_name=city_name,
                 city_split=city_rollouts[0].city_split,
                 rollout_count=len(city_rollouts),
+                action_sample_count=sum(
+                    len(transition.actions)
+                    for collected in city_rollouts
+                    for transition in collected.buffer.transitions
+                ),
+                policy_sample_count=sum(
+                    int(sum(action_mask) > 1)
+                    for collected in city_rollouts
+                    for transition in collected.buffer.transitions
+                    for action_mask in transition.action_masks
+                ),
                 stats=combine_rollout_stats(tuple(collected.stats for collected in city_rollouts)),
             )
         )
@@ -435,6 +446,9 @@ def write_city_rollout_scalars(
     for city_stats in city_rollout_stats:
         tag_prefix = f'rollout/{city_stats.city_name}'
         stats = city_stats.stats
+        writer.add_scalar(f'{tag_prefix}/rollout_count', city_stats.rollout_count, iteration)
+        writer.add_scalar(f'{tag_prefix}/action_sample_count', city_stats.action_sample_count, iteration)
+        writer.add_scalar(f'{tag_prefix}/policy_sample_count', city_stats.policy_sample_count, iteration)
         writer.add_scalar(f'{tag_prefix}/reward_mean', stats.mean_reward, iteration)
         writer.add_scalar(f'{tag_prefix}/policy_decision_fraction', stats.policy_decision_fraction, iteration)
         writer.add_scalar(f'{tag_prefix}/teleport_count', stats.teleport_count, iteration)

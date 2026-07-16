@@ -142,6 +142,7 @@ class MovementPpoConfig:
     experiment_configuration_text: str | None
     experiment_configuration_sha256: str | None
     project_root: Path
+    action_samples_per_batch: int | None = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,8 @@ class CityRolloutStats:
     city_name: str
     city_split: CitySplit
     rollout_count: int
+    action_sample_count: int
+    policy_sample_count: int
     stats: RolloutStats
 
 

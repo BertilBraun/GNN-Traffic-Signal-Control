@@ -12,6 +12,7 @@ import yaml
 class CitySplit(str, Enum):
     TRAIN = 'train'
     HELD_OUT = 'held_out'
+    EVALUATION_ONLY = 'evaluation_only'
 
 
 class ExperimentEvaluationPolicy(str, Enum):
@@ -67,9 +68,9 @@ class ExperimentCityConfiguration(BaseModel):
         match self.split:
             case CitySplit.TRAIN:
                 pass
-            case CitySplit.HELD_OUT:
+            case CitySplit.HELD_OUT | CitySplit.EVALUATION_ONLY:
                 if self.rollout_jobs_per_iteration != 0:
-                    raise ValueError(f'held-out city {self.name} must define rollout_jobs_per_iteration: 0')
+                    raise ValueError(f'non-training city {self.name} must define rollout_jobs_per_iteration: 0')
         return self
 
     @model_validator(mode='after')
@@ -143,6 +144,7 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     value_warmup_iterations: int = Field(ge=0, default=20)
     warmup_epochs: int = Field(gt=0, default=8)
     transitions_per_batch: int = Field(gt=0, default=32)
+    action_samples_per_batch: int | None = Field(gt=0, default=None)
     update_batch_workers: int = Field(ge=0, default=0)
     reward_sample_interval: int = Field(gt=0, default=5)
     reward_mode: ExperimentPpoRewardMode = ExperimentPpoRewardMode.DELAY_DENSITY

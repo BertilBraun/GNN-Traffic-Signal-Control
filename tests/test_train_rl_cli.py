@@ -353,6 +353,7 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     assert settings.value_warmup_iterations == 2
     assert settings.warmup_epochs == 2
     assert settings.transitions_per_batch == 256
+    assert settings.action_samples_per_batch is None
     assert settings.eval_every == 0
     assert settings.eval_workers == 1
     assert settings.eval_learned_device == 'cpu'

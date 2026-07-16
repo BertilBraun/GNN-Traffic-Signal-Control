@@ -150,6 +150,27 @@ def test_grid_three_local_reward_validation_config_loads() -> None:
     assert configuration.proximal_policy_optimization.speed_change_mode == ExperimentSpeedChangeMode.BRAKING
 
 
+def test_grid_shape_generalization_config_balances_action_samples_and_separates_splits() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'grid_shape_generalization_mixed_2hop_gate_30.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (18, 21, 9, 8, 5)
+    assert configuration.held_out_city.name == 'matched_grid_6x6_square_validation'
+    assert tuple(city.name for city in configuration.cities if city.split is CitySplit.EVALUATION_ONLY) == (
+        'matched_grid_2x3_wide',
+        'matched_grid_3x2_tall',
+        'matched_grid_5x2_tall',
+        'matched_grid_6x3_tall',
+        'matched_grid_7x7_square_zero_shot',
+    )
+    assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
+    assert configuration.demand.evaluation_scales == (0.7,)
+
+
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:
     _write_referenced_files(project_root=tmp_path)
     configuration_path = tmp_path / 'experiment.yaml'
@@ -199,11 +220,44 @@ def test_held_out_city_with_rollout_workers_fails(tmp_path: Path) -> None:
         encoding='utf-8',
     )
 
-    with pytest.raises(ValueError, match='held-out city beta must define rollout_jobs_per_iteration: 0'):
+    with pytest.raises(ValueError, match='non-training city beta must define rollout_jobs_per_iteration: 0'):
         load_experiment_configuration(
             configuration_path=configuration_path,
             project_root=tmp_path,
         )
+
+
+def test_evaluation_only_city_is_evaluated_but_never_used_for_rollouts(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_path.write_text(
+        _experiment_yaml(
+            city_entries="""
+  - name: alpha
+    split: train
+    sumo_config: alpha.sumocfg
+    rollout_workers: 1
+  - name: beta
+    split: held_out
+    sumo_config: beta.sumocfg
+    rollout_workers: 0
+  - name: gamma
+    split: evaluation_only
+    sumo_config: gamma.sumocfg
+    rollout_workers: 0
+""",
+        ),
+        encoding='utf-8',
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=tmp_path,
+    )
+
+    assert tuple(city.name for city in configuration.train_cities) == ('alpha',)
+    assert configuration.held_out_city.name == 'beta'
+    assert configuration.cities[2].split == CitySplit.EVALUATION_ONLY
 
 
 def test_city_rollout_jobs_per_iteration_field_loads(tmp_path: Path) -> None:
