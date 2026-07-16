@@ -89,11 +89,14 @@ training seed `5101`; the full mixed design is additionally repeated with traini
 ## Signal coverage ablation
 
 The separate 6×6 coverage suite keeps node coordinates, roads, lane counts, routes, base demand, and
-evaluation demand fixed while retaining 32, 24, 16, or 8 signals. Signal sets are nested and spatially
-distributed. Removing a signal does not reduce incoming lane capacity.
+evaluation demand fixed while retaining 32, 24, 16, or 8 of the 32 controller-eligible degree-three
+or degree-four junctions. Signal sets are nested and spatially distributed. Removing a signal does
+not reduce incoming lane capacity. Coverage is measured against controller-eligible junctions rather
+than all 36 lattice nodes, because the four degree-two corners are not signal candidates in any
+matched grid.
 
 The coverage study runs only after the size/shape gate. It reports the same traffic outcomes against
-signal coverage `88.9%`, `66.7%`, `44.4%`, and `22.2%`. It uses fresh evaluation seeds `8101–8106`
+signal coverage `100%`, `75%`, `50%`, and `25%`. It uses fresh evaluation seeds `8101–8106`
 at fixed demand scale `0.7`.
 
 ## Validation and outputs

@@ -73,10 +73,10 @@ MATCHED_GRID_SCENARIOS: tuple[GridScenarioSpec, ...] = (
 
 
 GRID_COVERAGE_SCENARIOS: tuple[GridCoverageSpec, ...] = (
-    GridCoverageSpec('coverage_grid_6x6_signals_32_of_36', 6, 6, 32),
-    GridCoverageSpec('coverage_grid_6x6_signals_24_of_36', 6, 6, 24),
-    GridCoverageSpec('coverage_grid_6x6_signals_16_of_36', 6, 6, 16),
-    GridCoverageSpec('coverage_grid_6x6_signals_08_of_36', 6, 6, 8),
+    GridCoverageSpec('coverage_grid_6x6_eligible_signals_32_of_32', 6, 6, 32),
+    GridCoverageSpec('coverage_grid_6x6_eligible_signals_24_of_32', 6, 6, 24),
+    GridCoverageSpec('coverage_grid_6x6_eligible_signals_16_of_32', 6, 6, 16),
+    GridCoverageSpec('coverage_grid_6x6_eligible_signals_08_of_32', 6, 6, 8),
 )
 
 

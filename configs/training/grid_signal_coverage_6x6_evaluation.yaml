@@ -1,21 +1,21 @@
 name: grid_signal_coverage_6x6_evaluation
 
 cities:
-  - name: coverage_grid_6x6_signals_32_of_36
+  - name: coverage_grid_6x6_eligible_signals_32_of_32
     split: train
-    sumo_config: configs/grid_generalization/coverage_grid_6x6_signals_32_of_36/grid.sumocfg
+    sumo_config: configs/grid_generalization/coverage_grid_6x6_eligible_signals_32_of_32/grid.sumocfg
     rollout_jobs_per_iteration: 0
-  - name: coverage_grid_6x6_signals_24_of_36
+  - name: coverage_grid_6x6_eligible_signals_24_of_32
     split: evaluation_only
-    sumo_config: configs/grid_generalization/coverage_grid_6x6_signals_24_of_36/grid.sumocfg
+    sumo_config: configs/grid_generalization/coverage_grid_6x6_eligible_signals_24_of_32/grid.sumocfg
     rollout_jobs_per_iteration: 0
-  - name: coverage_grid_6x6_signals_16_of_36
+  - name: coverage_grid_6x6_eligible_signals_16_of_32
     split: evaluation_only
-    sumo_config: configs/grid_generalization/coverage_grid_6x6_signals_16_of_36/grid.sumocfg
+    sumo_config: configs/grid_generalization/coverage_grid_6x6_eligible_signals_16_of_32/grid.sumocfg
     rollout_jobs_per_iteration: 0
-  - name: coverage_grid_6x6_signals_08_of_36
+  - name: coverage_grid_6x6_eligible_signals_08_of_32
     split: evaluation_only
-    sumo_config: configs/grid_generalization/coverage_grid_6x6_signals_08_of_36/grid.sumocfg
+    sumo_config: configs/grid_generalization/coverage_grid_6x6_eligible_signals_08_of_32/grid.sumocfg
     rollout_jobs_per_iteration: 0
 
 simulation:

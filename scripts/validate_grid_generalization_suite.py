@@ -21,7 +21,11 @@ sys.path.insert(0, str(ROOT))
 from src.movement.demand import route_file_sumo_args, route_files_for_demand_scale
 from src.movement.evaluation import EvaluationPolicy, run_evaluation_episode
 from src.movement.evaluation.runner import lane_inputs_from_net
-from src.movement.grid_study import GRID_COVERAGE_SCENARIOS, MATCHED_GRID_SCENARIOS
+from src.movement.grid_study import (
+    GRID_COVERAGE_SCENARIOS,
+    MATCHED_GRID_SCENARIOS,
+    controllable_node_ids,
+)
 from src.movement.initial_traffic import EFFECTIVE_VEHICLE_SPACING_M, generate_initial_traffic_population
 from src.movement.runtime import MovementControlRuntime
 from src.movement.sumo_backend import SumoBackendKind
@@ -47,6 +51,7 @@ class GridValidationRecord(BaseModel):
     rows: int
     cols: int
     internal_junction_count: int
+    eligible_controller_count: int
     controller_count: int
     signal_coverage: float
     edge_count: int
@@ -100,6 +105,7 @@ def validate_scenario(
     lane_count = sum(len(lane_ids) for lane_ids in lane_ids_by_edge.values())
     lane_length_m = sum(geometry.length_m * geometry.num_lanes for geometry in lane_geometries.values())
     controller_count = sum(node.getType() == 'traffic_light' for node in network.getNodes())
+    eligible_controller_count = len(controllable_node_ids(rows=scenario.rows, cols=scenario.cols))
     valid_route_count = sum(_route_is_valid(network=network, flow=flow) for flow in flows)
     source_nodes = frozenset(_edge_nodes(flow.attrib['from'])[0] for flow in flows)
     destination_nodes = frozenset(_edge_nodes(flow.attrib['to'])[1] for flow in flows)
@@ -159,8 +165,9 @@ def validate_scenario(
                 rows=scenario.rows,
                 cols=scenario.cols,
                 internal_junction_count=scenario.rows * scenario.cols,
+                eligible_controller_count=eligible_controller_count,
                 controller_count=controller_count,
-                signal_coverage=controller_count / (scenario.rows * scenario.cols),
+                signal_coverage=controller_count / eligible_controller_count,
                 edge_count=len(lane_ids_by_edge),
                 lane_count=lane_count,
                 lane_length_m=lane_length_m,
@@ -271,8 +278,9 @@ def _static_record(
         rows=scenario.rows,
         cols=scenario.cols,
         internal_junction_count=scenario.rows * scenario.cols,
+        eligible_controller_count=len(controllable_node_ids(rows=scenario.rows, cols=scenario.cols)),
         controller_count=controller_count,
-        signal_coverage=controller_count / (scenario.rows * scenario.cols),
+        signal_coverage=controller_count / len(controllable_node_ids(rows=scenario.rows, cols=scenario.cols)),
         edge_count=edge_count,
         lane_count=lane_count,
         lane_length_m=lane_length_m,
