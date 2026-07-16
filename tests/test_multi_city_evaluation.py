@@ -9,7 +9,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts import eval_multi_city  # noqa: E402
-from src.movement.evaluation import EvaluationPolicy  # noqa: E402
+from src.movement.evaluation import EvaluationPolicy, LearnedEvaluationActionMode  # noqa: E402
 from src.movement.evaluation.metrics import EvaluationMetrics  # noqa: E402
 from src.movement.evaluation.multi_city import (  # noqa: E402
     MultiCityEvaluationRunRequest,
@@ -185,6 +185,8 @@ def test_eval_multi_city_learned_checkpoint_rules() -> None:
             policies=(EvaluationPolicy.MAX_PRESSURE,),
             checkpoint_path=None,
             device='cpu',
+            action_mode=LearnedEvaluationActionMode.SAMPLE,
+            temperature=0.8,
         )
         is None
     )
@@ -194,7 +196,24 @@ def test_eval_multi_city_learned_checkpoint_rules() -> None:
             policies=(EvaluationPolicy.LEARNED,),
             checkpoint_path=None,
             device='cpu',
+            action_mode=LearnedEvaluationActionMode.SAMPLE,
+            temperature=0.8,
         )
+
+    learned_policy_config = eval_multi_city._learned_policy_config(
+        policies=(EvaluationPolicy.LEARNED,),
+        checkpoint_path=Path('movement_policy.pt'),
+        device='cpu',
+        action_mode=LearnedEvaluationActionMode.SAMPLE,
+        temperature=0.8,
+    )
+
+    assert learned_policy_config == LearnedPolicyConfig(
+        checkpoint_path=Path('movement_policy.pt'),
+        device='cpu',
+        action_mode=LearnedEvaluationActionMode.SAMPLE,
+        temperature=0.8,
+    )
 
 
 def test_eval_multi_city_filters_selected_cities() -> None:

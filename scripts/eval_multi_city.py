@@ -9,7 +9,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.movement.evaluation import EvaluationPolicy, LearnedPolicyConfig, is_learned_evaluation_policy  # noqa: E402
+from src.movement.evaluation import (  # noqa: E402
+    EvaluationPolicy,
+    LearnedEvaluationActionMode,
+    LearnedPolicyConfig,
+    is_learned_evaluation_policy,
+)
 from src.movement.evaluation.multi_city import (  # noqa: E402
     FileCachedEpisodeRunner,
     default_episode_runner,
@@ -47,7 +52,7 @@ def parse_arguments() -> argparse.Namespace:
         help='Evaluate only the named experiment cities',
     )
     parser.add_argument('--output-dir', type=Path, required=True, help='Directory for CSV and JSON outputs')
-    parser.add_argument('--device', default='cpu', help='Torch device for learned policy inference')
+    parser.add_argument('--device', default=None, help='Override the configured learned-policy inference device')
     parser.add_argument(
         '--workers',
         type=int,
@@ -90,7 +95,15 @@ def main() -> None:
     learned_policy_config = _learned_policy_config(
         policies=policies,
         checkpoint_path=parsed_arguments.checkpoint,
-        device=parsed_arguments.device,
+        device=(
+            configuration.proximal_policy_optimization.evaluation_learned_device
+            if parsed_arguments.device is None
+            else parsed_arguments.device
+        ),
+        action_mode=LearnedEvaluationActionMode(
+            configuration.proximal_policy_optimization.evaluation_learned_action_mode.value
+        ),
+        temperature=configuration.proximal_policy_optimization.evaluation_learned_temperature,
     )
     seeds = tuple(configuration.evaluation.seeds if parsed_arguments.seeds is None else parsed_arguments.seeds)
     steps = configuration.evaluation.steps if parsed_arguments.steps is None else parsed_arguments.steps
@@ -157,6 +170,8 @@ def _learned_policy_config(
     policies: tuple[EvaluationPolicy, ...],
     checkpoint_path: Path | None,
     device: str,
+    action_mode: LearnedEvaluationActionMode,
+    temperature: float,
 ) -> LearnedPolicyConfig | None:
     if not any(is_learned_evaluation_policy(policy) for policy in policies):
         return None
@@ -165,6 +180,8 @@ def _learned_policy_config(
     return LearnedPolicyConfig(
         checkpoint_path=checkpoint_path,
         device=device,
+        action_mode=action_mode,
+        temperature=temperature,
     )
 
 
