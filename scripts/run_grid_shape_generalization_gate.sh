@@ -7,6 +7,7 @@ EXPERIMENT_CONFIG="${EXPERIMENT_CONFIG:-configs/training/grid_shape_generalizati
 FINAL_ITERATIONS="${FINAL_ITERATIONS:-30}"
 TRAINING_SEED="${TRAINING_SEED:-5101}"
 DEVICE="${DEVICE:-cuda}"
+NUM_HOPS="${NUM_HOPS:-2}"
 TENSORBOARD_PORT="${TENSORBOARD_PORT:-6006}"
 OPEN_FILE_LIMIT="${OPEN_FILE_LIMIT:-65535}"
 SUMO_HOME="${SUMO_HOME:-/usr/share/sumo}"
@@ -30,6 +31,7 @@ printf 'experiment_config=%s\n' "$EXPERIMENT_CONFIG"
 printf 'training_seed=%s\n' "$TRAINING_SEED"
 printf 'final_iterations=%s\n' "$FINAL_ITERATIONS"
 printf 'device=%s\n' "$DEVICE"
+printf 'num_hops=%s\n' "$NUM_HOPS"
 printf 'open_file_limit=%s\n' "$(ulimit -n)"
 printf 'pythonpath=%s\n' "$PYTHONPATH"
 
@@ -52,7 +54,7 @@ initialization=(
     --scratch-lane-feature-dim 29
     --scratch-movement-feature-dim 4
     --scratch-hidden-dim 64
-    --scratch-num-hops 2
+    --scratch-num-hops "$NUM_HOPS"
 )
 if [[ -n "${RESUME_CHECKPOINT:-}" ]]; then
     initialization=(--resume-checkpoint "$RESUME_CHECKPOINT")
