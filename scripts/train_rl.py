@@ -30,6 +30,7 @@ from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
 from src.movement.training.ppo.types import (
     PpoRewardMode,
     PpoRewardObjective,
+    PpoSpeedChangeMode,
     RolloutCity,
     ScratchModelConfig,
 )
@@ -44,14 +45,17 @@ DEFAULT_VALUE_WARMUP_ITERATIONS = 20
 DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
 DEFAULT_UPDATE_BATCH_WORKERS = 0
+DEFAULT_WARMUP_STEPS = 0
 DEFAULT_REWARD_SAMPLE_INTERVAL = 5
 DEFAULT_REWARD_MODE = PpoRewardMode.DELAY_DENSITY
 DEFAULT_GLOBAL_REWARD_WEIGHT = 0.1
 DEFAULT_FLOW_REWARD_WEIGHT = 0.1
 DEFAULT_THROUGHPUT_REWARD_WEIGHT = 1.0
 DEFAULT_PROGRESS_REWARD_WEIGHT = 0.03
+DEFAULT_DISCHARGE_REWARD_WEIGHT = 0.0
 DEFAULT_GRIDLOCK_PENALTY_WEIGHT = 0.02
 DEFAULT_SPEED_CHANGE_WEIGHT = 0.02
+DEFAULT_SPEED_CHANGE_MODE = PpoSpeedChangeMode.ABSOLUTE
 DEFAULT_SWITCH_PENALTY_WEIGHT = 0.0
 DEFAULT_ENTROPY_COEFFICIENT = 0.01
 DEFAULT_SUMO_BACKEND = SumoBackendKind.LIBSUMO
@@ -77,6 +81,7 @@ class PpoCommandSettings:
     warmup_epochs: int
     transitions_per_batch: int
     update_batch_workers: int
+    warmup_steps: int
     eval_every: int
     eval_workers: int
     eval_learned_device: str
@@ -186,6 +191,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_UPDATE_BATCH_WORKERS,
         help='PyTorch DataLoader workers for packing PPO update minibatches',
     )
+    parser.add_argument(
+        '--warmup-steps',
+        type=int,
+        default=DEFAULT_WARMUP_STEPS,
+        help='Native SUMO simulation steps before policy control in training and evaluation',
+    )
     parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
     parser.add_argument(
         '--yellow-start-delay',
@@ -243,6 +254,12 @@ def parse_args() -> argparse.Namespace:
         help='Throughput-mode dense progress weight from local lane speed fractions',
     )
     parser.add_argument(
+        '--discharge-reward-weight',
+        type=float,
+        default=DEFAULT_DISCHARGE_REWARD_WEIGHT,
+        help='Throughput-mode local stop-line discharge-density reward weight',
+    )
+    parser.add_argument(
         '--gridlock-penalty-weight',
         type=float,
         default=DEFAULT_GRIDLOCK_PENALTY_WEIGHT,
@@ -253,6 +270,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_SPEED_CHANGE_WEIGHT,
         help='Auxiliary penalty weight for lane mean-speed changes on incoming lanes',
+    )
+    parser.add_argument(
+        '--speed-change-mode',
+        choices=tuple(mode.value for mode in PpoSpeedChangeMode),
+        default=DEFAULT_SPEED_CHANGE_MODE.value,
+        help='Whether speed-change cost penalizes absolute changes or braking only',
     )
     parser.add_argument(
         '--switch-penalty-weight',
@@ -453,6 +476,7 @@ def main() -> None:
             max_grad_norm=args.grad_clip,
             transitions_per_batch=ppo_settings.transitions_per_batch,
             update_batch_workers=ppo_settings.update_batch_workers,
+            warmup_steps=ppo_settings.warmup_steps,
             yellow_duration=args.yellow_duration,
             yellow_start_delay=yellow_start_delay(args, experiment_configuration),
             min_green_steps=args.min_green_steps,
@@ -464,8 +488,10 @@ def main() -> None:
             reward_objective=reward_objective(experiment_configuration),
             throughput_reward_weight=throughput_reward_weight(args, experiment_configuration),
             progress_reward_weight=progress_reward_weight(args, experiment_configuration),
+            discharge_reward_weight=discharge_reward_weight(args, experiment_configuration),
             gridlock_penalty_weight=gridlock_penalty_weight(args, experiment_configuration),
             speed_change_weight=speed_change_weight(args, experiment_configuration),
+            speed_change_mode=speed_change_mode(args, experiment_configuration),
             switch_penalty_weight=switch_penalty_weight(args, experiment_configuration),
             reward_sample_interval=reward_sample_interval(args, experiment_configuration),
             reward_clip=args.reward_clip,
@@ -581,6 +607,7 @@ def ppo_command_settings(
             warmup_epochs=args.warmup_epochs,
             transitions_per_batch=args.transitions_per_batch,
             update_batch_workers=args.update_batch_workers,
+            warmup_steps=args.warmup_steps,
             eval_every=args.eval_every if args.eval_every is not None else DEFAULT_EVAL_EVERY,
             eval_workers=args.eval_workers,
             eval_learned_device=args.eval_learned_device,
@@ -610,6 +637,11 @@ def ppo_command_settings(
             ppo.update_batch_workers
             if args.update_batch_workers == DEFAULT_UPDATE_BATCH_WORKERS
             else args.update_batch_workers
+        ),
+        warmup_steps=(
+            experiment_configuration.simulation.warmup_steps
+            if args.warmup_steps == DEFAULT_WARMUP_STEPS
+            else args.warmup_steps
         ),
         eval_every=ppo.evaluate_every_iterations if args.eval_every is None else args.eval_every,
         eval_workers=ppo.evaluation_workers if args.eval_workers == DEFAULT_EVAL_WORKERS else args.eval_workers,
@@ -733,6 +765,15 @@ def progress_reward_weight(
     return args.progress_reward_weight
 
 
+def discharge_reward_weight(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> float:
+    if experiment_configuration is not None and args.discharge_reward_weight == DEFAULT_DISCHARGE_REWARD_WEIGHT:
+        return experiment_configuration.proximal_policy_optimization.discharge_reward_weight
+    return args.discharge_reward_weight
+
+
 def gridlock_penalty_weight(
     args: argparse.Namespace,
     experiment_configuration: ExperimentConfiguration | None,
@@ -749,6 +790,15 @@ def speed_change_weight(
     if experiment_configuration is not None and args.speed_change_weight == DEFAULT_SPEED_CHANGE_WEIGHT:
         return experiment_configuration.proximal_policy_optimization.speed_change_weight
     return args.speed_change_weight
+
+
+def speed_change_mode(
+    args: argparse.Namespace,
+    experiment_configuration: ExperimentConfiguration | None,
+) -> PpoSpeedChangeMode:
+    if experiment_configuration is not None and args.speed_change_mode == DEFAULT_SPEED_CHANGE_MODE.value:
+        return PpoSpeedChangeMode(experiment_configuration.proximal_policy_optimization.speed_change_mode.value)
+    return PpoSpeedChangeMode(args.speed_change_mode)
 
 
 def switch_penalty_weight(

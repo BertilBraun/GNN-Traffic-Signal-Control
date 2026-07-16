@@ -34,7 +34,7 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 
-BASELINE_POLICY_IMPLEMENTATION_VERSION = 3
+BASELINE_POLICY_IMPLEMENTATION_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,7 @@ class MultiCityEvaluationRunRequest:
     queue_pressure_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
+    warmup_steps: int
     time_to_teleport: int | None
     backend_kind: SumoBackendKind = SumoBackendKind.TRACI
 
@@ -144,6 +145,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
     queue_pressure_phase_duration: int
     minimum_initial_occupancy: float
     maximum_initial_occupancy: float
+    warmup_steps: int
     time_to_teleport: int | None
     backend_kind: str
     baseline_policy_implementation_version: int
@@ -166,6 +168,7 @@ class MultiCityEvaluationCacheKey(BaseModel):
             queue_pressure_phase_duration=request.queue_pressure_phase_duration,
             minimum_initial_occupancy=request.minimum_initial_occupancy,
             maximum_initial_occupancy=request.maximum_initial_occupancy,
+            warmup_steps=request.warmup_steps,
             time_to_teleport=request.time_to_teleport,
             backend_kind=request.backend_kind.value,
             baseline_policy_implementation_version=BASELINE_POLICY_IMPLEMENTATION_VERSION,
@@ -403,6 +406,7 @@ def default_episode_runner(
         demand_scale=request.demand_scale,
         initial_occupancy_min=request.minimum_initial_occupancy,
         initial_occupancy_max=request.maximum_initial_occupancy,
+        warmup_steps=request.warmup_steps,
         time_to_teleport=request.time_to_teleport,
         fixed_time_phase_duration=request.fixed_time_phase_duration,
         queue_pressure_phase_duration=request.queue_pressure_phase_duration,
@@ -589,6 +593,7 @@ def _run_request(
         queue_pressure_phase_duration=configuration.evaluation.queue_pressure_phase_duration,
         minimum_initial_occupancy=configuration.simulation.minimum_initial_occupancy,
         maximum_initial_occupancy=configuration.simulation.maximum_initial_occupancy,
+        warmup_steps=configuration.simulation.warmup_steps,
         time_to_teleport=configuration.simulation.time_to_teleport,
         backend_kind=backend_kind,
     )

@@ -37,6 +37,11 @@ class PpoRewardObjective(str, Enum):
                 return -1.0
 
 
+class PpoSpeedChangeMode(str, Enum):
+    ABSOLUTE = 'absolute'
+    BRAKING = 'braking'
+
+
 @dataclass(frozen=True)
 class RolloutCity:
     city_name: str
@@ -83,6 +88,7 @@ class MovementPpoConfig:
     max_grad_norm: float
     transitions_per_batch: int
     update_batch_workers: int
+    warmup_steps: int
     yellow_duration: int
     yellow_start_delay: int
     min_green_steps: int
@@ -94,8 +100,10 @@ class MovementPpoConfig:
     reward_objective: PpoRewardObjective
     throughput_reward_weight: float
     progress_reward_weight: float
+    discharge_reward_weight: float
     gridlock_penalty_weight: float
     speed_change_weight: float
+    speed_change_mode: PpoSpeedChangeMode
     switch_penalty_weight: float
     reward_sample_interval: int
     reward_clip: float
@@ -195,6 +203,7 @@ class RolloutStats:
     mean_global_delay_density: float
     mean_flow_rate_per_signal: float
     mean_progress_density: float
+    mean_discharge_density: float
     mean_speed_change_density: float
     mean_phase_switch_fraction: float
     normalized_entropy: float
@@ -267,6 +276,7 @@ class IntervalRewardResult:
     global_delay_density: float
     flow_rate_per_signal: float
     progress_densities: tuple[float, ...]
+    discharge_densities: tuple[float, ...]
     speed_change_densities: tuple[float, ...]
     phase_switches: tuple[bool, ...]
     teleport_count: int

@@ -416,7 +416,10 @@ def collect_rollout(
     try:
         runtime_start_started = perf_counter()
         runtime.start()
-        runtime.step()
+        for _step in range(max(1, config.warmup_steps)):
+            if not runtime.is_running():
+                break
+            runtime.step()
         runtime_start_seconds = perf_counter() - runtime_start_started
         context_started = perf_counter()
         context = rollout_context(
@@ -636,8 +639,10 @@ def collect_decision_transition(
         reward_mode=config.reward_mode,
         throughput_reward_weight=config.throughput_reward_weight,
         progress_reward_weight=config.progress_reward_weight,
+        discharge_reward_weight=config.discharge_reward_weight,
         gridlock_penalty_weight=config.gridlock_penalty_weight,
         speed_change_weight=config.speed_change_weight,
+        speed_change_mode=config.speed_change_mode,
         switch_penalty_weight=config.switch_penalty_weight,
         phase_switches=phase_switches,
         reward_sample_interval=config.reward_sample_interval,
@@ -765,6 +770,7 @@ def print_finished_rollout(
         f'reward={stats.mean_reward:+.4f} '
         f'flow={stats.mean_flow_rate_per_signal:.4f} '
         f'progress={stats.mean_progress_density:.4f} '
+        f'discharge={stats.mean_discharge_density:.4f} '
         f'wait_density={stats.mean_local_delay_density:.4f} '
         f'teleports={stats.teleport_count}'
     )

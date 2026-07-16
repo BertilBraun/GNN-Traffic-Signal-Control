@@ -72,6 +72,7 @@ def write_training_scalars(
     writer.add_scalar('episode/mean_global_delay_density', rollout_stats.mean_global_delay_density, iteration)
     writer.add_scalar('episode/mean_flow_rate_per_signal', rollout_stats.mean_flow_rate_per_signal, iteration)
     writer.add_scalar('episode/mean_progress_density', rollout_stats.mean_progress_density, iteration)
+    writer.add_scalar('episode/mean_discharge_density', rollout_stats.mean_discharge_density, iteration)
     writer.add_scalar('episode/mean_speed_change_density', rollout_stats.mean_speed_change_density, iteration)
     writer.add_scalar('episode/mean_phase_switch_fraction', rollout_stats.mean_phase_switch_fraction, iteration)
     writer.add_scalar('episode/mean_return', diagnostics.mean_return, iteration)
@@ -409,6 +410,7 @@ def _evaluation_records(
                         demand_scale=config.eval_demand_scale,
                         initial_occupancy_min=config.initial_occupancy_min,
                         initial_occupancy_max=config.initial_occupancy_max,
+                        warmup_steps=config.warmup_steps,
                         time_to_teleport=config.time_to_teleport,
                         fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
                         queue_pressure_phase_duration=config.eval_queue_pressure_phase_duration,
@@ -438,6 +440,7 @@ def cached_baseline_record(
         eval_demand_scale=config.eval_demand_scale,
         initial_occupancy_min=config.initial_occupancy_min,
         initial_occupancy_max=config.initial_occupancy_max,
+        warmup_steps=config.warmup_steps,
         time_to_teleport=config.time_to_teleport,
         backend_kind=config.sumo_backend,
     )
@@ -458,6 +461,7 @@ def _cached_baseline_record(
     eval_demand_scale: float,
     initial_occupancy_min: float,
     initial_occupancy_max: float,
+    warmup_steps: int,
     time_to_teleport: int | None,
     backend_kind: SumoBackendKind,
 ) -> EvaluationRecord:
@@ -477,6 +481,7 @@ def _cached_baseline_record(
             demand_scale=eval_demand_scale,
             initial_occupancy_min=initial_occupancy_min,
             initial_occupancy_max=initial_occupancy_max,
+            warmup_steps=warmup_steps,
             time_to_teleport=time_to_teleport,
             fixed_time_phase_duration=fixed_time_phase_duration,
             queue_pressure_phase_duration=queue_pressure_phase_duration,

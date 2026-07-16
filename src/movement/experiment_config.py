@@ -33,6 +33,11 @@ class ExperimentPpoRewardObjective(str, Enum):
     MINIMIZE = 'minimize'
 
 
+class ExperimentSpeedChangeMode(str, Enum):
+    ABSOLUTE = 'absolute'
+    BRAKING = 'braking'
+
+
 class ExperimentLearnedEvaluationActionMode(str, Enum):
     DETERMINISTIC = 'deterministic'
     SAMPLE = 'sample'
@@ -88,6 +93,7 @@ class ExperimentSimulationConfiguration(BaseModel):
     minimum_green_steps: int = Field(gt=0, alias='min_green_steps')
     minimum_initial_occupancy: float = Field(ge=0.0, alias='initial_occupancy_min')
     maximum_initial_occupancy: float = Field(ge=0.0, alias='initial_occupancy_max')
+    warmup_steps: int = Field(ge=0, default=0)
 
     @model_validator(mode='after')
     def validate_initial_occupancy_range(self) -> 'ExperimentSimulationConfiguration':
@@ -145,8 +151,10 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     flow_reward_weight: float = Field(ge=0.0, default=0.1)
     throughput_reward_weight: float = Field(ge=0.0, default=1.0)
     progress_reward_weight: float = Field(ge=0.0, default=0.03)
+    discharge_reward_weight: float = Field(ge=0.0, default=0.0)
     gridlock_penalty_weight: float = Field(ge=0.0, default=0.02)
     speed_change_weight: float = Field(ge=0.0, default=0.02)
+    speed_change_mode: ExperimentSpeedChangeMode = ExperimentSpeedChangeMode.ABSOLUTE
     switch_penalty_weight: float = Field(ge=0.0, default=0.0)
     entropy_coefficient: float = Field(ge=0.0, default=0.01)
     evaluate_every_iterations: int = Field(ge=0, alias='eval_every_iterations')

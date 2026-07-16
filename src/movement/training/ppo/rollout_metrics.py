@@ -20,6 +20,7 @@ class RolloutMetrics:
     global_delay_densities: list[float]
     flow_rates_per_signal: list[float]
     progress_densities: list[float]
+    discharge_densities: list[float]
     speed_change_densities: list[float]
     phase_switches: list[bool]
     normalized_entropies: list[float]
@@ -55,6 +56,7 @@ class RolloutMetrics:
         self.global_delay_densities = []
         self.flow_rates_per_signal = []
         self.progress_densities = []
+        self.discharge_densities = []
         self.speed_change_densities = []
         self.phase_switches = []
         self.normalized_entropies = []
@@ -110,6 +112,7 @@ class RolloutMetrics:
         self.global_delay_densities.append(interval_reward.global_delay_density)
         self.flow_rates_per_signal.append(interval_reward.flow_rate_per_signal)
         self.progress_densities.extend(interval_reward.progress_densities)
+        self.discharge_densities.extend(interval_reward.discharge_densities)
         self.speed_change_densities.extend(interval_reward.speed_change_densities)
         self.phase_switches.extend(interval_reward.phase_switches)
         self.reward_sumo_step_seconds += interval_reward.reward_sumo_step_seconds
@@ -166,6 +169,7 @@ class RolloutMetrics:
             mean_global_delay_density=sum(self.global_delay_densities) / max(1, len(self.global_delay_densities)),
             mean_flow_rate_per_signal=sum(self.flow_rates_per_signal) / max(1, len(self.flow_rates_per_signal)),
             mean_progress_density=sum(self.progress_densities) / max(1, len(self.progress_densities)),
+            mean_discharge_density=sum(self.discharge_densities) / max(1, len(self.discharge_densities)),
             mean_speed_change_density=sum(self.speed_change_densities) / max(1, len(self.speed_change_densities)),
             mean_phase_switch_fraction=sum(self.phase_switches) / max(1, len(self.phase_switches)),
             normalized_entropy=sum(self.normalized_entropies) / max(1, len(self.normalized_entropies)),

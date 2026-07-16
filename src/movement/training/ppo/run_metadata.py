@@ -60,6 +60,7 @@ class PpoRunMetadata(BaseModel):
     entropy_coefficient: float
     maximum_gradient_norm: float
     transitions_per_batch: int
+    warmup_steps: int
     target_kl: float
     demand_scale_min: float
     demand_scale_max: float
@@ -69,8 +70,10 @@ class PpoRunMetadata(BaseModel):
     flow_reward_weight: float
     throughput_reward_weight: float
     progress_reward_weight: float
+    discharge_reward_weight: float
     gridlock_penalty_weight: float
     speed_change_weight: float
+    speed_change_mode: str
     switch_penalty_weight: float
     reward_sample_interval: int
     reward_clip: float
@@ -139,6 +142,7 @@ def build_run_metadata(
         entropy_coefficient=config.entropy_coefficient,
         maximum_gradient_norm=config.max_grad_norm,
         transitions_per_batch=config.transitions_per_batch,
+        warmup_steps=config.warmup_steps,
         target_kl=config.target_kl,
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
@@ -148,8 +152,10 @@ def build_run_metadata(
         flow_reward_weight=config.flow_reward_weight,
         throughput_reward_weight=config.throughput_reward_weight,
         progress_reward_weight=config.progress_reward_weight,
+        discharge_reward_weight=config.discharge_reward_weight,
         gridlock_penalty_weight=config.gridlock_penalty_weight,
         speed_change_weight=config.speed_change_weight,
+        speed_change_mode=config.speed_change_mode.value,
         switch_penalty_weight=config.switch_penalty_weight,
         reward_sample_interval=config.reward_sample_interval,
         reward_clip=config.reward_clip,

@@ -12,6 +12,7 @@ from src.movement.training.ppo.types import (
     IntervalRewardResult,
     PpoRewardMode,
     PpoRewardObjective,
+    PpoSpeedChangeMode,
     RolloutContext,
 )
 
@@ -34,8 +35,10 @@ def advance_and_reward(
     reward_mode: PpoRewardMode,
     throughput_reward_weight: float,
     progress_reward_weight: float,
+    discharge_reward_weight: float,
     gridlock_penalty_weight: float,
     speed_change_weight: float,
+    speed_change_mode: PpoSpeedChangeMode,
     switch_penalty_weight: float,
     phase_switches: Sequence[bool],
     reward_sample_interval: int,
@@ -51,6 +54,8 @@ def advance_and_reward(
         raise ValueError('throughput_reward_weight must not be negative.')
     if progress_reward_weight < 0.0:
         raise ValueError('progress_reward_weight must not be negative.')
+    if discharge_reward_weight < 0.0:
+        raise ValueError('discharge_reward_weight must not be negative.')
     if gridlock_penalty_weight < 0.0:
         raise ValueError('gridlock_penalty_weight must not be negative.')
     if speed_change_weight < 0.0:
@@ -65,7 +70,13 @@ def advance_and_reward(
         raise ValueError('reward_sample_interval must not exceed decision_interval.')
     local_delay_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
     progress_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
+    discharge_counts = {traffic_light_id: 0 for traffic_light_id in context.traffic_light_ids}
     speed_change_sums = {traffic_light_id: 0.0 for traffic_light_id in context.traffic_light_ids}
+    previous_vehicle_ids = (
+        incoming_vehicle_ids_by_traffic_light(lane_api=lane_api, context=context)
+        if discharge_reward_weight > 0.0
+        else {}
+    )
     global_delay_sum = 0.0
     arrived_vehicle_count = 0
     teleport_count = 0
@@ -96,10 +107,18 @@ def advance_and_reward(
             lane_ids=context.all_incoming_lane_ids,
             speed_limit_by_lane=context.speed_limit_by_lane,
         )
+        if discharge_reward_weight > 0.0:
+            current_vehicle_ids = incoming_vehicle_ids_by_traffic_light(lane_api=lane_api, context=context)
+            for traffic_light_id in context.traffic_light_ids:
+                discharge_counts[traffic_light_id] += len(
+                    previous_vehicle_ids[traffic_light_id] - current_vehicle_ids[traffic_light_id]
+                )
+            previous_vehicle_ids = current_vehicle_ids
         reward_lane_query_seconds += perf_counter() - lane_query_started
         speed_change_by_lane = speed_change_tracker.observe_lane_snapshot(
             snapshot=delay_snapshot,
             speed_limit_by_lane=context.speed_limit_by_lane,
+            mode=speed_change_mode,
         )
         for traffic_light_id in context.traffic_light_ids:
             local_delay_sums[traffic_light_id] += (
@@ -142,6 +161,12 @@ def advance_and_reward(
     progress_densities = tuple(
         progress_sums[traffic_light_id] / max(1, simulated_steps) for traffic_light_id in context.traffic_light_ids
     )
+    discharge_densities = tuple(
+        discharge_counts[traffic_light_id]
+        / max(1, simulated_steps)
+        / max(1.0, context.incoming_lane_length_by_traffic_light[traffic_light_id])
+        for traffic_light_id in context.traffic_light_ids
+    )
     global_delay_density = global_delay_sum / max(1, simulated_steps)
     flow_rate_per_signal = arrived_vehicle_count / max(1, simulated_steps) / max(1, len(context.traffic_light_ids))
     raw_rewards = tuple(
@@ -151,9 +176,11 @@ def advance_and_reward(
             global_delay_density=global_delay_density,
             flow_rate_per_signal=flow_rate_per_signal,
             progress_density=progress_density,
+            discharge_density=discharge_density,
             speed_change_density=speed_change_density_value,
             throughput_reward_weight=throughput_reward_weight,
             progress_reward_weight=progress_reward_weight,
+            discharge_reward_weight=discharge_reward_weight,
             gridlock_penalty_weight=gridlock_penalty_weight,
             speed_change_weight=speed_change_weight,
             switch_penalty_weight=switch_penalty_weight,
@@ -163,9 +190,10 @@ def advance_and_reward(
             teleport_penalty=teleport_penalty,
             teleport_count=teleport_count,
         )
-        for local_delay_density, progress_density, speed_change_density_value, phase_switched in zip(
+        for local_delay_density, progress_density, discharge_density, speed_change_density_value, phase_switched in zip(
             local_delay_densities,
             progress_densities,
+            discharge_densities,
             speed_change_densities,
             phase_switches,
         )
@@ -178,6 +206,7 @@ def advance_and_reward(
         global_delay_density=global_delay_density,
         flow_rate_per_signal=flow_rate_per_signal,
         progress_densities=progress_densities,
+        discharge_densities=discharge_densities,
         speed_change_densities=speed_change_densities,
         phase_switches=tuple(phase_switches),
         teleport_count=teleport_count,
@@ -195,9 +224,11 @@ def interval_reward(
     global_delay_density: float,
     flow_rate_per_signal: float,
     progress_density: float,
+    discharge_density: float,
     speed_change_density: float,
     throughput_reward_weight: float,
     progress_reward_weight: float,
+    discharge_reward_weight: float,
     gridlock_penalty_weight: float,
     global_reward_weight: float,
     flow_reward_weight: float,
@@ -228,9 +259,11 @@ def interval_reward(
                 global_delay_density=global_delay_density,
                 flow_rate_per_signal=flow_rate_per_signal,
                 progress_density=progress_density,
+                discharge_density=discharge_density,
                 speed_change_density=speed_change_density,
                 throughput_reward_weight=throughput_reward_weight,
                 progress_reward_weight=progress_reward_weight,
+                discharge_reward_weight=discharge_reward_weight,
                 gridlock_penalty_weight=gridlock_penalty_weight,
                 global_reward_weight=global_reward_weight,
                 speed_change_weight=speed_change_weight,
@@ -269,9 +302,11 @@ def throughput_reward(
     global_delay_density: float,
     flow_rate_per_signal: float,
     progress_density: float,
+    discharge_density: float,
     speed_change_density: float,
     throughput_reward_weight: float,
     progress_reward_weight: float,
+    discharge_reward_weight: float,
     gridlock_penalty_weight: float,
     global_reward_weight: float,
     speed_change_weight: float,
@@ -284,6 +319,7 @@ def throughput_reward(
     return (
         throughput_reward_weight * flow_rate_per_signal
         + progress_reward_weight * progress_density
+        + discharge_reward_weight * discharge_density
         - gridlock_penalty_weight * gridlock_density
         - speed_change_weight * speed_change_density
         - switch_penalty_weight * int(phase_switched)
@@ -387,6 +423,7 @@ class SpeedChangeTracker:
         self,
         snapshot: LaneDelaySnapshot,
         speed_limit_by_lane: Mapping[str, float],
+        mode: PpoSpeedChangeMode = PpoSpeedChangeMode.ABSOLUTE,
     ) -> dict[str, float]:
         speed_change_by_lane: dict[str, float] = {}
         for lane_id, mean_speed in snapshot.mean_speed_by_lane.items():
@@ -396,9 +433,28 @@ class SpeedChangeTracker:
                 speed_change_by_lane[lane_id] = 0.0
                 continue
             vehicle_count = snapshot.vehicle_count_by_lane[lane_id]
-            speed_change_by_lane[lane_id] = vehicle_count * abs(mean_speed - previous_mean_speed) / speed_limit
+            match mode:
+                case PpoSpeedChangeMode.ABSOLUTE:
+                    speed_delta = abs(mean_speed - previous_mean_speed)
+                case PpoSpeedChangeMode.BRAKING:
+                    speed_delta = max(0.0, previous_mean_speed - mean_speed)
+            speed_change_by_lane[lane_id] = vehicle_count * speed_delta / speed_limit
         self.previous_mean_speed_by_lane = dict(snapshot.mean_speed_by_lane)
         return speed_change_by_lane
+
+
+def incoming_vehicle_ids_by_traffic_light(
+    lane_api: LaneApi,
+    context: RolloutContext,
+) -> dict[str, frozenset[str]]:
+    return {
+        traffic_light_id: frozenset(
+            vehicle_id
+            for lane_id in context.incoming_lanes_by_traffic_light[traffic_light_id]
+            for vehicle_id in lane_api.getLastStepVehicleIDs(lane_id)
+        )
+        for traffic_light_id in context.traffic_light_ids
+    }
 
 
 def speed_change_density(

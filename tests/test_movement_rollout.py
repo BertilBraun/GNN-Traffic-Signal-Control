@@ -29,7 +29,7 @@ from src.movement.training.ppo import (
     prune_numbered_checkpoints,
     validate_config,
 )
-from src.movement.training.ppo.batch import ppo_batch_data_loader
+from src.movement.training.ppo.batch import normalize_update_advantages, ppo_batch_data_loader
 from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
 from src.movement.training.ppo.reward import (
     LaneDelaySnapshot,
@@ -61,6 +61,7 @@ from src.movement.training.ppo.types import (
     MovementPpoConfig,
     PpoRewardMode,
     PpoRewardObjective,
+    PpoSpeedChangeMode,
     RolloutCity,
     RolloutStats,
     ScratchModelConfig,
@@ -838,6 +839,30 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
     assert batch.advantages.tolist() == [0.0]
 
 
+def test_advantages_are_normalized_once_across_the_complete_update() -> None:
+    first_transition = MovementTransition(
+        tensor_sample=_tensor_sample(),
+        actions=(0,),
+        old_log_probs=(0.0,),
+        action_masks=((True, True),),
+        rewards=(1.0,),
+        values=(0.0,),
+        done=True,
+    )
+    second_transition = replace(first_transition, rewards=(3.0,))
+
+    normalized = normalize_update_advantages(
+        transitions=(first_transition, second_transition),
+        advantages=(
+            torch.tensor((1.0,), dtype=torch.float32),
+            torch.tensor((3.0,), dtype=torch.float32),
+        ),
+    )
+
+    assert torch.allclose(normalized[0], torch.tensor((-0.70710677,)))
+    assert torch.allclose(normalized[1], torch.tensor((0.70710677,)))
+
+
 def test_ppo_batch_collation_reuses_cached_phase_tensors() -> None:
     tensor_sample = replace(
         _tensor_sample(),
@@ -1050,6 +1075,7 @@ def _ppo_config(
         max_grad_norm=0.5,
         transitions_per_batch=32,
         update_batch_workers=0,
+        warmup_steps=0,
         yellow_duration=3,
         yellow_start_delay=0,
         min_green_steps=2,
@@ -1061,8 +1087,10 @@ def _ppo_config(
         reward_objective=PpoRewardObjective.MAXIMIZE,
         throughput_reward_weight=1.0,
         progress_reward_weight=0.03,
+        discharge_reward_weight=0.0,
         gridlock_penalty_weight=0.02,
         speed_change_weight=0.02,
+        speed_change_mode=PpoSpeedChangeMode.ABSOLUTE,
         switch_penalty_weight=0.0,
         reward_sample_interval=10,
         reward_clip=1.0,
@@ -1181,6 +1209,7 @@ def _multi_city_request(policy: EvaluationPolicy) -> MultiCityEvaluationRunReque
         queue_pressure_phase_duration=10,
         minimum_initial_occupancy=0.05,
         maximum_initial_occupancy=0.08,
+        warmup_steps=0,
         time_to_teleport=-1,
     )
 
@@ -1228,6 +1257,7 @@ def _rollout_stats() -> RolloutStats:
         mean_global_delay_density=0.0,
         mean_flow_rate_per_signal=0.0,
         mean_progress_density=0.0,
+        mean_discharge_density=0.0,
         mean_speed_change_density=0.0,
         mean_phase_switch_fraction=0.0,
         normalized_entropy=1.0,

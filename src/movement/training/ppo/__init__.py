@@ -140,6 +140,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('demand_scale_min must not exceed demand_scale_max.')
     if config.max_teleports_per_rollout < 0:
         raise ValueError('max_teleports_per_rollout must not be negative.')
+    if config.warmup_steps < 0:
+        raise ValueError('warmup_steps must not be negative.')
     if config.speed_change_weight < 0.0:
         raise ValueError('speed_change_weight must not be negative.')
     if config.switch_penalty_weight < 0.0:
@@ -150,6 +152,8 @@ def validate_config(config: MovementPpoConfig) -> None:
         raise ValueError('throughput_reward_weight must not be negative.')
     if config.progress_reward_weight < 0.0:
         raise ValueError('progress_reward_weight must not be negative.')
+    if config.discharge_reward_weight < 0.0:
+        raise ValueError('discharge_reward_weight must not be negative.')
     if config.gridlock_penalty_weight < 0.0:
         raise ValueError('gridlock_penalty_weight must not be negative.')
     if config.reward_sample_interval <= 0:
@@ -438,6 +442,7 @@ def write_city_rollout_scalars(
         writer.add_scalar(f'{tag_prefix}/average_wait_density_s_per_m', stats.mean_local_delay_density, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_flow_rate_per_signal', stats.mean_flow_rate_per_signal, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_progress_density', stats.mean_progress_density, iteration)
+        writer.add_scalar(f'{tag_prefix}/mean_discharge_density', stats.mean_discharge_density, iteration)
         writer.add_scalar(f'{tag_prefix}/mean_demand_scale', stats.mean_demand_scale, iteration)
 
 
@@ -500,6 +505,7 @@ def print_iteration_summary(
         f'top_p={rollout_stats.mean_top_action_probability:.3f} '
         f'flow={rollout_stats.mean_flow_rate_per_signal:.4f} '
         f'progress={rollout_stats.mean_progress_density:.4f} '
+        f'discharge={rollout_stats.mean_discharge_density:.4f} '
         f'speedchg={rollout_stats.mean_speed_change_density:.4f} '
         f'switch={rollout_stats.mean_phase_switch_fraction:.3f} '
         f'demand={rollout_stats.mean_demand_scale:.2f}'

@@ -99,10 +99,14 @@ def ppo_batch_data_loader(
     transitions_per_batch: int,
     update_batch_workers: int,
 ) -> DataLoader[MovementPpoBatchRow]:
+    normalized_advantages = normalize_update_advantages(
+        transitions=transitions,
+        advantages=advantages,
+    )
     return DataLoader(
         MovementPpoDataset(
             transitions=transitions,
-            advantages=advantages,
+            advantages=normalized_advantages,
             returns=returns,
         ),
         batch_size=max(1, transitions_per_batch),
@@ -128,12 +132,30 @@ def collate_movement_ppo_batch(rows: Sequence[MovementPpoBatchRow]) -> PackedMov
         phase_logit_groups=ppo_phase_logit_groups(transitions=transitions),
         value_groups=ppo_value_groups(transitions=transitions),
         old_log_probs=old_log_probs,
-        advantages=normalize_advantages(advantages=advantages, policy_mask=policy_mask),
+        advantages=advantages,
         returns=returns,
         policy_mask=policy_mask,
         transition_count=len(transitions),
         policy_value_count=old_log_probs.numel(),
     )
+
+
+def normalize_update_advantages(
+    transitions: Sequence[MovementTransition],
+    advantages: Sequence[torch.Tensor],
+) -> tuple[torch.Tensor, ...]:
+    if len(transitions) != len(advantages):
+        raise ValueError('transitions and advantages must have the same length.')
+    if not advantages:
+        return ()
+    advantage_sizes = tuple(advantage.numel() for advantage in advantages)
+    flat_advantages = torch.cat(tuple(advantage.to(torch.device('cpu')) for advantage in advantages))
+    policy_mask = torch.cat(tuple(policy_mask_from_transition(transition) for transition in transitions))
+    normalized_advantages = normalize_advantages(
+        advantages=flat_advantages,
+        policy_mask=policy_mask,
+    )
+    return tuple(normalized_advantages.split(advantage_sizes))
 
 
 def pack_ppo_movement_tensor_samples(samples: Sequence[MovementTensorSample]) -> PackedMovementTensorBatch:

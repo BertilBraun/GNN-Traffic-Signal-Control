@@ -55,8 +55,14 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
             '-1',
             '--speed-change-weight',
             '0.03',
+            '--speed-change-mode',
+            'braking',
             '--flow-reward-weight',
             '0.12',
+            '--discharge-reward-weight',
+            '0.08',
+            '--warmup-steps',
+            '300',
             '--reward-sample-interval',
             '5',
             '--sumo-backend',
@@ -87,7 +93,10 @@ def test_train_rl_cli_accepts_movement_ppo_args(monkeypatch) -> None:
     assert args.resume_checkpoint is None
     assert args.time_to_teleport == -1
     assert args.flow_reward_weight == 0.12
+    assert args.discharge_reward_weight == 0.08
     assert args.speed_change_weight == 0.03
+    assert args.speed_change_mode == 'braking'
+    assert args.warmup_steps == 300
     assert args.reward_sample_interval == 5
     assert args.sumo_backend == 'libsumo'
 
@@ -205,9 +214,12 @@ def test_train_rl_cli_uses_stable_ppo_defaults(monkeypatch) -> None:
     assert args.scratch_num_hops == 1
     assert args.initial_occupancy_min == 0.05
     assert args.initial_occupancy_max == 0.08
+    assert args.warmup_steps == 0
     assert args.global_reward_weight == 0.1
     assert args.flow_reward_weight == 0.1
+    assert args.discharge_reward_weight == 0.0
     assert args.speed_change_weight == 0.02
+    assert args.speed_change_mode == 'absolute'
     assert args.reward_sample_interval == 5
     assert args.reward_clip == 1.0
     assert args.teleport_penalty == 0.0

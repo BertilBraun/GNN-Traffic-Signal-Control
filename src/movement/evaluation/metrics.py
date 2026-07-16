@@ -53,6 +53,7 @@ class EvaluationAggregate:
 def parse_tripinfo_metrics(
     tripinfo_path: str | Path,
     episode_length_s: int,
+    minimum_arrival_time_s: float = 0.0,
 ) -> tuple[int, float, float, float, float]:
     """Parse SUMO tripinfo XML into completion, throughput, wait, and travel metrics."""
     path = Path(tripinfo_path)
@@ -68,6 +69,8 @@ def parse_tripinfo_metrics(
     travel_times: list[float] = []
     time_losses: list[float] = []
     for trip in root.findall('tripinfo'):
+        if float(trip.attrib.get('arrival', '0.0')) < minimum_arrival_time_s:
+            continue
         waiting_times.append(float(trip.attrib.get('waitingTime', '0.0')))
         travel_times.append(float(trip.attrib.get('duration', '0.0')))
         time_losses.append(float(trip.attrib.get('timeLoss', '0.0')))

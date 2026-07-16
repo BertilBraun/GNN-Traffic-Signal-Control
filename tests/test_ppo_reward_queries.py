@@ -7,7 +7,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
-from src.movement.training.ppo.types import PpoRewardMode, RolloutContext
+from src.movement.training.ppo.types import PpoRewardMode, PpoSpeedChangeMode, RolloutContext
 from src.movement.graph_schema import MovementGraph, TypedMovementEdges
 
 
@@ -48,6 +48,11 @@ class FakeLane:
             'lane_b': [10.0, 5.0],
         }
         self.mean_speed_index_by_lane = {'lane_a': 0, 'lane_b': 0}
+        self.vehicle_ids_by_lane = {
+            'lane_a': [('lane_a_vehicle_1', 'lane_a_vehicle_2'), ('lane_a_vehicle_2',)],
+            'lane_b': [('lane_b_vehicle',), ('lane_b_vehicle',)],
+        }
+        self.vehicle_ids_index_by_lane = {'lane_a': 0, 'lane_b': 0}
 
     def getLastStepVehicleNumber(self, lane_id: str) -> int:
         self.vehicle_number_calls += 1
@@ -61,7 +66,10 @@ class FakeLane:
 
     def getLastStepVehicleIDs(self, lane_id: str) -> tuple[str, ...]:
         self.vehicle_ids_calls += 1
-        return (f'{lane_id}_vehicle',)
+        index = self.vehicle_ids_index_by_lane[lane_id]
+        self.vehicle_ids_index_by_lane[lane_id] += 1
+        values = self.vehicle_ids_by_lane[lane_id]
+        return values[min(index, len(values) - 1)]
 
 
 class FakeVehicle:
@@ -94,8 +102,10 @@ def test_advance_and_reward_reuses_lane_delay_snapshot() -> None:
         reward_mode=PpoRewardMode.DELAY_DENSITY,
         throughput_reward_weight=0.0,
         progress_reward_weight=0.0,
+        discharge_reward_weight=0.0,
         gridlock_penalty_weight=0.0,
         speed_change_weight=0.0,
+        speed_change_mode=PpoSpeedChangeMode.ABSOLUTE,
         switch_penalty_weight=0.0,
         phase_switches=(False, False),
         reward_sample_interval=3,
@@ -124,8 +134,10 @@ def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() ->
         reward_mode=PpoRewardMode.DELAY_DENSITY,
         throughput_reward_weight=0.0,
         progress_reward_weight=0.0,
+        discharge_reward_weight=0.0,
         gridlock_penalty_weight=0.0,
         speed_change_weight=0.02,
+        speed_change_mode=PpoSpeedChangeMode.ABSOLUTE,
         switch_penalty_weight=0.0,
         phase_switches=(False, False),
         reward_sample_interval=1,
@@ -137,6 +149,65 @@ def test_advance_and_reward_uses_lane_speed_changes_without_vehicle_queries() ->
     assert fake_traci.lane.vehicle_ids_calls == 0
     assert fake_traci.vehicle.speed_calls == 0
     assert result.speed_change_densities == pytest.approx((0.005, 0.0025))
+
+
+def test_advance_and_reward_braking_mode_does_not_penalize_acceleration() -> None:
+    fake_traci = FakeTraci()
+
+    result = advance_and_reward(
+        runtime=FakeRuntime(),
+        lane_api=fake_traci.lane,
+        simulation_api=fake_traci.simulation,
+        context=_context(),
+        decision_interval=2,
+        global_reward_weight=0.0,
+        flow_reward_weight=0.0,
+        reward_mode=PpoRewardMode.THROUGHPUT,
+        throughput_reward_weight=0.0,
+        progress_reward_weight=0.0,
+        discharge_reward_weight=0.0,
+        gridlock_penalty_weight=0.0,
+        speed_change_weight=1.0,
+        speed_change_mode=PpoSpeedChangeMode.BRAKING,
+        switch_penalty_weight=0.0,
+        phase_switches=(False, False),
+        reward_sample_interval=1,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        speed_change_tracker=SpeedChangeTracker(),
+    )
+
+    assert result.speed_change_densities == pytest.approx((0.0, 0.0025))
+
+
+def test_advance_and_reward_adds_local_discharge_density() -> None:
+    fake_traci = FakeTraci()
+
+    result = advance_and_reward(
+        runtime=FakeRuntime(),
+        lane_api=fake_traci.lane,
+        simulation_api=fake_traci.simulation,
+        context=_context(),
+        decision_interval=1,
+        global_reward_weight=0.0,
+        flow_reward_weight=0.0,
+        reward_mode=PpoRewardMode.THROUGHPUT,
+        throughput_reward_weight=0.0,
+        progress_reward_weight=0.0,
+        discharge_reward_weight=1.0,
+        gridlock_penalty_weight=0.0,
+        speed_change_weight=0.0,
+        speed_change_mode=PpoSpeedChangeMode.BRAKING,
+        switch_penalty_weight=0.0,
+        phase_switches=(False, False),
+        reward_sample_interval=1,
+        reward_clip=1.0,
+        teleport_penalty=0.0,
+        speed_change_tracker=SpeedChangeTracker(),
+    )
+
+    assert result.discharge_densities == pytest.approx((0.01, 0.0))
+    assert result.raw_rewards == pytest.approx((0.01, 0.0))
 
 
 def test_advance_and_reward_flow_bonus_uses_arrived_vehicles() -> None:
@@ -155,8 +226,10 @@ def test_advance_and_reward_flow_bonus_uses_arrived_vehicles() -> None:
         reward_mode=PpoRewardMode.DELAY_DENSITY,
         throughput_reward_weight=0.0,
         progress_reward_weight=0.0,
+        discharge_reward_weight=0.0,
         gridlock_penalty_weight=0.0,
         speed_change_weight=0.0,
+        speed_change_mode=PpoSpeedChangeMode.ABSOLUTE,
         switch_penalty_weight=0.0,
         phase_switches=(False, False),
         reward_sample_interval=1,

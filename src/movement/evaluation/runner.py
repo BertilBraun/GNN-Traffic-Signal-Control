@@ -114,8 +114,11 @@ def run_evaluation_episode(
     fixed_time_phase_duration: int = 10,
     queue_pressure_phase_duration: int = 10,
     backend_kind: SumoBackendKind = SumoBackendKind.TRACI,
+    warmup_steps: int = 0,
 ) -> EvaluationMetrics:
     """Run one SUMO episode under one movement policy."""
+    if warmup_steps < 0:
+        raise ValueError('warmup_steps must not be negative.')
     net_path = resolve_sumocfg_net_path(cfg_path)
     lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
     lane_ids = tuple(lane_id for lanes in lane_ids_by_edge.values() for lane_id in lanes)
@@ -199,6 +202,11 @@ def run_evaluation_episode(
             for traffic_light_id, program in runtime.programs.items()
         }
         incoming_lanes_by_junction = _incoming_lanes_by_junction(runtime.programs)
+        for _step in range(warmup_steps):
+            if not runtime.is_running():
+                break
+            runtime.step()
+        departed_vehicle_count = len(vehicle_api.getIDList())
         runtime.step()
         simulated_steps = 1
         departed_vehicle_count += int(simulation_api.getDepartedNumber())
@@ -292,6 +300,7 @@ def run_evaluation_episode(
     completed, throughput, average_wait, average_travel, average_time_loss = parse_tripinfo_metrics(
         tripinfo_path=tripinfo_path,
         episode_length_s=max(simulated_steps, 1),
+        minimum_arrival_time_s=float(warmup_steps),
     )
     tripinfo_path.unlink(missing_ok=True)
     progression = progression_tracker.metric_values()

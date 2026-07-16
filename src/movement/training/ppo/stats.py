@@ -35,6 +35,7 @@ def combine_rollout_stats(stats: Sequence[RolloutStats]) -> RolloutStats:
         mean_global_delay_density=sum(stat.mean_global_delay_density for stat in stats) / count,
         mean_flow_rate_per_signal=sum(stat.mean_flow_rate_per_signal for stat in stats) / count,
         mean_progress_density=sum(stat.mean_progress_density for stat in stats) / count,
+        mean_discharge_density=sum(stat.mean_discharge_density for stat in stats) / count,
         mean_speed_change_density=sum(stat.mean_speed_change_density for stat in stats) / count,
         mean_phase_switch_fraction=sum(stat.mean_phase_switch_fraction for stat in stats) / count,
         normalized_entropy=sum(stat.normalized_entropy for stat in stats) / count,

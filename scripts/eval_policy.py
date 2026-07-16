@@ -75,6 +75,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--initial-occupancy-min', type=float, default=0.05)
     parser.add_argument('--initial-occupancy-max', type=float, default=0.08)
+    parser.add_argument('--warmup-steps', type=int, default=0)
     parser.add_argument(
         '--time-to-teleport',
         type=int,
@@ -116,6 +117,7 @@ def main() -> None:
                 demand_scale=args.demand_scale,
                 initial_occupancy_min=args.initial_occupancy_min,
                 initial_occupancy_max=args.initial_occupancy_max,
+                warmup_steps=args.warmup_steps,
                 time_to_teleport=args.time_to_teleport,
                 fixed_time_phase_duration=args.fixed_time_phase_duration,
                 queue_pressure_phase_duration=args.queue_pressure_phase_duration,
