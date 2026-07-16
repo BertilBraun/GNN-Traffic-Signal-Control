@@ -49,7 +49,7 @@ class ExperimentCityConfiguration(BaseModel):
     name: str
     split: CitySplit
     sumo_config: Path
-    build_config: Path
+    build_config: Path | None = None
     rollout_jobs_per_iteration: int = Field(
         ge=0,
         validation_alias=AliasChoices('rollout_jobs_per_iteration', 'rollout_workers'),
@@ -196,9 +196,11 @@ class ExperimentConfiguration(BaseModel):
         if duplicate_names:
             raise ValueError(f'duplicate city names are not allowed: {", ".join(duplicate_names)}')
 
+        if not self.train_cities:
+            raise ValueError('at least one train city is required')
         held_out_cities = tuple(city.name for city in self.cities if city.split == CitySplit.HELD_OUT)
-        if len(held_out_cities) != 1:
-            raise ValueError(f'exactly one held-out city is required, found {len(held_out_cities)}')
+        if len(held_out_cities) > 1:
+            raise ValueError(f'at most one held-out city is allowed, found {len(held_out_cities)}')
         if self.proximal_policy_optimization.reward_sample_interval > self.simulation.decision_interval:
             raise ValueError('ppo.reward_sample_interval must not exceed simulation.decision_interval')
         if ExperimentEvaluationPolicy.FIXED_TIME in self.evaluation.policies:
@@ -251,11 +253,12 @@ def _validate_referenced_files(configuration: ExperimentConfiguration, project_r
     missing_paths: list[Path] = []
     for city in configuration.cities:
         sumo_config_path = resolve_experiment_path(path=city.sumo_config, project_root=project_root)
-        build_config_path = resolve_experiment_path(path=city.build_config, project_root=project_root)
         if not sumo_config_path.exists():
             missing_paths.append(sumo_config_path)
-        if not build_config_path.exists():
-            missing_paths.append(build_config_path)
+        if city.build_config is not None:
+            build_config_path = resolve_experiment_path(path=city.build_config, project_root=project_root)
+            if not build_config_path.exists():
+                missing_paths.append(build_config_path)
 
     if missing_paths:
         missing_path_text = ', '.join(str(path) for path in missing_paths)

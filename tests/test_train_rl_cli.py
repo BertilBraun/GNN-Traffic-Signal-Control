@@ -375,6 +375,32 @@ def test_train_rl_cli_uses_experiment_ppo_settings(monkeypatch) -> None:
     )
 
 
+def test_train_rl_cli_uses_experiment_simulation_settings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'train_rl.py',
+            '--scratch-random',
+            '--experiment-config',
+            'configs/training/grid_3x3_local_reward_2hop_30.yaml',
+        ],
+    )
+
+    args = train_rl.parse_args()
+    experiment_configuration = train_rl.experiment_config(args.experiment_config)
+    assert experiment_configuration is not None
+    settings = train_rl.ppo_command_settings(args=args, experiment_configuration=experiment_configuration)
+
+    assert settings.warmup_steps == 15
+    assert settings.decision_interval == 5
+    assert settings.yellow_duration == 3
+    assert settings.min_green_steps == 1
+    assert settings.time_to_teleport == -1
+    assert settings.initial_occupancy_min == 0.06
+    assert settings.initial_occupancy_max == 0.08
+
+
 def test_train_rl_cli_allows_explicit_rollout_total_override(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,

@@ -40,12 +40,18 @@ DEFAULT_ITERATIONS = 300
 DEFAULT_STEPS_PER_ROLLOUT = 360
 DEFAULT_ROLLOUTS_PER_UPDATE = 3
 DEFAULT_NUM_WORKERS = -1
+DEFAULT_DECISION_INTERVAL = 10
 DEFAULT_UPDATE_EPOCHS = 4
 DEFAULT_VALUE_WARMUP_ITERATIONS = 20
 DEFAULT_WARMUP_EPOCHS = 8
 DEFAULT_TRANSITIONS_PER_BATCH = 32
 DEFAULT_UPDATE_BATCH_WORKERS = 0
 DEFAULT_WARMUP_STEPS = 0
+DEFAULT_YELLOW_DURATION = 3
+DEFAULT_MIN_GREEN_STEPS = 2
+DEFAULT_TIME_TO_TELEPORT = -1
+DEFAULT_INITIAL_OCCUPANCY_MIN = 0.05
+DEFAULT_INITIAL_OCCUPANCY_MAX = 0.08
 DEFAULT_REWARD_SAMPLE_INTERVAL = 5
 DEFAULT_REWARD_MODE = PpoRewardMode.DELAY_DENSITY
 DEFAULT_GLOBAL_REWARD_WEIGHT = 0.1
@@ -82,6 +88,12 @@ class PpoCommandSettings:
     transitions_per_batch: int
     update_batch_workers: int
     warmup_steps: int
+    decision_interval: int
+    yellow_duration: int
+    min_green_steps: int
+    time_to_teleport: int
+    initial_occupancy_min: float
+    initial_occupancy_max: float
     eval_every: int
     eval_workers: int
     eval_learned_device: str
@@ -153,7 +165,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_NUM_WORKERS,
         help='Parallel SUMO rollout worker processes; -1 uses all CPUs',
     )
-    parser.add_argument('--decision-interval', type=int, default=10, help='Simulation seconds per decision')
+    parser.add_argument(
+        '--decision-interval',
+        type=int,
+        default=DEFAULT_DECISION_INTERVAL,
+        help='Simulation seconds per decision',
+    )
     parser.add_argument('--lr', type=float, default=2e-4, help='Adam learning rate')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--lam', type=float, default=0.95, help='GAE lambda')
@@ -197,14 +214,24 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_WARMUP_STEPS,
         help='Native SUMO simulation steps before policy control in training and evaluation',
     )
-    parser.add_argument('--yellow-duration', type=int, default=3, help='Yellow transition duration')
+    parser.add_argument(
+        '--yellow-duration',
+        type=int,
+        default=DEFAULT_YELLOW_DURATION,
+        help='Yellow transition duration',
+    )
     parser.add_argument(
         '--yellow-start-delay',
         type=int,
         default=None,
         help='Simulation seconds to retain the current green before starting yellow',
     )
-    parser.add_argument('--min-green-steps', type=int, default=2, help='Minimum accepted green decision intervals')
+    parser.add_argument(
+        '--min-green-steps',
+        type=int,
+        default=DEFAULT_MIN_GREEN_STEPS,
+        help='Minimum accepted green decision intervals',
+    )
     parser.add_argument(
         '--demand-scale',
         type=float,
@@ -300,7 +327,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--time-to-teleport',
         type=int,
-        default=-1,
+        default=DEFAULT_TIME_TO_TELEPORT,
         help='SUMO gridlock teleport timeout in seconds; use -1 to disable gridlock teleporting',
     )
     parser.add_argument('--target-kl', type=float, default=0.03, help='Stop PPO epochs above this approximate KL')
@@ -314,13 +341,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--initial-occupancy-min',
         type=float,
-        default=0.05,
+        default=DEFAULT_INITIAL_OCCUPANCY_MIN,
         help='Minimum sampled initial network occupancy',
     )
     parser.add_argument(
         '--initial-occupancy-max',
         type=float,
-        default=0.08,
+        default=DEFAULT_INITIAL_OCCUPANCY_MAX,
         help='Maximum sampled initial network occupancy',
     )
     parser.add_argument('--eval-every', type=int, default=None, help='Evaluate every N iterations')
@@ -463,7 +490,7 @@ def main() -> None:
             steps_per_rollout=ppo_settings.steps_per_rollout,
             rollouts_per_update=rollout_count,
             num_workers=worker_count,
-            decision_interval=args.decision_interval,
+            decision_interval=ppo_settings.decision_interval,
             learning_rate=args.lr,
             gamma=args.gamma,
             lam=args.lam,
@@ -477,9 +504,9 @@ def main() -> None:
             transitions_per_batch=ppo_settings.transitions_per_batch,
             update_batch_workers=ppo_settings.update_batch_workers,
             warmup_steps=ppo_settings.warmup_steps,
-            yellow_duration=args.yellow_duration,
+            yellow_duration=ppo_settings.yellow_duration,
             yellow_start_delay=yellow_start_delay(args, experiment_configuration),
-            min_green_steps=args.min_green_steps,
+            min_green_steps=ppo_settings.min_green_steps,
             demand_scale_min=demand_scale_min,
             demand_scale_max=demand_scale_max,
             global_reward_weight=global_reward_weight(args, experiment_configuration),
@@ -497,12 +524,12 @@ def main() -> None:
             reward_clip=args.reward_clip,
             teleport_penalty=args.teleport_penalty,
             max_teleports_per_rollout=args.max_teleports_per_rollout,
-            time_to_teleport=args.time_to_teleport,
+            time_to_teleport=ppo_settings.time_to_teleport,
             target_kl=args.target_kl,
             gui=args.gui,
             sumo_backend=SumoBackendKind(args.sumo_backend),
-            initial_occupancy_min=args.initial_occupancy_min,
-            initial_occupancy_max=args.initial_occupancy_max,
+            initial_occupancy_min=ppo_settings.initial_occupancy_min,
+            initial_occupancy_max=ppo_settings.initial_occupancy_max,
             eval_every=ppo_settings.eval_every,
             eval_steps=evaluation_steps(args, experiment_configuration),
             eval_seeds=evaluation_seeds(args, experiment_configuration),
@@ -608,6 +635,12 @@ def ppo_command_settings(
             transitions_per_batch=args.transitions_per_batch,
             update_batch_workers=args.update_batch_workers,
             warmup_steps=args.warmup_steps,
+            decision_interval=args.decision_interval,
+            yellow_duration=args.yellow_duration,
+            min_green_steps=args.min_green_steps,
+            time_to_teleport=args.time_to_teleport,
+            initial_occupancy_min=args.initial_occupancy_min,
+            initial_occupancy_max=args.initial_occupancy_max,
             eval_every=args.eval_every if args.eval_every is not None else DEFAULT_EVAL_EVERY,
             eval_workers=args.eval_workers,
             eval_learned_device=args.eval_learned_device,
@@ -642,6 +675,36 @@ def ppo_command_settings(
             experiment_configuration.simulation.warmup_steps
             if args.warmup_steps == DEFAULT_WARMUP_STEPS
             else args.warmup_steps
+        ),
+        decision_interval=(
+            experiment_configuration.simulation.decision_interval
+            if args.decision_interval == DEFAULT_DECISION_INTERVAL
+            else args.decision_interval
+        ),
+        yellow_duration=(
+            experiment_configuration.simulation.yellow_duration
+            if args.yellow_duration == DEFAULT_YELLOW_DURATION
+            else args.yellow_duration
+        ),
+        min_green_steps=(
+            experiment_configuration.simulation.minimum_green_steps
+            if args.min_green_steps == DEFAULT_MIN_GREEN_STEPS
+            else args.min_green_steps
+        ),
+        time_to_teleport=(
+            experiment_configuration.simulation.time_to_teleport
+            if args.time_to_teleport == DEFAULT_TIME_TO_TELEPORT
+            else args.time_to_teleport
+        ),
+        initial_occupancy_min=(
+            experiment_configuration.simulation.minimum_initial_occupancy
+            if args.initial_occupancy_min == DEFAULT_INITIAL_OCCUPANCY_MIN
+            else args.initial_occupancy_min
+        ),
+        initial_occupancy_max=(
+            experiment_configuration.simulation.maximum_initial_occupancy
+            if args.initial_occupancy_max == DEFAULT_INITIAL_OCCUPANCY_MAX
+            else args.initial_occupancy_max
         ),
         eval_every=ppo.evaluate_every_iterations if args.eval_every is None else args.eval_every,
         eval_workers=ppo.evaluation_workers if args.eval_workers == DEFAULT_EVAL_WORKERS else args.eval_workers,

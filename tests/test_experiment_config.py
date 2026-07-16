@@ -11,6 +11,7 @@ from src.movement.experiment_config import (  # noqa: E402
     ExperimentEvaluationPolicy,
     ExperimentLearnedEvaluationActionMode,
     ExperimentPpoRewardObjective,
+    ExperimentSpeedChangeMode,
     load_experiment_configuration,
 )
 
@@ -125,6 +126,28 @@ def test_negated_reward_sanity_config_minimizes_environment_reward() -> None:
 
     assert configuration.proximal_policy_optimization.iterations == 20
     assert configuration.proximal_policy_optimization.reward_objective == ExperimentPpoRewardObjective.MINIMIZE
+
+
+def test_grid_three_local_reward_validation_config_loads() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'grid_3x3_local_reward_2hop_30.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert tuple(city.name for city in configuration.train_cities) == ('grid_3x3',)
+    assert configuration.train_cities[0].build_config is None
+    assert configuration.simulation.warmup_steps == 15
+    assert configuration.demand.minimum_train_scale == 0.6
+    assert configuration.demand.maximum_train_scale == 0.8
+    assert configuration.proximal_policy_optimization.iterations == 30
+    assert configuration.proximal_policy_optimization.steps_per_rollout == 200
+    assert configuration.proximal_policy_optimization.rollouts_per_update == 100
+    assert configuration.proximal_policy_optimization.progress_reward_weight == 1.0
+    assert configuration.proximal_policy_optimization.discharge_reward_weight == 10.0
+    assert configuration.proximal_policy_optimization.speed_change_weight == 10.0
+    assert configuration.proximal_policy_optimization.speed_change_mode == ExperimentSpeedChangeMode.BRAKING
 
 
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:
@@ -244,26 +267,40 @@ def test_train_city_can_be_excluded_from_ppo_rollouts(tmp_path: Path) -> None:
     assert configuration.train_cities[0].rollout_jobs_per_iteration == 0
 
 
-@pytest.mark.parametrize(
-    ('city_entries', 'expected_message'),
-    (
-        (
-            """
+def test_experiment_can_omit_held_out_city(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_path.write_text(
+        _experiment_yaml(
+            city_entries="""
   - name: alpha
     split: train
     sumo_config: alpha.sumocfg
-    build_config: alpha.build.yaml
     rollout_workers: 1
   - name: beta
     split: train
     sumo_config: beta.sumocfg
-    build_config: beta.build.yaml
     rollout_workers: 1
 """,
-            'exactly one held-out city is required, found 0',
         ),
-        (
-            """
+        encoding='utf-8',
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=tmp_path,
+    )
+
+    assert tuple(city.name for city in configuration.train_cities) == ('alpha', 'beta')
+    assert all(city.build_config is None for city in configuration.train_cities)
+
+
+def test_experiment_rejects_multiple_held_out_cities(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_path.write_text(
+        _experiment_yaml(
+            city_entries="""
   - name: alpha
     split: train
     sumo_config: alpha.sumocfg
@@ -280,23 +317,11 @@ def test_train_city_can_be_excluded_from_ppo_rollouts(tmp_path: Path) -> None:
     build_config: gamma.build.yaml
     rollout_workers: 0
 """,
-            'exactly one held-out city is required, found 2',
         ),
-    ),
-)
-def test_held_out_city_count_must_be_exactly_one(
-    tmp_path: Path,
-    city_entries: str,
-    expected_message: str,
-) -> None:
-    _write_referenced_files(project_root=tmp_path)
-    configuration_path = tmp_path / 'experiment.yaml'
-    configuration_path.write_text(
-        _experiment_yaml(city_entries=city_entries),
         encoding='utf-8',
     )
 
-    with pytest.raises(ValueError, match=expected_message):
+    with pytest.raises(ValueError, match='at most one held-out city is allowed, found 2'):
         load_experiment_configuration(
             configuration_path=configuration_path,
             project_root=tmp_path,
