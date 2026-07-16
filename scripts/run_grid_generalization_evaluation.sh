@@ -13,6 +13,7 @@ SUMO_HOME="${SUMO_HOME:-/usr/share/sumo}"
 SEEDS="${SEEDS:-7101 7102 7103 7104 7105 7106}"
 DEMAND_SCALES="${DEMAND_SCALES:-0.6 0.7 0.8}"
 POLICIES="${POLICIES:-}"
+CITIES="${CITIES:-}"
 
 cd "$REPOSITORY_ROOT"
 ulimit -n "$OPEN_FILE_LIMIT"
@@ -33,6 +34,7 @@ printf 'workers=%s\n' "$WORKERS"
 printf 'seeds=%s\n' "$SEEDS"
 printf 'demand_scales=%s\n' "$DEMAND_SCALES"
 printf 'policies=%s\n' "${POLICIES:-experiment-config-default}"
+printf 'cities=%s\n' "${CITIES:-all}"
 printf 'open_file_limit=%s\n' "$(ulimit -n)"
 
 read -r -a seed_arguments <<< "$SEEDS"
@@ -46,12 +48,18 @@ if [[ -n "$POLICIES" ]]; then
     read -r -a policy_values <<< "$POLICIES"
     policy_arguments=(--policies "${policy_values[@]}")
 fi
+city_arguments=()
+if [[ -n "$CITIES" ]]; then
+    read -r -a city_values <<< "$CITIES"
+    city_arguments=(--cities "${city_values[@]}")
+fi
 
 uv run python -c "import libsumo; print(f'libsumo={libsumo.__file__}')"
 uv run python scripts/eval_multi_city.py \
     --experiment-config "$EXPERIMENT_CONFIG" \
     "${checkpoint_arguments[@]}" \
     "${policy_arguments[@]}" \
+    "${city_arguments[@]}" \
     --output-dir "$OUTPUT_DIRECTORY" \
     --log-dir "$TENSORBOARD_DIRECTORY" \
     --workers "$WORKERS" \

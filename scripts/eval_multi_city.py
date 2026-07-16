@@ -19,7 +19,11 @@ from src.movement.evaluation.multi_city import (  # noqa: E402
     write_multi_city_json,
     write_multi_city_tensorboard,
 )
-from src.movement.experiment_config import ExperimentEvaluationPolicy, load_experiment_configuration  # noqa: E402
+from src.movement.experiment_config import (  # noqa: E402
+    ExperimentConfiguration,
+    ExperimentEvaluationPolicy,
+    load_experiment_configuration,
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -36,6 +40,12 @@ def parse_arguments() -> argparse.Namespace:
         help='Policies to evaluate; defaults to experiment configuration policies',
     )
     parser.add_argument('--checkpoint', type=Path, default=None, help='Checkpoint for the learned policy')
+    parser.add_argument(
+        '--cities',
+        nargs='+',
+        default=None,
+        help='Evaluate only the named experiment cities',
+    )
     parser.add_argument('--output-dir', type=Path, required=True, help='Directory for CSV and JSON outputs')
     parser.add_argument('--device', default='cpu', help='Torch device for learned policy inference')
     parser.add_argument(
@@ -68,6 +78,10 @@ def main() -> None:
     configuration = load_experiment_configuration(
         configuration_path=parsed_arguments.experiment_config,
         project_root=ROOT,
+    )
+    configuration = _selected_city_configuration(
+        configuration=configuration,
+        selected_city_names=parsed_arguments.cities,
     )
     policies = _evaluation_policies(
         configuration_policy_values=configuration.evaluation.policies,
@@ -123,6 +137,20 @@ def _evaluation_policies(
     if parsed_arguments.policies is None:
         return tuple(EvaluationPolicy(policy.value) for policy in configuration_policy_values)
     return tuple(EvaluationPolicy(policy) for policy in parsed_arguments.policies)
+
+
+def _selected_city_configuration(
+    configuration: ExperimentConfiguration,
+    selected_city_names: list[str] | None,
+) -> ExperimentConfiguration:
+    if selected_city_names is None:
+        return configuration
+    selected_names = frozenset(selected_city_names)
+    selected_cities = tuple(city for city in configuration.cities if city.name in selected_names)
+    missing_names = selected_names - frozenset(city.name for city in selected_cities)
+    if missing_names:
+        raise SystemExit(f'Unknown experiment cities: {", ".join(sorted(missing_names))}')
+    return configuration.model_copy(update={'cities': selected_cities})
 
 
 def _learned_policy_config(

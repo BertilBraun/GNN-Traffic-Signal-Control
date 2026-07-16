@@ -197,6 +197,33 @@ def test_eval_multi_city_learned_checkpoint_rules() -> None:
         )
 
 
+def test_eval_multi_city_filters_selected_cities() -> None:
+    configuration = load_experiment_configuration(
+        configuration_path=ROOT / 'configs' / 'training' / 'city_first_pass.yaml',
+        project_root=ROOT,
+    )
+
+    selected = eval_multi_city._selected_city_configuration(
+        configuration=configuration,
+        selected_city_names=['mannheim_innenstadt', 'freiburg_altstadt'],
+    )
+
+    assert tuple(city.name for city in selected.cities) == ('mannheim_innenstadt', 'freiburg_altstadt')
+
+
+def test_eval_multi_city_rejects_unknown_selected_city() -> None:
+    configuration = load_experiment_configuration(
+        configuration_path=ROOT / 'configs' / 'training' / 'city_first_pass.yaml',
+        project_root=ROOT,
+    )
+
+    with pytest.raises(SystemExit, match='Unknown experiment cities: nowhere'):
+        eval_multi_city._selected_city_configuration(
+            configuration=configuration,
+            selected_city_names=['nowhere'],
+        )
+
+
 def _constant_episode_runner(
     request: MultiCityEvaluationRunRequest,
     learned_policy_config: LearnedPolicyConfig | None,
