@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.analyze_grid_generalization_results import (
     EvaluationSeedRecord,
     MetricName,
+    _short_scenario_name,
     confidence_interval_half_width,
     coverage_paired_confidence_intervals,
     paired_confidence_intervals,
@@ -42,6 +43,21 @@ def test_paired_confidence_intervals_pair_policy_and_baseline_by_seed() -> None:
 
 def test_single_pair_has_zero_interval_width() -> None:
     assert confidence_interval_half_width((3.0,)) == 0.0
+
+
+@pytest.mark.parametrize(
+    ('scenario_name', 'expected'),
+    (
+        (
+            'coverage_generalization_grid_4x4_validation_signals_06_of_12_mask_01',
+            '4x4 validation 06/12 m01',
+        ),
+        ('matched_grid_5x3', '5x3'),
+        ('coverage_grid_6x6_eligible_signals_16_of_32', '6x6_eligible_signals_16_of_32'),
+    ),
+)
+def test_short_scenario_name_compacts_coverage_masks(scenario_name: str, expected: str) -> None:
+    assert _short_scenario_name(scenario_name) == expected
 
 
 def test_paired_intervals_keep_equal_evaluation_seeds_from_training_replicas() -> None:

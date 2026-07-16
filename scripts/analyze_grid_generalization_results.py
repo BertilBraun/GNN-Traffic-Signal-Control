@@ -384,9 +384,13 @@ def plot_learning_curves(
     for axis in axes[-1]:
         axis.set_xlabel('PPO iteration')
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc='center left', bbox_to_anchor=(0.82, 0.5), fontsize=8)
     figure.suptitle(f'{policy} development evaluation at demand {demand_scale:.1f}')
-    figure.tight_layout(rect=(0.0, 0.0, 0.82, 0.96))
+    if len(labels) == 1:
+        axes[0, 0].legend(handles, labels, fontsize=8)
+        figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    else:
+        figure.legend(handles, labels, loc='center left', bbox_to_anchor=(0.82, 0.5), fontsize=8)
+        figure.tight_layout(rect=(0.0, 0.0, 0.82, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
@@ -461,7 +465,19 @@ def _signal_coverage(city_name: str) -> float:
 
 
 def _short_scenario_name(city_name: str) -> str:
-    return city_name.removeprefix('matched_grid_').removeprefix('coverage_grid_')
+    short_name = (
+        city_name.removeprefix('matched_grid_')
+        .removeprefix('coverage_grid_')
+        .removeprefix('coverage_generalization_grid_')
+    )
+    coverage_match = re.fullmatch(
+        r'(\d+x\d+)_(train|validation|eval)_signals_(\d+)_of_(\d+)_mask_(\d+)',
+        short_name,
+    )
+    if coverage_match is not None:
+        shape, split, signal_count, eligible_count, mask = coverage_match.groups()
+        return f'{shape} {split} {signal_count}/{eligible_count} m{mask}'
+    return short_name
 
 
 def _parse_labeled_path(value: str) -> LabeledPath:
