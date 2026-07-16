@@ -7,6 +7,9 @@ The maintained project documentation is intentionally small:
 - [Training and evaluation](training_and_evaluation.md) covers imitation learning, scratch and IL-initialized PPO, value warm-up, rewards, checkpointing, and evaluation.
 - [Remote/Linux training operations](remote_training.md) covers the maintained launcher, monitoring, recovery, and artifact retrieval.
 - [Iteration-85 results](results/city_first_pass_throughput_scratch_32_worker.md) is the scientific result report.
+- [Controlled grid-shape generalization study](results/grid_shape_generalization_study.md) reports
+  square and rectangular transfer, training-design comparisons, fresh-seed confidence intervals, and
+  the signal-coverage ablation.
 - [3×3 local-reward PPO validation](results/grid_3x3_local_reward_2hop_validation.md) documents the
   synthetic-grid learnability result and the proposed grid-size/control-density generalization study.
 
