@@ -84,7 +84,9 @@ three independent training seeds.
 The final size/shape matrix uses fresh evaluation seeds `7101–7106` at demand scales `0.6`, `0.7`, and
 `0.8`. These seeds are not used for periodic checkpoint selection. Matrix comparisons use the common
 training seed `5101`; the full mixed design is additionally repeated with training seeds `5102` and
-`5103`.
+`5103`. Learned sampled and learned greedy policies are evaluated for every checkpoint. Deterministic
+and non-learned baselines are evaluated once per scenario, demand, and seed, then paired with each
+training design instead of rerunning identical baseline episodes for every checkpoint.
 
 ## Signal coverage ablation
 
