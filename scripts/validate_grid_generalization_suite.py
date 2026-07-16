@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import csv
 from dataclasses import dataclass
 from enum import Enum
@@ -42,6 +43,17 @@ class ValidationScenario:
     name: str
     rows: int
     cols: int
+
+
+@dataclass(frozen=True)
+class ValidationRunSpec:
+    scenario: ValidationScenario
+    configuration_root: Path
+    output_directory: Path
+    demand_scales: tuple[float, ...]
+    simulation_seed: int
+    simulation_steps: int
+    skip_simulation: bool
 
 
 class GridValidationRecord(BaseModel):
@@ -373,6 +385,50 @@ def validation_scenarios(suite: ValidationSuite) -> tuple[ValidationScenario, ..
     return tuple(scenarios)
 
 
+def run_validation_suite(
+    scenarios: tuple[ValidationScenario, ...],
+    configuration_root: Path,
+    output_directory: Path,
+    demand_scales: tuple[float, ...],
+    simulation_seed: int,
+    simulation_steps: int,
+    skip_simulation: bool,
+    workers: int,
+) -> tuple[GridValidationRecord, ...]:
+    if workers <= 0:
+        raise ValueError('workers must be positive.')
+    run_specs = tuple(
+        ValidationRunSpec(
+            scenario=scenario,
+            configuration_root=configuration_root,
+            output_directory=output_directory,
+            demand_scales=demand_scales,
+            simulation_seed=simulation_seed,
+            simulation_steps=simulation_steps,
+            skip_simulation=skip_simulation,
+        )
+        for scenario in scenarios
+    )
+    if workers == 1:
+        record_groups = tuple(_run_validation_spec(run_spec) for run_spec in run_specs)
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            record_groups = tuple(executor.map(_run_validation_spec, run_specs))
+    return tuple(record for record_group in record_groups for record in record_group)
+
+
+def _run_validation_spec(run_spec: ValidationRunSpec) -> tuple[GridValidationRecord, ...]:
+    return validate_scenario(
+        scenario=run_spec.scenario,
+        configuration_root=run_spec.configuration_root,
+        output_directory=run_spec.output_directory,
+        demand_scales=run_spec.demand_scales,
+        simulation_seed=run_spec.simulation_seed,
+        simulation_steps=run_spec.simulation_steps,
+        skip_simulation=run_spec.skip_simulation,
+    )
+
+
 def write_report(output_directory: Path, records: tuple[GridValidationRecord, ...]) -> None:
     output_directory.mkdir(parents=True, exist_ok=True)
     report = GridValidationReport(records=records)
@@ -404,6 +460,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--demand-scales', nargs='+', type=float, default=(0.6, 0.7, 0.8))
     parser.add_argument('--simulation-seed', type=int, default=9101)
     parser.add_argument('--simulation-steps', type=int, default=1800)
+    parser.add_argument('--workers', type=int, default=1)
     parser.add_argument(
         '--scenario',
         action='append',
@@ -423,18 +480,15 @@ def main() -> None:
         missing_scenarios = requested_scenarios - frozenset(scenario.name for scenario in scenarios)
         if missing_scenarios:
             raise ValueError(f'Unknown validation scenarios: {", ".join(sorted(missing_scenarios))}')
-    records = tuple(
-        record
-        for scenario in scenarios
-        for record in validate_scenario(
-            scenario=scenario,
-            configuration_root=arguments.configuration_root,
-            output_directory=arguments.output_directory,
-            demand_scales=tuple(arguments.demand_scales),
-            simulation_seed=arguments.simulation_seed,
-            simulation_steps=arguments.simulation_steps,
-            skip_simulation=arguments.skip_simulation,
-        )
+    records = run_validation_suite(
+        scenarios=scenarios,
+        configuration_root=arguments.configuration_root,
+        output_directory=arguments.output_directory,
+        demand_scales=tuple(arguments.demand_scales),
+        simulation_seed=arguments.simulation_seed,
+        simulation_steps=arguments.simulation_steps,
+        skip_simulation=arguments.skip_simulation,
+        workers=arguments.workers,
     )
     write_report(output_directory=arguments.output_directory, records=records)
     print(f'Wrote {arguments.output_directory / "validation.json"}')
