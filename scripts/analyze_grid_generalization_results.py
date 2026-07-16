@@ -268,6 +268,7 @@ def plot_learning_curves(
     output_path: Path,
     policy: str,
     demand_scale: float,
+    scenario_names: frozenset[str] | None,
 ) -> None:
     metric_specs: tuple[tuple[MetricName, str], ...] = (
         (MetricName.THROUGHPUT, 'throughput / hour'),
@@ -282,6 +283,7 @@ def plot_learning_curves(
             training_design=learning_run.label,
             policy=policy,
             demand_scale=demand_scale,
+            scenario_names=scenario_names,
         )
         scenario_names = tuple(dict.fromkeys(record.city_name for _iteration, record in points))
         for scenario_name in scenario_names:
@@ -323,13 +325,18 @@ def _learning_points(
     training_design: str,
     policy: str,
     demand_scale: float,
+    scenario_names: frozenset[str] | None,
 ) -> tuple[tuple[int, EvaluationSeedRecord], ...]:
     points: list[tuple[int, EvaluationSeedRecord]] = []
     for summary_path in sorted(evaluation_root.glob('iter_*/summary.csv')):
         iteration = int(summary_path.parent.name.removeprefix('iter_'))
         records = load_evaluation_records(summary_path=summary_path, training_design=training_design)
         points.extend(
-            (iteration, record) for record in records if record.policy == policy and record.demand_scale == demand_scale
+            (iteration, record)
+            for record in records
+            if record.policy == policy
+            and record.demand_scale == demand_scale
+            and (scenario_names is None or record.city_name in scenario_names)
         )
     return tuple(points)
 
@@ -397,6 +404,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--matrix-summary', action='append', type=_parse_labeled_path, default=[])
     parser.add_argument('--matrix-baseline-summary', type=Path, default=None)
     parser.add_argument('--learning-root', action='append', type=_parse_labeled_path, default=[])
+    parser.add_argument('--learning-scenario', action='append', default=[])
     parser.add_argument('--coverage-summary', type=Path, default=None)
     parser.add_argument('--coverage-baseline-summary', type=Path, default=None)
     parser.add_argument('--output-directory', type=Path, required=True)
@@ -456,6 +464,7 @@ def main() -> None:
             output_path=arguments.output_directory / 'learning_curves.png',
             policy=arguments.policy,
             demand_scale=arguments.demand_scale,
+            scenario_names=(frozenset(arguments.learning_scenario) if arguments.learning_scenario else None),
         )
     if arguments.coverage_summary is not None:
         coverage_records = load_evaluation_records(
