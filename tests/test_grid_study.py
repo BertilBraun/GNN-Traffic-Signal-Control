@@ -23,6 +23,7 @@ from src.movement.grid_study import (
         (2, 5, 6),
         (3, 3, 5),
         (4, 4, 12),
+        (5, 3, 11),
         (3, 6, 14),
         (5, 5, 21),
         (6, 6, 32),
@@ -45,23 +46,23 @@ def test_training_rollouts_are_balanced_by_action_samples() -> None:
     )
 
     assert {allocation.scenario_name: allocation.rollout_jobs for allocation in allocations} == {
-        'matched_grid_2x5_wide': 18,
+        'matched_grid_5x2_tall': 18,
         'matched_grid_3x3_square': 21,
         'matched_grid_4x4_square': 9,
-        'matched_grid_3x6_wide': 8,
+        'matched_grid_5x3_tall': 10,
         'matched_grid_5x5_square': 5,
     }
-    assert max(allocation.action_sample_count for allocation in allocations) <= 22_400
+    assert max(allocation.action_sample_count for allocation in allocations) <= 22_000
     assert min(allocation.action_sample_count for allocation in allocations) >= 21_000
 
 
 def test_transposed_rectangles_are_evaluation_only() -> None:
     roles = {scenario.name: scenario.role for scenario in MATCHED_GRID_SCENARIOS}
 
-    assert roles['matched_grid_2x5_wide'] is GridStudyRole.TRAIN
-    assert roles['matched_grid_5x2_tall'] is GridStudyRole.EVALUATION_ONLY
-    assert roles['matched_grid_3x6_wide'] is GridStudyRole.TRAIN
-    assert roles['matched_grid_6x3_tall'] is GridStudyRole.EVALUATION_ONLY
+    assert roles['matched_grid_5x2_tall'] is GridStudyRole.TRAIN
+    assert roles['matched_grid_2x5_wide'] is GridStudyRole.EVALUATION_ONLY
+    assert roles['matched_grid_5x3_tall'] is GridStudyRole.TRAIN
+    assert roles['matched_grid_3x5_wide'] is GridStudyRole.EVALUATION_ONLY
 
 
 def test_coverage_scenarios_are_nested_and_preserve_geometry() -> None:

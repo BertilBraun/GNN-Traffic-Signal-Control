@@ -12,6 +12,6 @@ def test_validation_suite_includes_all_matched_and_coverage_scenarios() -> None:
     coverage = validation_scenarios(ValidationSuite.COVERAGE)
     all_scenarios = validation_scenarios(ValidationSuite.ALL)
 
-    assert len(matched) == 11
+    assert len(matched) == 10
     assert len(coverage) == 4
     assert all_scenarios == matched + coverage

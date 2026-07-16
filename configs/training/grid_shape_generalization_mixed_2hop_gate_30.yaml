@@ -3,9 +3,9 @@ name: grid_shape_generalization_mixed_2hop_gate_30
 # Rollout jobs are inverse to controller count so every training shape contributes
 # approximately 21,000 junction/action samples per iteration at 200 decisions.
 cities:
-  - name: matched_grid_2x5_wide
+  - name: matched_grid_5x2_tall
     split: train
-    sumo_config: configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg
+    sumo_config: configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg
     rollout_jobs_per_iteration: 18
   - name: matched_grid_3x3_square
     split: train
@@ -15,10 +15,10 @@ cities:
     split: train
     sumo_config: configs/grid_generalization/matched_grid_4x4_square/grid.sumocfg
     rollout_jobs_per_iteration: 9
-  - name: matched_grid_3x6_wide
+  - name: matched_grid_5x3_tall
     split: train
-    sumo_config: configs/grid_generalization/matched_grid_3x6_wide/grid.sumocfg
-    rollout_jobs_per_iteration: 8
+    sumo_config: configs/grid_generalization/matched_grid_5x3_tall/grid.sumocfg
+    rollout_jobs_per_iteration: 10
   - name: matched_grid_5x5_square
     split: train
     sumo_config: configs/grid_generalization/matched_grid_5x5_square/grid.sumocfg
@@ -35,17 +35,13 @@ cities:
     split: evaluation_only
     sumo_config: configs/grid_generalization/matched_grid_3x2_tall/grid.sumocfg
     rollout_jobs_per_iteration: 0
-  - name: matched_grid_5x2_tall
+  - name: matched_grid_2x5_wide
     split: evaluation_only
-    sumo_config: configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg
+    sumo_config: configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg
     rollout_jobs_per_iteration: 0
-  - name: matched_grid_6x3_tall
+  - name: matched_grid_3x5_wide
     split: evaluation_only
-    sumo_config: configs/grid_generalization/matched_grid_6x3_tall/grid.sumocfg
-    rollout_jobs_per_iteration: 0
-  - name: matched_grid_7x7_square_zero_shot
-    split: evaluation_only
-    sumo_config: configs/grid_generalization/matched_grid_7x7_square_zero_shot/grid.sumocfg
+    sumo_config: configs/grid_generalization/matched_grid_3x5_wide/grid.sumocfg
     rollout_jobs_per_iteration: 0
 
 simulation:
@@ -74,7 +70,7 @@ imitation_learning:
 ppo:
   iterations: 30
   steps_per_rollout: 200
-  rollouts_per_update: 61
+  rollouts_per_update: 63
   rollout_workers: 32
   update_epochs: 4
   value_warmup_iterations: 0

@@ -61,15 +61,14 @@ class GridRolloutAllocation:
 MATCHED_GRID_SCENARIOS: tuple[GridScenarioSpec, ...] = (
     GridScenarioSpec('matched_grid_2x3_wide', 2, 3, GridStudyRole.EVALUATION_ONLY),
     GridScenarioSpec('matched_grid_3x2_tall', 3, 2, GridStudyRole.EVALUATION_ONLY),
-    GridScenarioSpec('matched_grid_2x5_wide', 2, 5, GridStudyRole.TRAIN),
-    GridScenarioSpec('matched_grid_5x2_tall', 5, 2, GridStudyRole.EVALUATION_ONLY),
+    GridScenarioSpec('matched_grid_2x5_wide', 2, 5, GridStudyRole.EVALUATION_ONLY),
+    GridScenarioSpec('matched_grid_5x2_tall', 5, 2, GridStudyRole.TRAIN),
     GridScenarioSpec('matched_grid_3x3_square', 3, 3, GridStudyRole.TRAIN),
+    GridScenarioSpec('matched_grid_3x5_wide', 3, 5, GridStudyRole.EVALUATION_ONLY),
+    GridScenarioSpec('matched_grid_5x3_tall', 5, 3, GridStudyRole.TRAIN),
     GridScenarioSpec('matched_grid_4x4_square', 4, 4, GridStudyRole.TRAIN),
-    GridScenarioSpec('matched_grid_3x6_wide', 3, 6, GridStudyRole.TRAIN),
-    GridScenarioSpec('matched_grid_6x3_tall', 6, 3, GridStudyRole.EVALUATION_ONLY),
     GridScenarioSpec('matched_grid_5x5_square', 5, 5, GridStudyRole.TRAIN),
     GridScenarioSpec('matched_grid_6x6_square_validation', 6, 6, GridStudyRole.VALIDATION),
-    GridScenarioSpec('matched_grid_7x7_square_zero_shot', 7, 7, GridStudyRole.EVALUATION_ONLY),
 )
 
 

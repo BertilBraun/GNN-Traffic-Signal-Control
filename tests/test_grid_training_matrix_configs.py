@@ -51,7 +51,7 @@ def test_matrix_designs_match_total_action_sample_budget() -> None:
     assert max(action_sample_totals) <= 110_000
 
 
-def test_matrix_design_keeps_six_by_six_for_selection_and_seven_by_seven_evaluation_only() -> None:
+def test_matrix_design_keeps_six_by_six_for_selection() -> None:
     base_configuration = load_experiment_configuration(
         configuration_path=ROOT / 'configs' / 'training' / 'grid_shape_generalization_mixed_2hop_gate_30.yaml',
         project_root=ROOT,
@@ -64,20 +64,18 @@ def test_matrix_design_keeps_six_by_six_for_selection_and_seven_by_seven_evaluat
 
     assert configuration.held_out_city.name == 'matched_grid_6x6_square_validation'
     assert tuple(city.name for city in configuration.train_cities) == ('matched_grid_3x3_square',)
-    seven_by_seven = next(city for city in configuration.cities if city.name == 'matched_grid_7x7_square_zero_shot')
-    assert seven_by_seven.rollout_jobs_per_iteration == 0
 
 
 def _controller_count(city_name: str) -> int:
     match city_name:
-        case 'matched_grid_2x5_wide':
+        case 'matched_grid_5x2_tall':
             return 6
         case 'matched_grid_3x3_square':
             return 5
         case 'matched_grid_4x4_square':
             return 12
-        case 'matched_grid_3x6_wide':
-            return 14
+        case 'matched_grid_5x3_tall':
+            return 11
         case 'matched_grid_5x5_square':
             return 21
         case _:

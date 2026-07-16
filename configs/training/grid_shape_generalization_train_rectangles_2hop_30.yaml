@@ -1,8 +1,8 @@
 name: grid_shape_generalization_train_rectangles_2hop_30
 cities:
-- name: matched_grid_2x5_wide
+- name: matched_grid_5x2_tall
   split: train
-  sumo_config: configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg
+  sumo_config: configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg
   rollout_jobs_per_iteration: 45
   rollout_priority: 0
 - name: matched_grid_3x3_square
@@ -15,10 +15,10 @@ cities:
   sumo_config: configs/grid_generalization/matched_grid_4x4_square/grid.sumocfg
   rollout_jobs_per_iteration: 0
   rollout_priority: 0
-- name: matched_grid_3x6_wide
+- name: matched_grid_5x3_tall
   split: train
-  sumo_config: configs/grid_generalization/matched_grid_3x6_wide/grid.sumocfg
-  rollout_jobs_per_iteration: 20
+  sumo_config: configs/grid_generalization/matched_grid_5x3_tall/grid.sumocfg
+  rollout_jobs_per_iteration: 25
   rollout_priority: 0
 - name: matched_grid_5x5_square
   split: evaluation_only
@@ -40,19 +40,14 @@ cities:
   sumo_config: configs/grid_generalization/matched_grid_3x2_tall/grid.sumocfg
   rollout_jobs_per_iteration: 0
   rollout_priority: 0
-- name: matched_grid_5x2_tall
+- name: matched_grid_2x5_wide
   split: evaluation_only
-  sumo_config: configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg
+  sumo_config: configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg
   rollout_jobs_per_iteration: 0
   rollout_priority: 0
-- name: matched_grid_6x3_tall
+- name: matched_grid_3x5_wide
   split: evaluation_only
-  sumo_config: configs/grid_generalization/matched_grid_6x3_tall/grid.sumocfg
-  rollout_jobs_per_iteration: 0
-  rollout_priority: 0
-- name: matched_grid_7x7_square_zero_shot
-  split: evaluation_only
-  sumo_config: configs/grid_generalization/matched_grid_7x7_square_zero_shot/grid.sumocfg
+  sumo_config: configs/grid_generalization/matched_grid_3x5_wide/grid.sumocfg
   rollout_jobs_per_iteration: 0
   rollout_priority: 0
 simulation:
@@ -79,7 +74,7 @@ imitation_learning:
 ppo:
   iterations: 30
   steps_per_rollout: 200
-  rollouts_per_update: 65
+  rollouts_per_update: 70
   rollout_workers: 32
   update_epochs: 4
   value_warmup_iterations: 0

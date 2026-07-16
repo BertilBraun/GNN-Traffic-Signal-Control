@@ -158,19 +158,18 @@ def test_grid_shape_generalization_config_balances_action_samples_and_separates_
         project_root=ROOT,
     )
 
-    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (18, 21, 9, 8, 5)
+    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (18, 21, 9, 10, 5)
     assert configuration.held_out_city.name == 'matched_grid_6x6_square_validation'
     assert tuple(city.name for city in configuration.cities if city.split is CitySplit.EVALUATION_ONLY) == (
         'matched_grid_2x3_wide',
         'matched_grid_3x2_tall',
-        'matched_grid_5x2_tall',
-        'matched_grid_6x3_tall',
-        'matched_grid_7x7_square_zero_shot',
+        'matched_grid_2x5_wide',
+        'matched_grid_3x5_wide',
     )
     assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
     assert configuration.demand.evaluation_scales == (0.7,)
     serialized = configuration.model_dump(mode='json', by_alias=True)
-    assert serialized['cities'][0]['sumo_config'] == ('configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg')
+    assert serialized['cities'][0]['sumo_config'] == ('configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg')
 
 
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:

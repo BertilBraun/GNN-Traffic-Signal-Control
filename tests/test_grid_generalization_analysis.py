@@ -49,7 +49,7 @@ def _record(
 ) -> EvaluationSeedRecord:
     return EvaluationSeedRecord(
         training_design='mixed',
-        city_name='matched_grid_7x7_square_zero_shot',
+        city_name='matched_grid_6x6_square_validation',
         policy=policy,
         seed=seed,
         demand_scale=0.7,

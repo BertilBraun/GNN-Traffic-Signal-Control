@@ -53,8 +53,8 @@ MATRIX_TRAINING_DESIGNS: tuple[MatrixTrainingDesign, ...] = (
         experiment_name='grid_shape_generalization_train_rectangles_2hop_30',
         output_filename='grid_shape_generalization_train_rectangles_2hop_30.yaml',
         allocations=(
-            TrainingScenarioAllocation('matched_grid_2x5_wide', 45),
-            TrainingScenarioAllocation('matched_grid_3x6_wide', 20),
+            TrainingScenarioAllocation('matched_grid_5x2_tall', 45),
+            TrainingScenarioAllocation('matched_grid_5x3_tall', 25),
         ),
     ),
 )

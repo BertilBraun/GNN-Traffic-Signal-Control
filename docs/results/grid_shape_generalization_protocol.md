@@ -30,21 +30,19 @@ degree-three or degree-four controlled junction.
 
 | scenario | role | controlled junctions |
 | --- | --- | ---: |
-| 2×5 | train | 6 |
+| 5×2 | train | 6 |
 | 3×3 | train | 5 |
 | 4×4 | train | 12 |
-| 3×6 | train | 14 |
+| 5×3 | train | 11 |
 | 5×5 | train | 21 |
 | 6×6 | visible validation and checkpoint selection | 32 |
 | 2×3, 3×2 | evaluation only | 2 |
-| 5×2 | transposed evaluation of trained 2×5 | 6 |
-| 6×3 | transposed evaluation of trained 3×6 | 14 |
-| 7×7 | zero-rollout periodic development evaluation | 45 |
+| 2×5 | transposed evaluation of trained 5×2 | 6 |
+| 3×5 | transposed evaluation of trained 5×3 | 11 |
 
-The 7×7 topology is evaluated every five training iterations as requested, but it contributes no PPO
-rollouts and does not enter checkpoint selection. Its final result uses fresh seeds that were not used
-in periodic evaluation. This is zero-shot topology transfer with a fresh-seed final test, not an
-untouched-topology test.
+The maximum training dimension is five junctions, and the largest evaluation topology is 6×6. The
+6×6 topology contributes no PPO rollouts and is the only split used for checkpoint selection. Its
+final result uses fresh seeds that were not used in periodic development evaluation.
 
 ## PPO sample balance
 
@@ -55,10 +53,10 @@ The gate allocates rollouts inversely to controller count:
 
 | training shape | controllers | rollouts | action samples per iteration |
 | --- | ---: | ---: | ---: |
-| 2×5 | 6 | 18 | 21,600 |
+| 5×2 | 6 | 18 | 21,600 |
 | 3×3 | 5 | 21 | 21,000 |
 | 4×4 | 12 | 9 | 21,600 |
-| 3×6 | 14 | 8 | 22,400 |
+| 5×3 | 11 | 10 | 22,000 |
 | 5×5 | 21 | 5 | 21,000 |
 
 PPO minibatches are also packed by actual junction/action samples (`16,384` target samples per batch)
@@ -75,11 +73,11 @@ The run extends to 60 iterations only if:
 
 1. learned sampled or greedy control improves within at least three training shapes;
 2. 6×6 transfer improves relative to iteration 0 without teleport or completion failure;
-3. the 7×7 development curve is stable enough to justify a fresh-seed final evaluation;
+3. the transposed 2×5 and 3×5 cases do not show an orientation-specific failure;
 4. PPO diagnostics show no persistent KL stopping, entropy collapse, or value divergence.
 
 If the gate succeeds, the complete train-shape × evaluation-shape matrix will compare single-shape
-3×3, 4×4, and 5×5 training, a rectangular 2×5+3×6 mixture, and the full mixed-small-grid design under
+3×3, 4×4, and 5×5 training, a rectangular 5×2+5×3 mixture, and the full mixed-small-grid design under
 an approximately equal total junction/action-sample budget. The final mixed design will use at least
 three independent training seeds.
 
