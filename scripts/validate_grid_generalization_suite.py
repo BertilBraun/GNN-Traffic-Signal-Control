@@ -345,12 +345,17 @@ def _plot_topology(
             axis.scatter(*position, color='#d62728', marker='o', s=55, zorder=3)
         else:
             axis.scatter(*position, color='#f0a202', marker='o', s=38, zorder=3)
-    axis.set_title(f'{scenario.name}: {len(signalized_nodes)}/{scenario.rows * scenario.cols} signalized')
+    axis.set_title(_topology_title(scenario=scenario, signalized_count=len(signalized_nodes)))
     axis.set_aspect('equal')
     axis.set_axis_off()
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
+
+def _topology_title(scenario: ValidationScenario, signalized_count: int) -> str:
+    eligible_controller_count = len(controllable_node_ids(rows=scenario.rows, cols=scenario.cols))
+    return f'{scenario.name}: {signalized_count}/{eligible_controller_count} eligible junctions signalized'
 
 
 def validation_scenarios(suite: ValidationSuite) -> tuple[ValidationScenario, ...]:

@@ -511,9 +511,10 @@ def main() -> None:
                 ),
                 training_targets=tuple(('coverage', training_replica) for training_replica in coverage_replicas),
             )
+        coverage_policies = tuple(arguments.paired_policy) or (arguments.policy,)
         coverage_intervals = tuple(
             interval
-            for policy in (tuple(arguments.paired_policy) or (arguments.policy,))
+            for policy in coverage_policies
             for interval in paired_confidence_intervals(
                 records=coverage_records,
                 policy=policy,
@@ -527,7 +528,7 @@ def main() -> None:
         plot_signal_coverage(
             records=coverage_records,
             output_path=arguments.output_directory / 'performance_vs_signal_coverage.png',
-            policies=(arguments.policy, arguments.baseline_policy),
+            policies=tuple(dict.fromkeys((*coverage_policies, arguments.baseline_policy))),
             demand_scale=arguments.demand_scale,
         )
 
