@@ -169,6 +169,8 @@ def test_grid_shape_generalization_config_balances_action_samples_and_separates_
     )
     assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
     assert configuration.demand.evaluation_scales == (0.7,)
+    serialized = configuration.model_dump(mode='json', by_alias=True)
+    assert serialized['cities'][0]['sumo_config'] == ('configs/grid_generalization/matched_grid_2x5_wide/grid.sumocfg')
 
 
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:

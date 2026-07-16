@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_serializer, model_validator
 import yaml
 
 
@@ -82,6 +82,12 @@ class ExperimentCityConfiguration(BaseModel):
         ):
             raise ValueError(f'city {self.name} train_scale_min must be less than or equal to train_scale_max')
         return self
+
+    @field_serializer('sumo_config', 'build_config')
+    def serialize_configuration_path(self, path: Path | None) -> str | None:
+        if path is None:
+            return None
+        return path.as_posix()
 
 
 class ExperimentSimulationConfiguration(BaseModel):
