@@ -30,7 +30,11 @@ from src.movement.training.ppo import (
     validate_config,
 )
 from src.movement.training.ppo.batch import normalize_update_advantages, ppo_batch_data_loader
-from src.movement.training.ppo.evaluation import checkpoint_selection_score, held_out_learned_checkpoint_score
+from src.movement.training.ppo.evaluation import (
+    checkpoint_selection_score,
+    held_out_learned_checkpoint_score,
+    single_city_evaluation_requests,
+)
 from src.movement.training.ppo.reward import (
     LaneDelaySnapshot,
     SpeedChangeTracker,
@@ -837,6 +841,28 @@ def test_rollout_excludes_forced_actions_from_policy_advantages() -> None:
 
     assert batch.policy_mask.tolist() == [False]
     assert batch.advantages.tolist() == [0.0]
+
+
+def test_single_city_evaluation_requests_cover_all_policy_seed_pairs() -> None:
+    config = replace(
+        _ppo_config(rollouts_per_update=1, rollout_cities=()),
+        eval_policies=(EvaluationPolicy.LEARNED, EvaluationPolicy.FIXED_TIME),
+        eval_seeds=(100, 101),
+        warmup_steps=300,
+        eval_worker_count=4,
+    )
+
+    requests = single_city_evaluation_requests(config=config)
+
+    assert len(requests) == 4
+    assert {(request.policy, request.seed) for request in requests} == {
+        (EvaluationPolicy.LEARNED, 100),
+        (EvaluationPolicy.LEARNED, 101),
+        (EvaluationPolicy.FIXED_TIME, 100),
+        (EvaluationPolicy.FIXED_TIME, 101),
+    }
+    assert all(request.warmup_steps == 300 for request in requests)
+    assert all(request.backend_kind == config.sumo_backend for request in requests)
 
 
 def test_advantages_are_normalized_once_across_the_complete_update() -> None:

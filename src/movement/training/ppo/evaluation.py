@@ -26,10 +26,12 @@ from src.movement.evaluation.multi_city import (
     FileCachedEpisodeRunner,
     MultiCityEvaluationAggregate,
     MultiCityEvaluationResult,
+    MultiCityEvaluationRunRequest,
     aggregate_multi_city_records,
     default_episode_runner,
     print_multi_city_summary,
     run_multi_city_evaluation,
+    run_parallel_multi_city_evaluation,
     write_multi_city_csv,
     write_multi_city_json,
 )
@@ -387,6 +389,24 @@ def _evaluation_records(
     config: MovementPpoConfig,
     learned_policy_config: LearnedPolicyConfig,
 ) -> list[EvaluationRecord]:
+    if config.eval_worker_count > 1:
+        result = run_parallel_multi_city_evaluation(
+            requests=single_city_evaluation_requests(config=config),
+            learned_policy_config=learned_policy_config,
+            episode_runner=FileCachedEpisodeRunner(
+                cache_dir=config.project_root / '.cache' / 'evaluation',
+                episode_runner=default_episode_runner,
+            ),
+            worker_count=config.eval_worker_count,
+        )
+        return [
+            EvaluationRecord(
+                policy=record.policy,
+                seed=record.seed,
+                metrics=record.metrics,
+            )
+            for record in result.records
+        ]
     records: list[EvaluationRecord] = []
     for policy in config.eval_policies:
         for seed in config.eval_seeds:
@@ -419,6 +439,35 @@ def _evaluation_records(
                 )
             )
     return records
+
+
+def single_city_evaluation_requests(
+    config: MovementPpoConfig,
+) -> tuple[MultiCityEvaluationRunRequest, ...]:
+    return tuple(
+        MultiCityEvaluationRunRequest(
+            city_name=config.cfg_path.stem,
+            city_split=CitySplit.TRAIN,
+            sumo_config_path=config.cfg_path,
+            policy=policy,
+            seed=seed,
+            demand_scale=config.eval_demand_scale,
+            steps=config.eval_steps,
+            decision_interval=config.decision_interval,
+            yellow_duration=config.yellow_duration,
+            yellow_start_delay=config.yellow_start_delay,
+            minimum_green_steps=config.min_green_steps,
+            fixed_time_phase_duration=config.eval_fixed_time_phase_duration,
+            queue_pressure_phase_duration=config.eval_queue_pressure_phase_duration,
+            minimum_initial_occupancy=config.initial_occupancy_min,
+            maximum_initial_occupancy=config.initial_occupancy_max,
+            warmup_steps=config.warmup_steps,
+            time_to_teleport=config.time_to_teleport,
+            backend_kind=config.sumo_backend,
+        )
+        for policy in config.eval_policies
+        for seed in config.eval_seeds
+    )
 
 
 def cached_baseline_record(
