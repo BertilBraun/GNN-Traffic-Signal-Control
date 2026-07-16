@@ -41,7 +41,11 @@ from src.movement.training.ppo.policy import (
     states_from_actions,
     timed_current_sample,
 )
-from src.movement.training.ppo.reward import SpeedChangeTracker, advance_and_reward
+from src.movement.training.ppo.reward import (
+    SpeedChangeTracker,
+    advance_and_reward,
+    objective_rewards,
+)
 from src.movement.training.ppo.rollout_metrics import RolloutMetrics
 from src.movement.training.ppo.types import (
     CollectedRollout,
@@ -656,7 +660,10 @@ def collect_decision_transition(
             actions=actions,
             old_log_probs=old_log_probs,
             action_masks=action_masks,
-            rewards=interval_reward.rewards,
+            rewards=objective_rewards(
+                rewards=interval_reward.rewards,
+                objective=config.reward_objective,
+            ),
             values=tuple(float(value) for value in values.detach().cpu()),
             done=not runtime.is_running(),
         )

@@ -64,6 +64,7 @@ class PpoRunMetadata(BaseModel):
     demand_scale_min: float
     demand_scale_max: float
     reward_mode: str
+    reward_objective: str
     global_reward_weight: float
     flow_reward_weight: float
     throughput_reward_weight: float
@@ -142,6 +143,7 @@ def build_run_metadata(
         demand_scale_min=config.demand_scale_min,
         demand_scale_max=config.demand_scale_max,
         reward_mode=config.reward_mode.value,
+        reward_objective=config.reward_objective.value,
         global_reward_weight=config.global_reward_weight,
         flow_reward_weight=config.flow_reward_weight,
         throughput_reward_weight=config.throughput_reward_weight,

@@ -40,6 +40,7 @@ from src.movement.training.il.checkpoint import MovementCheckpointMetadata
 from src.movement.training.ppo.checkpoint import save_actor_checkpoint
 from src.movement.training.ppo.types import (
     MovementPpoConfig,
+    PpoRewardObjective,
     RolloutStats,
     TrainingDiagnostics,
     TrainingEvaluationResult,
@@ -53,8 +54,14 @@ def write_training_scalars(
     rollout_stats: RolloutStats,
     diagnostics: TrainingDiagnostics,
     update_stats: PpoUpdateStats,
+    reward_objective: PpoRewardObjective,
 ) -> None:
     writer.add_scalar('episode/mean_reward', rollout_stats.mean_reward, iteration)
+    writer.add_scalar(
+        'episode/mean_objective_reward',
+        reward_objective.multiplier * rollout_stats.mean_reward,
+        iteration,
+    )
     writer.add_scalar('episode/reward_standard_deviation', rollout_stats.reward_standard_deviation, iteration)
     writer.add_scalar('episode/minimum_reward', rollout_stats.minimum_reward, iteration)
     writer.add_scalar('episode/maximum_reward', rollout_stats.maximum_reward, iteration)

@@ -27,7 +27,12 @@ from src.movement.experiment_config import (
 )
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.ppo import MovementPpoConfig, train_movement_ppo
-from src.movement.training.ppo.types import PpoRewardMode, RolloutCity, ScratchModelConfig
+from src.movement.training.ppo.types import (
+    PpoRewardMode,
+    PpoRewardObjective,
+    RolloutCity,
+    ScratchModelConfig,
+)
 
 DEFAULT_CFG = ROOT / 'configs' / 'grid_3x3_dedicated' / 'grid.sumocfg'
 DEFAULT_ITERATIONS = 300
@@ -456,6 +461,7 @@ def main() -> None:
             global_reward_weight=global_reward_weight(args, experiment_configuration),
             flow_reward_weight=flow_reward_weight(args, experiment_configuration),
             reward_mode=reward_mode(args, experiment_configuration),
+            reward_objective=reward_objective(experiment_configuration),
             throughput_reward_weight=throughput_reward_weight(args, experiment_configuration),
             progress_reward_weight=progress_reward_weight(args, experiment_configuration),
             gridlock_penalty_weight=gridlock_penalty_weight(args, experiment_configuration),
@@ -523,6 +529,14 @@ def experiment_configuration_sha256(experiment_configuration_path: Path | None) 
     if configuration_text is None:
         return None
     return sha256(configuration_text.encode('utf-8')).hexdigest()
+
+
+def reward_objective(
+    experiment_configuration: ExperimentConfiguration | None,
+) -> PpoRewardObjective:
+    if experiment_configuration is None:
+        return PpoRewardObjective.MAXIMIZE
+    return PpoRewardObjective(experiment_configuration.proximal_policy_optimization.reward_objective.value)
 
 
 def demand_scale_bounds(

@@ -402,6 +402,7 @@ def write_iteration_outputs(
         rollout_stats=rollout_stats,
         diagnostics=diagnostics,
         update_stats=update_stats,
+        reward_objective=config.reward_objective,
     )
     write_city_rollout_scalars(writer=writer, iteration=iteration, city_rollout_stats=city_rollout_stats)
     writer.add_scalar('diagnostics/update_skipped', float(update_skipped), iteration)

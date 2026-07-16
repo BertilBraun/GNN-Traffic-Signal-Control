@@ -28,6 +28,11 @@ class ExperimentPpoRewardMode(str, Enum):
     THROUGHPUT = 'throughput'
 
 
+class ExperimentPpoRewardObjective(str, Enum):
+    MAXIMIZE = 'maximize'
+    MINIMIZE = 'minimize'
+
+
 class ExperimentLearnedEvaluationActionMode(str, Enum):
     DETERMINISTIC = 'deterministic'
     SAMPLE = 'sample'
@@ -135,6 +140,7 @@ class ExperimentProximalPolicyOptimizationConfiguration(BaseModel):
     update_batch_workers: int = Field(ge=0, default=0)
     reward_sample_interval: int = Field(gt=0, default=5)
     reward_mode: ExperimentPpoRewardMode = ExperimentPpoRewardMode.DELAY_DENSITY
+    reward_objective: ExperimentPpoRewardObjective = ExperimentPpoRewardObjective.MAXIMIZE
     global_reward_weight: float = Field(ge=0.0, default=0.1)
     flow_reward_weight: float = Field(ge=0.0, default=0.1)
     throughput_reward_weight: float = Field(ge=0.0, default=1.0)

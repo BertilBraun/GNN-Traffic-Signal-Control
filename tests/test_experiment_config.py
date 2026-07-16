@@ -10,6 +10,7 @@ from src.movement.experiment_config import (  # noqa: E402
     CitySplit,
     ExperimentEvaluationPolicy,
     ExperimentLearnedEvaluationActionMode,
+    ExperimentPpoRewardObjective,
     load_experiment_configuration,
 )
 
@@ -110,6 +111,20 @@ def test_balanced_five_second_config_uses_immediate_yellow_and_dual_learned_eval
         ExperimentEvaluationPolicy.LEARNED,
         ExperimentEvaluationPolicy.LEARNED_GREEDY,
     )
+
+
+def test_negated_reward_sanity_config_minimizes_environment_reward() -> None:
+    configuration_path = (
+        ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker_5s_negated_reward_sanity_20.yaml'
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert configuration.proximal_policy_optimization.iterations == 20
+    assert configuration.proximal_policy_optimization.reward_objective == ExperimentPpoRewardObjective.MINIMIZE
 
 
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:

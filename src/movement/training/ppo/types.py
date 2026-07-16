@@ -24,6 +24,19 @@ class PpoRewardMode(str, Enum):
     THROUGHPUT = 'throughput'
 
 
+class PpoRewardObjective(str, Enum):
+    MAXIMIZE = 'maximize'
+    MINIMIZE = 'minimize'
+
+    @property
+    def multiplier(self) -> float:
+        match self:
+            case PpoRewardObjective.MAXIMIZE:
+                return 1.0
+            case PpoRewardObjective.MINIMIZE:
+                return -1.0
+
+
 @dataclass(frozen=True)
 class RolloutCity:
     city_name: str
@@ -78,6 +91,7 @@ class MovementPpoConfig:
     global_reward_weight: float
     flow_reward_weight: float
     reward_mode: PpoRewardMode
+    reward_objective: PpoRewardObjective
     throughput_reward_weight: float
     progress_reward_weight: float
     gridlock_penalty_weight: float

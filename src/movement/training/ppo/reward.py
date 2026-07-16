@@ -8,7 +8,19 @@ from time import perf_counter
 
 from src.movement.runtime import MovementControlRuntime
 from src.movement.sumo_backend import LaneApi, SimulationApi
-from src.movement.training.ppo.types import IntervalRewardResult, PpoRewardMode, RolloutContext
+from src.movement.training.ppo.types import (
+    IntervalRewardResult,
+    PpoRewardMode,
+    PpoRewardObjective,
+    RolloutContext,
+)
+
+
+def objective_rewards(
+    rewards: Sequence[float],
+    objective: PpoRewardObjective,
+) -> tuple[float, ...]:
+    return tuple(objective.multiplier * reward for reward in rewards)
 
 
 def advance_and_reward(

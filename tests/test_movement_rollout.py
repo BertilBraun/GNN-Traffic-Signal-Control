@@ -36,6 +36,7 @@ from src.movement.training.ppo.reward import (
     SpeedChangeTracker,
     clip_reward,
     delay_density_reward,
+    objective_rewards,
     speed_change_density,
     speed_deficit_density,
 )
@@ -59,6 +60,7 @@ from src.movement.training.ppo.types import (
     MovementPpoCheckpoint,
     MovementPpoConfig,
     PpoRewardMode,
+    PpoRewardObjective,
     RolloutCity,
     RolloutStats,
     ScratchModelConfig,
@@ -192,6 +194,20 @@ def test_reward_clipping_limits_gridlock_outliers() -> None:
     assert clip_reward(4.0, reward_clip=1.0) == 1.0
     assert clip_reward(-4.0, reward_clip=1.0) == -1.0
     assert clip_reward(0.25, reward_clip=1.0) == 0.25
+
+
+@pytest.mark.parametrize(
+    ('objective', 'expected'),
+    (
+        (PpoRewardObjective.MAXIMIZE, (0.25, -0.5)),
+        (PpoRewardObjective.MINIMIZE, (-0.25, 0.5)),
+    ),
+)
+def test_objective_rewards_transform_environment_rewards(
+    objective: PpoRewardObjective,
+    expected: tuple[float, ...],
+) -> None:
+    assert objective_rewards((0.25, -0.5), objective=objective) == expected
 
 
 def test_rollout_seed_can_be_fixed_for_overfit_experiments() -> None:
@@ -1042,6 +1058,7 @@ def _ppo_config(
         global_reward_weight=0.1,
         flow_reward_weight=0.1,
         reward_mode=PpoRewardMode.DELAY_DENSITY,
+        reward_objective=PpoRewardObjective.MAXIMIZE,
         throughput_reward_weight=1.0,
         progress_reward_weight=0.03,
         gridlock_penalty_weight=0.02,
