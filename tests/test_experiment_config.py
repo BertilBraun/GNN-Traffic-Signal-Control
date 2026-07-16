@@ -172,6 +172,19 @@ def test_grid_shape_generalization_config_balances_action_samples_and_separates_
     assert serialized['cities'][0]['sumo_config'] == ('configs/grid_generalization/matched_grid_5x2_tall/grid.sumocfg')
 
 
+def test_grid_signal_coverage_config_uses_sampled_learned_eval() -> None:
+    configuration = load_experiment_configuration(
+        configuration_path=ROOT / 'configs' / 'training' / 'grid_signal_coverage_6x6_evaluation.yaml',
+        project_root=ROOT,
+    )
+
+    assert (
+        configuration.proximal_policy_optimization.evaluation_learned_action_mode
+        == ExperimentLearnedEvaluationActionMode.SAMPLE
+    )
+    assert configuration.proximal_policy_optimization.evaluation_learned_temperature == 1.0
+
+
 def test_duplicate_city_names_fail(tmp_path: Path) -> None:
     _write_referenced_files(project_root=tmp_path)
     configuration_path = tmp_path / 'experiment.yaml'
