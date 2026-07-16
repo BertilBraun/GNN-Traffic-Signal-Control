@@ -37,10 +37,12 @@ uv run ruff check scripts src tests
 uv run pytest -q
 uv run python -c "import torch; raise SystemExit(0 if torch.cuda.is_available() else 'CUDA unavailable')"
 
-if ! pgrep -f "tensorboard --logdir runs --host 0.0.0.0 --port $TENSORBOARD_PORT" >/dev/null 2>&1; then
-    nohup uv run tensorboard --logdir runs --host 0.0.0.0 --port "$TENSORBOARD_PORT" \
-        > "runs/rl/$RUN_NAME/tensorboard.log" 2>&1 &
-    printf '%s\n' "$!" > "runs/rl/$RUN_NAME/tensorboard.pid"
+tensorboard_session="tb_${RUN_NAME}"
+if ! tmux has-session -t "$tensorboard_session" 2>/dev/null; then
+    tmux new-session -d -s "$tensorboard_session" \
+        "cd '$REPOSITORY_ROOT' && exec uv run tensorboard \
+        --logdir 'runs/rl/$RUN_NAME' --host 127.0.0.1 --port '$TENSORBOARD_PORT' \
+        > 'runs/rl/$RUN_NAME/tensorboard.log' 2>&1"
 fi
 
 initialization=(
