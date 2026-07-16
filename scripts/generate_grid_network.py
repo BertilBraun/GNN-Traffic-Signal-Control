@@ -80,21 +80,34 @@ def node_id(row: int, col: int) -> str:
     return f'N{row}_{col}'
 
 
-def build_node_specs(rows: int, cols: int, spacing: float) -> list[NodeSpec]:
+def build_node_specs(
+    rows: int,
+    cols: int,
+    spacing: float,
+    unsignalized_node_ids: frozenset[str] = frozenset(),
+) -> list[NodeSpec]:
     _validate_dimensions(rows, cols)
+    _validate_unsignalized_node_ids(
+        rows=rows,
+        cols=cols,
+        unsignalized_node_ids=unsignalized_node_ids,
+    )
     specs: list[NodeSpec] = []
     for row in range(rows):
         for col in range(cols):
             degree = _grid_degree(row, col, rows, cols)
+            current_node_id = node_id(row, col)
             specs.append(
                 NodeSpec(
-                    node_id=node_id(row, col),
+                    node_id=current_node_id,
                     row=row,
                     col=col,
                     degree=degree,
                     x=col * spacing,
                     y=(rows - 1 - row) * spacing,
-                    node_type='traffic_light' if degree >= 3 else None,
+                    node_type=(
+                        'traffic_light' if degree >= 3 and current_node_id not in unsignalized_node_ids else None
+                    ),
                 )
             )
     return specs
@@ -312,8 +325,14 @@ def generate_grid(
     spacing: float = 200.0,
     speed: float = 13.89,
     netconvert: bool = True,
+    unsignalized_node_ids: frozenset[str] = frozenset(),
 ) -> Path:
-    nodes = build_node_specs(rows=rows, cols=cols, spacing=spacing)
+    nodes = build_node_specs(
+        rows=rows,
+        cols=cols,
+        spacing=spacing,
+        unsignalized_node_ids=unsignalized_node_ids,
+    )
     stub_nodes = build_boundary_stub_specs(nodes, rows=rows, cols=cols, spacing=spacing)
     all_nodes = nodes + stub_nodes
     edges = build_edge_specs(all_nodes, speed=speed)
@@ -357,8 +376,6 @@ def _edge_between(from_node: NodeSpec, to_node: NodeSpec, speed: float) -> EdgeS
 
 
 def _incoming_lanes_for_target(node: NodeSpec) -> int:
-    if node.node_type != 'traffic_light':
-        return 2
     return 3 if node.degree >= 4 else 2
 
 
@@ -398,8 +415,26 @@ def _grid_degree(row: int, col: int, rows: int, cols: int) -> int:
 
 
 def _validate_dimensions(rows: int, cols: int) -> None:
-    if rows < 3 or cols < 3:
-        raise ValueError('Grid dimensions must be at least 3x3.')
+    if rows < 2 or cols < 2:
+        raise ValueError('Grid dimensions must be at least 2x2.')
+    if rows == 2 and cols == 2:
+        raise ValueError('A 2x2 grid has no controllable degree-three junctions.')
+
+
+def _validate_unsignalized_node_ids(
+    rows: int,
+    cols: int,
+    unsignalized_node_ids: frozenset[str],
+) -> None:
+    eligible_node_ids = frozenset(
+        node_id(row, col) for row in range(rows) for col in range(cols) if _grid_degree(row, col, rows, cols) >= 3
+    )
+    invalid_node_ids = tuple(sorted(unsignalized_node_ids - eligible_node_ids))
+    if invalid_node_ids:
+        raise ValueError(
+            'Only controllable degree-three or degree-four nodes can be made unsignalized: '
+            + ', '.join(invalid_node_ids)
+        )
 
 
 def _write_nodes(path: Path, nodes: list[NodeSpec]) -> None:
@@ -774,6 +809,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--out', dest='output_dir', type=Path, required=True, help='Output directory')
     parser.add_argument('--spacing', type=float, default=200.0, help='Distance between adjacent nodes in metres')
     parser.add_argument('--speed', type=float, default=13.89, help='Default speed in m/s')
+    parser.add_argument(
+        '--unsignalized-node',
+        action='append',
+        default=[],
+        help='Controllable internal node ID to leave unsignalized; may be repeated',
+    )
     parser.add_argument('--no-netconvert', action='store_true', help='Only write plain XML files')
     return parser.parse_args()
 
@@ -787,6 +828,7 @@ def main() -> None:
         spacing=args.spacing,
         speed=args.speed,
         netconvert=not args.no_netconvert,
+        unsignalized_node_ids=frozenset(args.unsignalized_node),
     )
 
 

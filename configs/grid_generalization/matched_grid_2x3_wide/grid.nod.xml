@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<nodes>
+    <node id="N0_0" x="0.00" y="200.00"/>
+    <node id="N0_1" x="200.00" y="200.00" type="traffic_light"/>
+    <node id="N0_2" x="400.00" y="200.00"/>
+    <node id="N1_0" x="0.00" y="0.00"/>
+    <node id="N1_1" x="200.00" y="0.00" type="traffic_light"/>
+    <node id="N1_2" x="400.00" y="0.00"/>
+    <node id="S_top_0" x="0.00" y="300.00"/>
+    <node id="S_left_0" x="-100.00" y="200.00"/>
+    <node id="S_top_1" x="200.00" y="300.00"/>
+    <node id="S_top_2" x="400.00" y="300.00"/>
+    <node id="S_right_0" x="500.00" y="200.00"/>
+    <node id="S_bottom_0" x="0.00" y="-100.00"/>
+    <node id="S_left_1" x="-100.00" y="0.00"/>
+    <node id="S_bottom_1" x="200.00" y="-100.00"/>
+    <node id="S_bottom_2" x="400.00" y="-100.00"/>
+    <node id="S_right_1" x="500.00" y="0.00"/>
+</nodes>

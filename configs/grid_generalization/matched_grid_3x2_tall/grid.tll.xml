@@ -1,0 +1,37 @@
+<?xml version="1.0" ?>
+<additional>
+    <tlLogic id="N1_0" type="static" programID="movement_safe" offset="0">
+        <phase duration="25" state="GGGGrrrrrrrr"/>
+        <phase duration="3" state="yyyyrrrrrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="GrrGrrGrrGrr"/>
+        <phase duration="3" state="yrryrryrryrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="GrrrrrrrrGGG"/>
+        <phase duration="3" state="yrrrrrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="rrrGGGGrrrrr"/>
+        <phase duration="3" state="rrryyyyrrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="rrrrrrGGGGrr"/>
+        <phase duration="3" state="rrrrrryyyyrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="N1_1" type="static" programID="movement_safe" offset="0">
+        <phase duration="25" state="GGGGrrrrrrrr"/>
+        <phase duration="3" state="yyyyrrrrrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="GrrGrrGrrGrr"/>
+        <phase duration="3" state="yrryrryrryrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="GrrrrrrrrGGG"/>
+        <phase duration="3" state="yrrrrrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="rrrGGGGrrrrr"/>
+        <phase duration="3" state="rrryyyyrrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+        <phase duration="25" state="rrrrrrGGGGrr"/>
+        <phase duration="3" state="rrrrrryyyyrr"/>
+        <phase duration="2" state="rrrrrrrrrrrr"/>
+    </tlLogic>
+</additional>

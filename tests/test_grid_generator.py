@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -30,6 +32,56 @@ def test_3x3_grid_marks_only_actual_intersections_as_traffic_lights() -> None:
         'N2_0',
         'N2_2',
     }
+
+
+@pytest.mark.parametrize(
+    ('rows', 'cols', 'expected_traffic_lights'),
+    [
+        (2, 3, {'N0_1', 'N1_1'}),
+        (3, 2, {'N1_0', 'N1_1'}),
+        (2, 5, {'N0_1', 'N0_2', 'N0_3', 'N1_1', 'N1_2', 'N1_3'}),
+    ],
+)
+def test_rectangular_grids_support_two_node_short_axes(
+    rows: int,
+    cols: int,
+    expected_traffic_lights: set[str],
+) -> None:
+    nodes = build_node_specs(rows=rows, cols=cols, spacing=200.0)
+
+    traffic_lights = {node.node_id for node in nodes if node.node_type == 'traffic_light'}
+
+    assert traffic_lights == expected_traffic_lights
+
+
+def test_two_by_two_grid_is_rejected_because_it_has_no_controllers() -> None:
+    with pytest.raises(ValueError, match='no controllable'):
+        build_node_specs(rows=2, cols=2, spacing=200.0)
+
+
+def test_signal_removal_preserves_four_way_lane_capacity() -> None:
+    nodes = build_node_specs(
+        rows=3,
+        cols=3,
+        spacing=200.0,
+        unsignalized_node_ids=frozenset({'N1_1'}),
+    )
+    edges = build_edge_specs(nodes)
+    lanes_by_edge = {edge.edge_id: edge.lanes for edge in edges}
+
+    assert next(node for node in nodes if node.node_id == 'N1_1').node_type is None
+    assert lanes_by_edge['N0_1_to_N1_1'] == 3
+    assert lanes_by_edge['N1_0_to_N1_1'] == 3
+
+
+def test_only_controllable_nodes_can_be_made_unsignalized() -> None:
+    with pytest.raises(ValueError, match='degree-three or degree-four'):
+        build_node_specs(
+            rows=3,
+            cols=3,
+            spacing=200.0,
+            unsignalized_node_ids=frozenset({'N0_0'}),
+        )
 
 
 def test_edge_lanes_match_target_junction_complexity() -> None:
