@@ -43,15 +43,35 @@ def test_single_pair_has_zero_interval_width() -> None:
     assert confidence_interval_half_width((3.0,)) == 0.0
 
 
+def test_paired_intervals_keep_equal_evaluation_seeds_from_training_replicas() -> None:
+    records = (
+        _record('learned', 1, 110.0, training_replica='5101'),
+        _record('max-pressure', 1, 100.0, training_replica='5101'),
+        _record('learned', 1, 130.0, training_replica='5102'),
+        _record('max-pressure', 1, 100.0, training_replica='5102'),
+    )
+
+    intervals = paired_confidence_intervals(
+        records=records,
+        policy='learned',
+        baseline_policy='max-pressure',
+        metrics=(MetricName.THROUGHPUT,),
+    )
+
+    assert intervals[0].pair_count == 2
+    assert intervals[0].mean_difference == 20.0
+
+
 def test_shared_baseline_records_are_replicated_for_each_training_design() -> None:
     baseline_records = (_record(policy='max-pressure', seed=1, throughput=100.0),)
 
     replicated = replicate_records_for_training_designs(
         records=baseline_records,
-        training_designs=('3x3', 'mixed'),
+        training_targets=(('3x3', '5101'), ('mixed', '5102')),
     )
 
     assert tuple(record.training_design for record in replicated) == ('3x3', 'mixed')
+    assert tuple(record.training_replica for record in replicated) == ('5101', '5102')
     assert all(record.policy == 'max-pressure' for record in replicated)
 
 
@@ -59,9 +79,11 @@ def _record(
     policy: str,
     seed: int,
     throughput: float,
+    training_replica: str = '5101',
 ) -> EvaluationSeedRecord:
     return EvaluationSeedRecord(
         training_design='mixed',
+        training_replica=training_replica,
         city_name='matched_grid_6x6_square_validation',
         policy=policy,
         seed=seed,

@@ -29,6 +29,7 @@ class MetricName(str, Enum):
 @dataclass(frozen=True)
 class EvaluationSeedRecord:
     training_design: str
+    training_replica: str
     city_name: str
     policy: str
     seed: int
@@ -75,15 +76,22 @@ class PairedConfidenceInterval(BaseModel):
 @dataclass(frozen=True)
 class LabeledPath:
     label: str
+    replica: str
     path: Path
 
 
-def load_evaluation_records(summary_path: Path, training_design: str) -> tuple[EvaluationSeedRecord, ...]:
+def load_evaluation_records(
+    summary_path: Path,
+    training_design: str,
+    training_replica: str | None = None,
+) -> tuple[EvaluationSeedRecord, ...]:
     with summary_path.open(newline='', encoding='utf-8') as handle:
         rows = tuple(csv.DictReader(handle))
+    replica = training_design if training_replica is None else training_replica
     return tuple(
         EvaluationSeedRecord(
             training_design=training_design,
+            training_replica=replica,
             city_name=row['city_name'],
             policy=row['policy'],
             seed=int(row['seed']),
@@ -104,10 +112,16 @@ def load_evaluation_records(summary_path: Path, training_design: str) -> tuple[E
 
 def replicate_records_for_training_designs(
     records: Sequence[EvaluationSeedRecord],
-    training_designs: Sequence[str],
+    training_targets: Sequence[tuple[str, str]],
 ) -> tuple[EvaluationSeedRecord, ...]:
     return tuple(
-        replace(record, training_design=training_design) for training_design in training_designs for record in records
+        replace(
+            record,
+            training_design=training_design,
+            training_replica=training_replica,
+        )
+        for training_design, training_replica in training_targets
+        for record in records
     )
 
 
@@ -133,13 +147,15 @@ def paired_confidence_intervals(
             and record.city_name == city_name
             and record.demand_scale == demand_scale
         )
-        policy_by_seed = {record.seed: record for record in group if record.policy == policy}
-        baseline_by_seed = {record.seed: record for record in group if record.policy == baseline_policy}
-        paired_seeds = tuple(sorted(policy_by_seed.keys() & baseline_by_seed.keys()))
+        policy_by_pair = {(record.training_replica, record.seed): record for record in group if record.policy == policy}
+        baseline_by_pair = {
+            (record.training_replica, record.seed): record for record in group if record.policy == baseline_policy
+        }
+        paired_keys = tuple(sorted(policy_by_pair.keys() & baseline_by_pair.keys()))
         for metric_name in metrics:
             differences = tuple(
-                policy_by_seed[seed].metric(metric_name) - baseline_by_seed[seed].metric(metric_name)
-                for seed in paired_seeds
+                policy_by_pair[pair_key].metric(metric_name) - baseline_by_pair[pair_key].metric(metric_name)
+                for pair_key in paired_keys
             )
             if not differences:
                 continue
@@ -151,7 +167,7 @@ def paired_confidence_intervals(
                     policy=policy,
                     baseline_policy=baseline_policy,
                     metric=metric_name.value,
-                    pair_count=len(differences),
+                    pair_count=len(paired_keys),
                     mean_difference=statistics.fmean(differences),
                     confidence_interval_half_width=confidence_interval_half_width(differences),
                 )
@@ -393,10 +409,17 @@ def _short_scenario_name(city_name: str) -> str:
 
 
 def _parse_labeled_path(value: str) -> LabeledPath:
-    label, separator, raw_path = value.partition('=')
-    if not separator or not label or not raw_path:
+    raw_label, separator, raw_path = value.partition('=')
+    if not separator or not raw_label or not raw_path:
         raise argparse.ArgumentTypeError('Expected LABEL=PATH.')
-    return LabeledPath(label=label, path=Path(raw_path))
+    label, replica_separator, replica = raw_label.partition('@')
+    if not label or (replica_separator and not replica):
+        raise argparse.ArgumentTypeError('Expected LABEL or LABEL@REPLICA before =PATH.')
+    return LabeledPath(
+        label=label,
+        replica=replica if replica_separator else label,
+        path=Path(raw_path),
+    )
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -405,7 +428,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--matrix-baseline-summary', type=Path, default=None)
     parser.add_argument('--learning-root', action='append', type=_parse_labeled_path, default=[])
     parser.add_argument('--learning-scenario', action='append', default=[])
-    parser.add_argument('--coverage-summary', type=Path, default=None)
+    parser.add_argument('--coverage-summary', action='append', type=_parse_labeled_path, default=[])
     parser.add_argument('--coverage-baseline-summary', type=Path, default=None)
     parser.add_argument('--output-directory', type=Path, required=True)
     parser.add_argument('--policy', default='learned-greedy')
@@ -423,6 +446,7 @@ def main() -> None:
         for record in load_evaluation_records(
             summary_path=labeled_path.path,
             training_design=labeled_path.label,
+            training_replica=labeled_path.replica,
         )
     )
     matrix_records = learned_matrix_records
@@ -431,10 +455,12 @@ def main() -> None:
             summary_path=arguments.matrix_baseline_summary,
             training_design='shared-baseline',
         )
-        training_designs = tuple(dict.fromkeys(record.training_design for record in learned_matrix_records))
+        training_targets = tuple(
+            dict.fromkeys((record.training_design, record.training_replica) for record in learned_matrix_records)
+        )
         matrix_records += replicate_records_for_training_designs(
             records=baseline_records,
-            training_designs=training_designs,
+            training_targets=training_targets,
         )
     if matrix_records:
         paired_policies = tuple(arguments.paired_policy) or (arguments.policy,)
@@ -466,18 +492,24 @@ def main() -> None:
             demand_scale=arguments.demand_scale,
             scenario_names=(frozenset(arguments.learning_scenario) if arguments.learning_scenario else None),
         )
-    if arguments.coverage_summary is not None:
-        coverage_records = load_evaluation_records(
-            summary_path=arguments.coverage_summary,
-            training_design='coverage',
+    if arguments.coverage_summary:
+        coverage_records = tuple(
+            record
+            for labeled_path in arguments.coverage_summary
+            for record in load_evaluation_records(
+                summary_path=labeled_path.path,
+                training_design='coverage',
+                training_replica=labeled_path.replica,
+            )
         )
         if arguments.coverage_baseline_summary is not None:
-            coverage_records += tuple(
-                replace(record, training_design='coverage')
-                for record in load_evaluation_records(
+            coverage_replicas = tuple(dict.fromkeys(record.training_replica for record in coverage_records))
+            coverage_records += replicate_records_for_training_designs(
+                records=load_evaluation_records(
                     summary_path=arguments.coverage_baseline_summary,
                     training_design='shared-baseline',
-                )
+                ),
+                training_targets=tuple(('coverage', training_replica) for training_replica in coverage_replicas),
             )
         coverage_intervals = tuple(
             interval
