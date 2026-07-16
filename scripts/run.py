@@ -31,6 +31,7 @@ from src.movement.features import (  # noqa: E402
 )
 from src.movement.graph import build_movement_graph  # noqa: E402
 from src.movement.graph_schema import MovementGraph  # noqa: E402
+from src.movement.initial_traffic import generate_initial_traffic_population  # noqa: E402
 from src.movement.models.bipartite_gnn import MovementScorer  # noqa: E402
 from src.movement.normalization import RunningNormalizer  # noqa: E402
 from src.movement.phase_selection import select_highest_scoring_phase
@@ -216,6 +217,24 @@ def parse_args() -> argparse.Namespace:
         help='Multiplier applied to route-file flow demand at runtime',
     )
     parser.add_argument(
+        '--initial-occupancy',
+        type=float,
+        default=0.0,
+        help='Fraction of network lane storage populated with randomly placed vehicles at time zero',
+    )
+    parser.add_argument(
+        '--warmup-steps',
+        type=int,
+        default=0,
+        help='Native SUMO seconds to simulate before controller decisions begin',
+    )
+    parser.add_argument(
+        '--gui-delay-ms',
+        type=int,
+        default=0,
+        help='Wall-clock delay per SUMO step when --gui is enabled',
+    )
+    parser.add_argument(
         '--time-to-teleport',
         type=int,
         default=-1,
@@ -227,6 +246,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.initial_occupancy < 0.0 or args.initial_occupancy > 1.0:
+        raise SystemExit('--initial-occupancy must be between 0 and 1')
+    if args.warmup_steps < 0:
+        raise SystemExit('--warmup-steps must not be negative')
+    if args.gui_delay_ms < 0:
+        raise SystemExit('--gui-delay-ms must not be negative')
     learned_policy = args.method == 'learned'
     scoring_method = None if learned_policy else MovementScoringMethod(args.method)
     if learned_policy and args.checkpoint is None:
@@ -235,6 +260,25 @@ def main() -> None:
         cfg_path=args.sumo_config_path,
         demand_scale=args.demand_scale,
     )
+    net_path = resolve_sumocfg_net_path(args.sumo_config_path)
+    initial_population = (
+        generate_initial_traffic_population(
+            cfg_path=args.sumo_config_path,
+            net_path=net_path,
+            target_occupancy=args.initial_occupancy,
+            seed=args.seed,
+        )
+        if args.initial_occupancy > 0.0
+        else None
+    )
+    route_files = (
+        demand_route_files.route_files
+        if initial_population is None
+        else (*demand_route_files.route_files, initial_population.route_file)
+    )
+    additional_sumo_args = list(route_file_sumo_args(route_files))
+    if args.gui and args.gui_delay_ms > 0:
+        additional_sumo_args.extend(('--delay', str(args.gui_delay_ms)))
     runtime = MovementControlRuntime(
         cfg_path=args.sumo_config_path,
         gui=args.gui,
@@ -243,14 +287,27 @@ def main() -> None:
         yellow_start_delay=args.yellow_start_delay,
         min_green_steps=args.min_green_steps,
         time_to_teleport=args.time_to_teleport,
-        additional_sumo_args=route_file_sumo_args(demand_route_files.route_files),
+        additional_sumo_args=tuple(additional_sumo_args),
     )
 
     try:
         runtime.start()
         print(f'Loaded {len(runtime.programs)} movement-aware traffic-light programs.')
+        if initial_population is not None:
+            print(
+                'Initial random population: '
+                f'{initial_population.generated_vehicle_count}/'
+                f'{initial_population.requested_vehicle_count} vehicles '
+                f'at occupancy={initial_population.target_occupancy:.3f}.'
+            )
+        if args.warmup_steps > 0:
+            print(f'Running {args.warmup_steps}s native SUMO warm-up.')
+            for _step in range(args.warmup_steps):
+                runtime.step()
+                if not runtime.is_running():
+                    break
+            print(f'Warm-up complete with {runtime.simulation_api.getMinExpectedNumber()} expected vehicles.')
         learned_context = None
-        net_path = resolve_sumocfg_net_path(args.sumo_config_path)
         graph = build_movement_graph(runtime.programs, net_path=net_path)
         lane_ids_by_edge, lane_geometries = lane_inputs_from_net(net_path)
         vehicle_snapshot_collector = VehicleSnapshotCollector(traci.vehicle)
@@ -334,6 +391,8 @@ def main() -> None:
                 break
     finally:
         runtime.close()
+        if initial_population is not None:
+            initial_population.cleanup()
         demand_route_files.cleanup()
 
 
