@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import sys
+import textwrap
 import xml.etree.ElementTree as ET
 
 import matplotlib.pyplot as plt
@@ -23,6 +24,7 @@ from src.movement.demand import route_file_sumo_args, route_files_for_demand_sca
 from src.movement.evaluation import EvaluationPolicy, run_evaluation_episode
 from src.movement.evaluation.runner import lane_inputs_from_net
 from src.movement.grid_study import (
+    COVERAGE_GENERALIZATION_4X4_SCENARIOS,
     GRID_COVERAGE_SCENARIOS,
     MATCHED_GRID_SCENARIOS,
     controllable_node_ids,
@@ -35,6 +37,7 @@ from src.movement.sumo_backend import SumoBackendKind
 class ValidationSuite(str, Enum):
     MATCHED = 'matched'
     COVERAGE = 'coverage'
+    COVERAGE_GENERALIZATION_4X4 = 'coverage-generalization-4x4'
     ALL = 'all'
 
 
@@ -367,7 +370,8 @@ def _plot_topology(
 
 def _topology_title(scenario: ValidationScenario, signalized_count: int) -> str:
     eligible_controller_count = len(controllable_node_ids(rows=scenario.rows, cols=scenario.cols))
-    return f'{scenario.name}: {signalized_count}/{eligible_controller_count} eligible junctions signalized'
+    display_name = textwrap.fill(scenario.name.replace('_', ' '), width=60)
+    return f'{display_name}\n{signalized_count}/{eligible_controller_count} eligible junctions signalized'
 
 
 def validation_scenarios(suite: ValidationSuite) -> tuple[ValidationScenario, ...]:
@@ -381,6 +385,11 @@ def validation_scenarios(suite: ValidationSuite) -> tuple[ValidationScenario, ..
         scenarios.extend(
             ValidationScenario(name=scenario.name, rows=scenario.rows, cols=scenario.cols)
             for scenario in GRID_COVERAGE_SCENARIOS
+        )
+    if suite is ValidationSuite.COVERAGE_GENERALIZATION_4X4:
+        scenarios.extend(
+            ValidationScenario(name=scenario.name, rows=scenario.rows, cols=scenario.cols)
+            for scenario in COVERAGE_GENERALIZATION_4X4_SCENARIOS
         )
     return tuple(scenarios)
 

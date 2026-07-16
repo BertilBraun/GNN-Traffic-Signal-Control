@@ -7,6 +7,9 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.movement.grid_study import (
+    COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS,
+    COVERAGE_GENERALIZATION_4X4_TRAINING_SCENARIOS,
+    COVERAGE_GENERALIZATION_4X4_VALIDATION_SCENARIO,
     GRID_COVERAGE_SCENARIOS,
     MATCHED_GRID_SCENARIOS,
     GridStudyRole,
@@ -71,3 +74,50 @@ def test_coverage_scenarios_are_nested_and_preserve_geometry() -> None:
     assert tuple(len(signal_set) for signal_set in signal_sets) == (32, 24, 16, 8)
     assert signal_sets[3] < signal_sets[2] < signal_sets[1] < signal_sets[0]
     assert all(scenario.rows == 6 and scenario.cols == 6 for scenario in GRID_COVERAGE_SCENARIOS)
+
+
+def test_coverage_generalization_training_masks_are_distinct_and_balanced() -> None:
+    signal_sets = tuple(scenario.signalized_node_ids for scenario in COVERAGE_GENERALIZATION_4X4_TRAINING_SCENARIOS)
+    signal_frequencies = {
+        node_id: sum(node_id in signal_set for signal_set in signal_sets)
+        for node_id in controllable_node_ids(rows=4, cols=4)
+    }
+
+    assert len(signal_sets) == 5
+    assert len(set(signal_sets)) == 5
+    assert all(len(signal_set) == 6 for signal_set in signal_sets)
+    assert set().union(*signal_sets) == controllable_node_ids(rows=4, cols=4)
+    assert set(signal_frequencies.values()) == {2, 3}
+
+
+def test_coverage_generalization_evaluation_masks_are_fresh() -> None:
+    training_signal_sets = {scenario.signalized_node_ids for scenario in COVERAGE_GENERALIZATION_4X4_TRAINING_SCENARIOS}
+    validation_signal_set = COVERAGE_GENERALIZATION_4X4_VALIDATION_SCENARIO.signalized_node_ids
+    evaluation_50_signal_sets = {
+        scenario.signalized_node_ids
+        for scenario in COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS
+        if scenario.signalized_controller_count == 6
+    }
+
+    assert len(evaluation_50_signal_sets) == 5
+    assert training_signal_sets.isdisjoint(evaluation_50_signal_sets)
+    assert validation_signal_set not in training_signal_sets | evaluation_50_signal_sets
+
+
+def test_coverage_generalization_evaluates_requested_coverage_levels() -> None:
+    scenario_count_by_signal_count = {
+        signal_count: sum(
+            scenario.signalized_controller_count == signal_count
+            for scenario in COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS
+        )
+        for signal_count in (3, 6, 9, 12)
+    }
+
+    assert scenario_count_by_signal_count == {3: 5, 6: 5, 9: 5, 12: 1}
+    for signal_count in (3, 6, 9):
+        signal_sets = {
+            scenario.signalized_node_ids
+            for scenario in COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS
+            if scenario.signalized_controller_count == signal_count
+        }
+        assert len(signal_sets) == 5

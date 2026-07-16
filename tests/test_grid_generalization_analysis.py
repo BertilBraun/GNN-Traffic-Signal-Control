@@ -10,6 +10,7 @@ from scripts.analyze_grid_generalization_results import (
     EvaluationSeedRecord,
     MetricName,
     confidence_interval_half_width,
+    coverage_paired_confidence_intervals,
     paired_confidence_intervals,
     replicate_records_for_training_designs,
 )
@@ -75,16 +76,46 @@ def test_shared_baseline_records_are_replicated_for_each_training_design() -> No
     assert all(record.policy == 'max-pressure' for record in replicated)
 
 
+def test_coverage_intervals_pool_masks_at_the_same_coverage() -> None:
+    records = tuple(
+        _record(
+            policy=policy,
+            seed=seed,
+            throughput=throughput,
+            city_name=city_name,
+        )
+        for city_name, policy, seed, throughput in (
+            ('coverage_grid_signals_06_of_12_mask_01', 'learned', 1, 110.0),
+            ('coverage_grid_signals_06_of_12_mask_01', 'max-pressure', 1, 100.0),
+            ('coverage_grid_signals_06_of_12_mask_02', 'learned', 1, 130.0),
+            ('coverage_grid_signals_06_of_12_mask_02', 'max-pressure', 1, 100.0),
+        )
+    )
+
+    intervals = coverage_paired_confidence_intervals(
+        records=records,
+        policy='learned',
+        baseline_policy='max-pressure',
+        metrics=(MetricName.THROUGHPUT,),
+    )
+
+    assert len(intervals) == 1
+    assert intervals[0].city_name == 'signal_coverage_050_percent'
+    assert intervals[0].pair_count == 2
+    assert intervals[0].mean_difference == 20.0
+
+
 def _record(
     policy: str,
     seed: int,
     throughput: float,
     training_replica: str = '5101',
+    city_name: str = 'matched_grid_6x6_square_validation',
 ) -> EvaluationSeedRecord:
     return EvaluationSeedRecord(
         training_design='mixed',
         training_replica=training_replica,
-        city_name='matched_grid_6x6_square_validation',
+        city_name=city_name,
         policy=policy,
         seed=seed,
         demand_scale=0.7,

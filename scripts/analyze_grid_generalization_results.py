@@ -175,6 +175,62 @@ def paired_confidence_intervals(
     return tuple(intervals)
 
 
+def coverage_paired_confidence_intervals(
+    records: Sequence[EvaluationSeedRecord],
+    policy: str,
+    baseline_policy: str,
+    metrics: tuple[MetricName, ...] = tuple(MetricName),
+) -> tuple[PairedConfidenceInterval, ...]:
+    grouping_keys = tuple(
+        dict.fromkeys(
+            (record.training_design, _signal_coverage(record.city_name), record.demand_scale)
+            for record in records
+            if record.policy == policy
+        )
+    )
+    intervals: list[PairedConfidenceInterval] = []
+    for training_design, signal_coverage, demand_scale in grouping_keys:
+        group = tuple(
+            record
+            for record in records
+            if record.training_design == training_design
+            and _signal_coverage(record.city_name) == signal_coverage
+            and record.demand_scale == demand_scale
+        )
+        policy_by_pair = {
+            (record.training_replica, record.city_name, record.seed): record
+            for record in group
+            if record.policy == policy
+        }
+        baseline_by_pair = {
+            (record.training_replica, record.city_name, record.seed): record
+            for record in group
+            if record.policy == baseline_policy
+        }
+        paired_keys = tuple(sorted(policy_by_pair.keys() & baseline_by_pair.keys()))
+        for metric_name in metrics:
+            differences = tuple(
+                policy_by_pair[pair_key].metric(metric_name) - baseline_by_pair[pair_key].metric(metric_name)
+                for pair_key in paired_keys
+            )
+            if not differences:
+                continue
+            intervals.append(
+                PairedConfidenceInterval(
+                    training_design=training_design,
+                    city_name=f'signal_coverage_{round(signal_coverage * 100):03d}_percent',
+                    demand_scale=demand_scale,
+                    policy=policy,
+                    baseline_policy=baseline_policy,
+                    metric=metric_name.value,
+                    pair_count=len(paired_keys),
+                    mean_difference=statistics.fmean(differences),
+                    confidence_interval_half_width=confidence_interval_half_width(differences),
+                )
+            )
+    return tuple(intervals)
+
+
 def confidence_interval_half_width(values: Sequence[float]) -> float:
     if len(values) <= 1:
         return 0.0
@@ -515,7 +571,7 @@ def main() -> None:
         coverage_intervals = tuple(
             interval
             for policy in coverage_policies
-            for interval in paired_confidence_intervals(
+            for interval in coverage_paired_confidence_intervals(
                 records=coverage_records,
                 policy=policy,
                 baseline_policy=arguments.baseline_policy,

@@ -26,6 +26,13 @@ def test_validation_suite_includes_all_matched_and_coverage_scenarios() -> None:
     assert all_scenarios == matched + coverage
 
 
+def test_validation_suite_includes_coverage_generalization_variants() -> None:
+    scenarios = validation_scenarios(ValidationSuite.COVERAGE_GENERALIZATION_4X4)
+
+    assert len(scenarios) == 22
+    assert all(scenario.rows == 4 and scenario.cols == 4 for scenario in scenarios)
+
+
 def test_coverage_scenarios_use_controller_eligible_denominator() -> None:
     assert tuple(scenario.name for scenario in GRID_COVERAGE_SCENARIOS) == (
         'coverage_grid_6x6_eligible_signals_32_of_32',

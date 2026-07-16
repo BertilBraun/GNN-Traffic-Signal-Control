@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import math
+import random
 
 
 class GridStudyRole(str, Enum):
@@ -50,6 +51,29 @@ class GridCoverageSpec:
 
 
 @dataclass(frozen=True)
+class GridCoverageVariantSpec:
+    name: str
+    rows: int
+    cols: int
+    signalized_controller_count: int
+    mask_seed: int
+    role: GridStudyRole
+
+    @property
+    def signalized_node_ids(self) -> frozenset[str]:
+        return spatially_distributed_signalized_node_ids(
+            rows=self.rows,
+            cols=self.cols,
+            signal_count=self.signalized_controller_count,
+            mask_seed=self.mask_seed,
+        )
+
+    @property
+    def unsignalized_node_ids(self) -> frozenset[str]:
+        return controllable_node_ids(rows=self.rows, cols=self.cols) - self.signalized_node_ids
+
+
+@dataclass(frozen=True)
 class GridRolloutAllocation:
     scenario_name: str
     controller_count: int
@@ -77,6 +101,77 @@ GRID_COVERAGE_SCENARIOS: tuple[GridCoverageSpec, ...] = (
     GridCoverageSpec('coverage_grid_6x6_eligible_signals_24_of_32', 6, 6, 24),
     GridCoverageSpec('coverage_grid_6x6_eligible_signals_16_of_32', 6, 6, 16),
     GridCoverageSpec('coverage_grid_6x6_eligible_signals_08_of_32', 6, 6, 8),
+)
+
+COVERAGE_GENERALIZATION_4X4_TRAINING_SCENARIOS: tuple[GridCoverageVariantSpec, ...] = tuple(
+    GridCoverageVariantSpec(
+        name=f'coverage_generalization_grid_4x4_train_signals_06_of_12_mask_{mask_index:02d}',
+        rows=4,
+        cols=4,
+        signalized_controller_count=6,
+        mask_seed=mask_seed,
+        role=GridStudyRole.TRAIN,
+    )
+    for mask_index, mask_seed in enumerate((1_074, 1_198, 1_415, 1_102, 1_051), start=1)
+)
+
+COVERAGE_GENERALIZATION_4X4_VALIDATION_SCENARIO = GridCoverageVariantSpec(
+    name='coverage_generalization_grid_4x4_validation_signals_06_of_12_mask_01',
+    rows=4,
+    cols=4,
+    signalized_controller_count=6,
+    mask_seed=2_000,
+    role=GridStudyRole.VALIDATION,
+)
+
+COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS: tuple[GridCoverageVariantSpec, ...] = (
+    *tuple(
+        GridCoverageVariantSpec(
+            name=f'coverage_generalization_grid_4x4_eval_signals_03_of_12_mask_{mask_index:02d}',
+            rows=4,
+            cols=4,
+            signalized_controller_count=3,
+            mask_seed=mask_seed,
+            role=GridStudyRole.EVALUATION_ONLY,
+        )
+        for mask_index, mask_seed in ((1, 3_101), (2, 3_102), (4, 3_104), (5, 3_105), (6, 3_107))
+    ),
+    *tuple(
+        GridCoverageVariantSpec(
+            name=f'coverage_generalization_grid_4x4_eval_signals_06_of_12_mask_{mask_index:02d}',
+            rows=4,
+            cols=4,
+            signalized_controller_count=6,
+            mask_seed=3_200 + mask_index,
+            role=GridStudyRole.EVALUATION_ONLY,
+        )
+        for mask_index in range(1, 6)
+    ),
+    *tuple(
+        GridCoverageVariantSpec(
+            name=f'coverage_generalization_grid_4x4_eval_signals_09_of_12_mask_{mask_index:02d}',
+            rows=4,
+            cols=4,
+            signalized_controller_count=9,
+            mask_seed=3_300 + mask_index,
+            role=GridStudyRole.EVALUATION_ONLY,
+        )
+        for mask_index in range(1, 6)
+    ),
+    GridCoverageVariantSpec(
+        name='coverage_generalization_grid_4x4_eval_signals_12_of_12_mask_01',
+        rows=4,
+        cols=4,
+        signalized_controller_count=12,
+        mask_seed=3_401,
+        role=GridStudyRole.EVALUATION_ONLY,
+    ),
+)
+
+COVERAGE_GENERALIZATION_4X4_SCENARIOS: tuple[GridCoverageVariantSpec, ...] = (
+    *COVERAGE_GENERALIZATION_4X4_TRAINING_SCENARIOS,
+    COVERAGE_GENERALIZATION_4X4_VALIDATION_SCENARIO,
+    *COVERAGE_GENERALIZATION_4X4_EVALUATION_SCENARIOS,
 )
 
 
@@ -114,6 +209,37 @@ def evenly_spaced_signalized_node_ids(
                 -abs(candidate[0] - center[0]) - abs(candidate[1] - center[1]),
                 -candidate[0],
                 -candidate[1],
+            ),
+        )
+        selected.append(next_node)
+    return frozenset(f'N{row}_{col}' for row, col in selected)
+
+
+def spatially_distributed_signalized_node_ids(
+    rows: int,
+    cols: int,
+    signal_count: int,
+    mask_seed: int,
+) -> frozenset[str]:
+    candidates = tuple(
+        (row, col)
+        for row in range(rows)
+        for col in range(cols)
+        if _grid_degree(row=row, col=col, rows=rows, cols=cols) >= 3
+    )
+    if signal_count <= 0 or signal_count > len(candidates):
+        raise ValueError(f'signal_count must be between 1 and {len(candidates)}.')
+    shuffled_candidates = list(candidates)
+    random.Random(mask_seed).shuffle(shuffled_candidates)
+    tie_break_rank = {candidate: rank for rank, candidate in enumerate(shuffled_candidates)}
+    selected = [shuffled_candidates[0]]
+    while len(selected) < signal_count:
+        remaining = tuple(candidate for candidate in candidates if candidate not in selected)
+        next_node = max(
+            remaining,
+            key=lambda candidate: (
+                min(math.hypot(candidate[0] - row, candidate[1] - col) for row, col in selected),
+                -tie_break_rank[candidate],
             ),
         )
         selected.append(next_node)

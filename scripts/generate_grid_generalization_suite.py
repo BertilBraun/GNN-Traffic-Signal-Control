@@ -11,12 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.generate_grid_network import generate_grid
-from src.movement.grid_study import GRID_COVERAGE_SCENARIOS, MATCHED_GRID_SCENARIOS
+from src.movement.grid_study import (
+    COVERAGE_GENERALIZATION_4X4_SCENARIOS,
+    GRID_COVERAGE_SCENARIOS,
+    MATCHED_GRID_SCENARIOS,
+)
 
 
 class GridSuite(str, Enum):
     MATCHED = 'matched'
     COVERAGE = 'coverage'
+    COVERAGE_GENERALIZATION_4X4 = 'coverage-generalization-4x4'
     ALL = 'all'
 
 
@@ -34,6 +39,19 @@ def generate_matched_suite(output_root: Path, skip_existing: bool) -> None:
 
 def generate_coverage_suite(output_root: Path, skip_existing: bool) -> None:
     for scenario in GRID_COVERAGE_SCENARIOS:
+        output_dir = output_root / scenario.name
+        if _should_skip(output_dir=output_dir, skip_existing=skip_existing):
+            continue
+        generate_grid(
+            rows=scenario.rows,
+            cols=scenario.cols,
+            output_dir=output_dir,
+            unsignalized_node_ids=scenario.unsignalized_node_ids,
+        )
+
+
+def generate_coverage_generalization_4x4_suite(output_root: Path, skip_existing: bool) -> None:
+    for scenario in COVERAGE_GENERALIZATION_4X4_SCENARIOS:
         output_dir = output_root / scenario.name
         if _should_skip(output_dir=output_dir, skip_existing=skip_existing):
             continue
@@ -85,6 +103,11 @@ def main() -> None:
         )
     if suite in (GridSuite.COVERAGE, GridSuite.ALL):
         generate_coverage_suite(
+            output_root=arguments.output_root,
+            skip_existing=arguments.skip_existing,
+        )
+    if suite is GridSuite.COVERAGE_GENERALIZATION_4X4:
+        generate_coverage_generalization_4x4_suite(
             output_root=arguments.output_root,
             skip_existing=arguments.skip_existing,
         )
