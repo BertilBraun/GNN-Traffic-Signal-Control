@@ -11,6 +11,7 @@ from scripts.analyze_grid_generalization_results import (
     MetricName,
     confidence_interval_half_width,
     paired_confidence_intervals,
+    replicate_records_for_training_designs,
 )
 
 
@@ -40,6 +41,18 @@ def test_paired_confidence_intervals_pair_policy_and_baseline_by_seed() -> None:
 
 def test_single_pair_has_zero_interval_width() -> None:
     assert confidence_interval_half_width((3.0,)) == 0.0
+
+
+def test_shared_baseline_records_are_replicated_for_each_training_design() -> None:
+    baseline_records = (_record(policy='max-pressure', seed=1, throughput=100.0),)
+
+    replicated = replicate_records_for_training_designs(
+        records=baseline_records,
+        training_designs=('3x3', 'mixed'),
+    )
+
+    assert tuple(record.training_design for record in replicated) == ('3x3', 'mixed')
+    assert all(record.policy == 'max-pressure' for record in replicated)
 
 
 def _record(

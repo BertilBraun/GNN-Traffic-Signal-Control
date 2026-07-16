@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 import math
 from pathlib import Path
@@ -99,6 +99,15 @@ def load_evaluation_records(summary_path: Path, training_design: str) -> tuple[E
         )
         for row in rows
         if row['row_type'] == 'seed'
+    )
+
+
+def replicate_records_for_training_designs(
+    records: Sequence[EvaluationSeedRecord],
+    training_designs: Sequence[str],
+) -> tuple[EvaluationSeedRecord, ...]:
+    return tuple(
+        replace(record, training_design=training_design) for training_design in training_designs for record in records
     )
 
 
@@ -386,10 +395,13 @@ def _parse_labeled_path(value: str) -> LabeledPath:
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--matrix-summary', action='append', type=_parse_labeled_path, default=[])
+    parser.add_argument('--matrix-baseline-summary', type=Path, default=None)
     parser.add_argument('--learning-root', action='append', type=_parse_labeled_path, default=[])
     parser.add_argument('--coverage-summary', type=Path, default=None)
+    parser.add_argument('--coverage-baseline-summary', type=Path, default=None)
     parser.add_argument('--output-directory', type=Path, required=True)
     parser.add_argument('--policy', default='learned-greedy')
+    parser.add_argument('--paired-policy', action='append', default=[])
     parser.add_argument('--baseline-policy', default='max-pressure')
     parser.add_argument('--demand-scale', type=float, default=0.7)
     return parser.parse_args()
@@ -397,7 +409,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> None:
     arguments = parse_arguments()
-    matrix_records = tuple(
+    learned_matrix_records = tuple(
         record
         for labeled_path in arguments.matrix_summary
         for record in load_evaluation_records(
@@ -405,11 +417,27 @@ def main() -> None:
             training_design=labeled_path.label,
         )
     )
+    matrix_records = learned_matrix_records
+    if arguments.matrix_baseline_summary is not None:
+        baseline_records = load_evaluation_records(
+            summary_path=arguments.matrix_baseline_summary,
+            training_design='shared-baseline',
+        )
+        training_designs = tuple(dict.fromkeys(record.training_design for record in learned_matrix_records))
+        matrix_records += replicate_records_for_training_designs(
+            records=baseline_records,
+            training_designs=training_designs,
+        )
     if matrix_records:
-        intervals = paired_confidence_intervals(
-            records=matrix_records,
-            policy=arguments.policy,
-            baseline_policy=arguments.baseline_policy,
+        paired_policies = tuple(arguments.paired_policy) or (arguments.policy,)
+        intervals = tuple(
+            interval
+            for policy in paired_policies
+            for interval in paired_confidence_intervals(
+                records=matrix_records,
+                policy=policy,
+                baseline_policy=arguments.baseline_policy,
+            )
         )
         write_paired_intervals(
             path=arguments.output_directory / 'paired_confidence_intervals.csv',
@@ -433,6 +461,27 @@ def main() -> None:
         coverage_records = load_evaluation_records(
             summary_path=arguments.coverage_summary,
             training_design='coverage',
+        )
+        if arguments.coverage_baseline_summary is not None:
+            coverage_records += tuple(
+                replace(record, training_design='coverage')
+                for record in load_evaluation_records(
+                    summary_path=arguments.coverage_baseline_summary,
+                    training_design='shared-baseline',
+                )
+            )
+        coverage_intervals = tuple(
+            interval
+            for policy in (tuple(arguments.paired_policy) or (arguments.policy,))
+            for interval in paired_confidence_intervals(
+                records=coverage_records,
+                policy=policy,
+                baseline_policy=arguments.baseline_policy,
+            )
+        )
+        write_paired_intervals(
+            path=arguments.output_directory / 'coverage_paired_confidence_intervals.csv',
+            intervals=coverage_intervals,
         )
         plot_signal_coverage(
             records=coverage_records,
