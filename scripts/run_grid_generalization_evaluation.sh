@@ -14,6 +14,7 @@ SEEDS="${SEEDS:-7101 7102 7103 7104 7105 7106}"
 DEMAND_SCALES="${DEMAND_SCALES:-0.6 0.7 0.8}"
 POLICIES="${POLICIES:-}"
 CITIES="${CITIES:-}"
+BACKEND="${BACKEND:-libsumo}"
 
 cd "$REPOSITORY_ROOT"
 ulimit -n "$OPEN_FILE_LIMIT"
@@ -35,6 +36,7 @@ printf 'seeds=%s\n' "$SEEDS"
 printf 'demand_scales=%s\n' "$DEMAND_SCALES"
 printf 'policies=%s\n' "${POLICIES:-experiment-config-default}"
 printf 'cities=%s\n' "${CITIES:-all}"
+printf 'backend=%s\n' "$BACKEND"
 printf 'open_file_limit=%s\n' "$(ulimit -n)"
 
 read -r -a seed_arguments <<< "$SEEDS"
@@ -60,6 +62,7 @@ uv run python scripts/eval_multi_city.py \
     "${checkpoint_arguments[@]}" \
     "${policy_arguments[@]}" \
     "${city_arguments[@]}" \
+    --backend "$BACKEND" \
     --output-dir "$OUTPUT_DIRECTORY" \
     --log-dir "$TENSORBOARD_DIRECTORY" \
     --workers "$WORKERS" \

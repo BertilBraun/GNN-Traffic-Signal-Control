@@ -29,6 +29,7 @@ from src.movement.experiment_config import (  # noqa: E402
     ExperimentEvaluationPolicy,
     load_experiment_configuration,
 )
+from src.movement.sumo_backend import SumoBackendKind  # noqa: E402
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -53,6 +54,12 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument('--output-dir', type=Path, required=True, help='Directory for CSV and JSON outputs')
     parser.add_argument('--device', default=None, help='Override the configured learned-policy inference device')
+    parser.add_argument(
+        '--backend',
+        choices=tuple(backend.value for backend in SumoBackendKind),
+        default=SumoBackendKind.TRACI.value,
+        help='SUMO backend used by each evaluation worker',
+    )
     parser.add_argument(
         '--workers',
         type=int,
@@ -121,6 +128,7 @@ def main() -> None:
         steps=steps,
         demand_scales=demand_scales,
         learned_policy_config=learned_policy_config,
+        backend_kind=SumoBackendKind(parsed_arguments.backend),
         episode_runner=FileCachedEpisodeRunner(
             cache_dir=parsed_arguments.cache_dir,
             episode_runner=default_episode_runner,

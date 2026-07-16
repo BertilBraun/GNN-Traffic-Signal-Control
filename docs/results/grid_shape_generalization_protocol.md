@@ -23,6 +23,10 @@ The study preserves:
 - sampled and greedy learned evaluation;
 - max-pressure, queue, fixed-time, and uniform-random baselines.
 
+Training, periodic development evaluation, and final evaluation use the pinned `libsumo` backend.
+TraCI is not mixed into the reported matrix because identical seeded episodes are not numerically
+interchangeable across the two backends.
+
 ## Matched topology suite
 
 The generator now accepts a short axis of two junctions. A 2×2 grid remains invalid because it has no
