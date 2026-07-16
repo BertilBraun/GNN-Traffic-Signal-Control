@@ -328,7 +328,7 @@ def plot_learning_curves(
     for axis in axes[-1]:
         axis.set_xlabel('PPO iteration')
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize=8)
+    figure.legend(handles, labels, loc='center left', bbox_to_anchor=(0.82, 0.5), fontsize=8)
     figure.suptitle(f'{policy} development evaluation at demand {demand_scale:.1f}')
     figure.tight_layout(rect=(0.0, 0.0, 0.82, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
