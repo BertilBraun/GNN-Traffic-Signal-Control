@@ -14,7 +14,9 @@ SUMO_HOME="${SUMO_HOME:-/usr/share/sumo}"
 cd "$REPOSITORY_ROOT"
 ulimit -n "$OPEN_FILE_LIMIT"
 export SUMO_HOME
-export PYTHONPATH="$REPOSITORY_ROOT:$SUMO_HOME/tools${PYTHONPATH:+:$PYTHONPATH}"
+# The uv environment supplies pinned libsumo/sumolib packages. Adding SUMO's
+# system tools here can mask them with an incompatible system Python package.
+export PYTHONPATH="$REPOSITORY_ROOT"
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
@@ -35,7 +37,7 @@ uv sync --group dev
 uv run ruff format --check scripts src tests
 uv run ruff check scripts src tests
 uv run pytest -q
-uv run python -c "import torch; raise SystemExit(0 if torch.cuda.is_available() else 'CUDA unavailable')"
+uv run python -c "import libsumo, torch; print(f'libsumo={libsumo.__file__}'); raise SystemExit(0 if torch.cuda.is_available() else 'CUDA unavailable')"
 
 tensorboard_session="tb_${RUN_NAME}"
 if ! tmux has-session -t "$tensorboard_session" 2>/dev/null; then
