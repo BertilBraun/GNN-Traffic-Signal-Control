@@ -58,9 +58,15 @@ if [[ -n "${RESUME_CHECKPOINT:-}" ]]; then
     initialization=(--resume-checkpoint "$RESUME_CHECKPOINT")
 fi
 
+training_overrides=()
+if [[ -n "${EVAL_EVERY_OVERRIDE:-}" ]]; then
+    training_overrides+=(--eval-every "$EVAL_EVERY_OVERRIDE")
+fi
+
 uv run python scripts/train_rl.py \
     --experiment-config "$EXPERIMENT_CONFIG" \
     "${initialization[@]}" \
+    "${training_overrides[@]}" \
     --iterations "$FINAL_ITERATIONS" \
     --device "$DEVICE" \
     --seed "$TRAINING_SEED" \
