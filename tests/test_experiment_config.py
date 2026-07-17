@@ -124,6 +124,7 @@ def test_current_city_gate_preserves_demand_and_balances_action_samples() -> Non
 
     assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (26, 13, 16, 20)
     assert configuration.proximal_policy_optimization.rollouts_per_update == 75
+    assert configuration.proximal_policy_optimization.rollout_workers == 24
     assert configuration.proximal_policy_optimization.steps_per_rollout == 200
     assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
     assert configuration.simulation.decision_interval == 5
@@ -133,10 +134,12 @@ def test_current_city_gate_preserves_demand_and_balances_action_samples() -> Non
     assert configuration.simulation.maximum_initial_occupancy == 0.08
     assert configuration.demand.minimum_train_scale == 0.8
     assert configuration.demand.maximum_train_scale == 1.2
+    assert configuration.demand.evaluation_scales == (1.0,)
     assert configuration.train_cities[1].minimum_train_scale == 0.8
     assert configuration.train_cities[1].maximum_train_scale == 1.05
     assert configuration.train_cities[2].minimum_train_scale == 0.8
     assert configuration.train_cities[2].maximum_train_scale == 1.05
+    assert configuration.proximal_policy_optimization.evaluation_workers == 12
     assert configuration.evaluation.steps == 1200
     assert configuration.proximal_policy_optimization.progress_reward_weight == 1.0
     assert configuration.proximal_policy_optimization.discharge_reward_weight == 10.0

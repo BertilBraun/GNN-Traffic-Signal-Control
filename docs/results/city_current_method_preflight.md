@@ -41,7 +41,9 @@ The new 200-decision allocation is inverse to controller count:
 | Heidelberg | 20 | 224,000 |
 
 The total is 876,400 junction/action samples per update, within 0.2% of the previous 875,000-sample
-budget. PPO packs minibatches by actual junction/action samples with a target of 16,384.
+budget. PPO packs minibatches by actual junction/action samples with a target of 16,384. The rented
+gate node exposes 26 allocated CPU cores, so rollout collection uses 24 workers and periodic
+evaluation uses 12 workers.
 
 ## Local occupancy and warm-up check
 
@@ -82,6 +84,10 @@ report. Under the new initialization and timing, max-pressure completion was 56.
 Mannheim, 44.9% Stuttgart, 66.2% Heidelberg, and 50.8% Freiburg, with zero teleports. Periodic gate
 evaluation therefore remains at 1,200 seconds for comparability and cost; the 1,800-second condition
 is retained as a final stress check.
+
+Periodic development evaluation retains all three seeds but runs only at demand `1.0`. The frozen
+checkpoint receives the complete `0.8`, `1.0`, and `1.2` demand matrix once. This avoids tripling
+every periodic evaluation without reducing development-seed coverage.
 
 Raw local outputs are under:
 
