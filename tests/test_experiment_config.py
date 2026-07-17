@@ -122,11 +122,11 @@ def test_current_city_gate_preserves_demand_and_balances_action_samples() -> Non
         project_root=ROOT,
     )
 
-    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (26, 13, 16, 20)
-    assert configuration.proximal_policy_optimization.rollouts_per_update == 75
+    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (14, 7, 9, 11)
+    assert configuration.proximal_policy_optimization.rollouts_per_update == 41
     assert configuration.proximal_policy_optimization.rollout_workers == 24
     assert configuration.proximal_policy_optimization.steps_per_rollout == 200
-    assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
+    assert configuration.proximal_policy_optimization.action_samples_per_batch == 32768
     assert configuration.simulation.decision_interval == 5
     assert configuration.simulation.yellow_start_delay == 0
     assert configuration.simulation.warmup_steps == 15

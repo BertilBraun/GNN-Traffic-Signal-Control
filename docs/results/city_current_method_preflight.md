@@ -35,15 +35,22 @@ The new 200-decision allocation is inverse to controller count:
 
 | city | rollouts/update | action samples/update |
 | --- | ---: | ---: |
-| Karlsruhe | 26 | 213,200 |
-| Mannheim | 13 | 218,400 |
-| Stuttgart | 16 | 220,800 |
-| Heidelberg | 20 | 224,000 |
+| Karlsruhe | 14 | 114,800 |
+| Mannheim | 7 | 117,600 |
+| Stuttgart | 9 | 124,200 |
+| Heidelberg | 11 | 123,200 |
 
-The total is 876,400 junction/action samples per update, within 0.2% of the previous 875,000-sample
-budget. PPO packs minibatches by actual junction/action samples with a target of 16,384. The rented
-gate node exposes 26 allocated CPU cores, so rollout collection uses 24 workers and periodic
-evaluation uses 12 workers.
+The total is 479,800 junction/action samples per update. Across four PPO epochs this produces
+1,919,200 action-sample exposures, close to the previous run's 1,750,000 exposures from 875,000
+samples and two epochs. PPO packs minibatches by actual junction/action samples with a target of
+32,768. The rented gate node exposes 26 allocated CPU cores, so rollout collection uses 24 workers
+and periodic evaluation uses 12 workers.
+
+An initial operational attempt used 75 rollouts and a 16,384-action minibatch. It preserved the old
+raw sample count without accounting for the increase from two to four PPO epochs, producing 216
+minibatches and approximately 150 seconds of update time per iteration. That attempt was stopped
+after iteration 4. The corrected allocation above is a new scratch design rather than a continuation
+of the stopped optimizer trajectory.
 
 ## Local occupancy and warm-up check
 

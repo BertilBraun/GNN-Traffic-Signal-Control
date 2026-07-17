@@ -1,19 +1,19 @@
 name: city_current_local_reward_2hop_gate_30
 
 # Rollout jobs are inverse to controller count so each city contributes about
-# 219,000 junction/action samples per iteration at 200 decisions.
+# 120,000 junction/action samples per iteration at 200 decisions.
 cities:
   - name: karlsruhe_oststadt
     split: train
     sumo_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg
     build_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml
-    rollout_jobs_per_iteration: 26
+    rollout_jobs_per_iteration: 14
     rollout_priority: 2
   - name: mannheim_innenstadt
     split: train
     sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
     build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
-    rollout_jobs_per_iteration: 13
+    rollout_jobs_per_iteration: 7
     rollout_priority: 4
     train_scale_min: 0.8
     train_scale_max: 1.05
@@ -21,7 +21,7 @@ cities:
     split: train
     sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
     build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
-    rollout_jobs_per_iteration: 16
+    rollout_jobs_per_iteration: 9
     rollout_priority: 5
     train_scale_min: 0.8
     train_scale_max: 1.05
@@ -29,7 +29,7 @@ cities:
     split: train
     sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
     build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
-    rollout_jobs_per_iteration: 20
+    rollout_jobs_per_iteration: 11
     rollout_priority: 3
   - name: freiburg_altstadt
     split: held_out
@@ -64,13 +64,13 @@ imitation_learning:
 ppo:
   iterations: 30
   steps_per_rollout: 200
-  rollouts_per_update: 75
+  rollouts_per_update: 41
   rollout_workers: 24
   update_epochs: 4
   value_warmup_iterations: 0
   warmup_epochs: 4
   transitions_per_batch: 2048
-  action_samples_per_batch: 16384
+  action_samples_per_batch: 32768
   update_batch_workers: 0
   reward_sample_interval: 5
   reward_mode: throughput
