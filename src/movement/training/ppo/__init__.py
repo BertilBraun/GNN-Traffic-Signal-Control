@@ -55,7 +55,7 @@ __all__ = [
     'train_movement_ppo',
 ]
 
-NUMBERED_CHECKPOINT_RETENTION = 5
+NUMBERED_CHECKPOINT_RETENTION = 16
 NUMBERED_CHECKPOINT_PATTERN = re.compile(r'^movement_ppo_iter_(\d+)\.pt$')
 EVAL_CHECKPOINT_PATTERN = re.compile(r'^movement_ppo_eval_iter_(\d+)\.pt$')
 
