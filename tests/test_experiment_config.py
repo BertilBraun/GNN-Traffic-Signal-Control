@@ -114,6 +114,36 @@ def test_balanced_five_second_config_uses_immediate_yellow_and_dual_learned_eval
     )
 
 
+def test_current_city_gate_preserves_demand_and_balances_action_samples() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'city_current_local_reward_2hop_gate_30.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert tuple(city.rollout_jobs_per_iteration for city in configuration.train_cities) == (26, 13, 16, 20)
+    assert configuration.proximal_policy_optimization.rollouts_per_update == 75
+    assert configuration.proximal_policy_optimization.steps_per_rollout == 200
+    assert configuration.proximal_policy_optimization.action_samples_per_batch == 16384
+    assert configuration.simulation.decision_interval == 5
+    assert configuration.simulation.yellow_start_delay == 0
+    assert configuration.simulation.warmup_steps == 15
+    assert configuration.simulation.minimum_initial_occupancy == 0.06
+    assert configuration.simulation.maximum_initial_occupancy == 0.08
+    assert configuration.demand.minimum_train_scale == 0.8
+    assert configuration.demand.maximum_train_scale == 1.2
+    assert configuration.train_cities[1].minimum_train_scale == 0.8
+    assert configuration.train_cities[1].maximum_train_scale == 1.05
+    assert configuration.train_cities[2].minimum_train_scale == 0.8
+    assert configuration.train_cities[2].maximum_train_scale == 1.05
+    assert configuration.evaluation.steps == 1200
+    assert configuration.proximal_policy_optimization.progress_reward_weight == 1.0
+    assert configuration.proximal_policy_optimization.discharge_reward_weight == 10.0
+    assert configuration.proximal_policy_optimization.speed_change_weight == 10.0
+    assert configuration.proximal_policy_optimization.speed_change_mode == ExperimentSpeedChangeMode.BRAKING
+
+
 def test_negated_reward_sanity_config_minimizes_environment_reward() -> None:
     configuration_path = (
         ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker_5s_negated_reward_sanity_20.yaml'
