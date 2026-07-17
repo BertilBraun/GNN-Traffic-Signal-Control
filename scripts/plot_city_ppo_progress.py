@@ -34,7 +34,7 @@ CITY_LABELS = {
     'mannheim_innenstadt': 'Mannheim',
     'stuttgart_mitte': 'Stuttgart',
     'heidelberg_bergheim': 'Heidelberg',
-    'freiburg_altstadt': 'Freiburg (held out)',
+    'freiburg_altstadt': 'Freiburg',
 }
 
 
