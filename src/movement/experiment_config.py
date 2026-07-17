@@ -184,6 +184,20 @@ class ExperimentEvaluationConfiguration(BaseModel):
     steps: int = Field(gt=0)
     fixed_time_phase_duration: int = Field(gt=0, default=10)
     queue_pressure_phase_duration: int = Field(gt=0, default=10)
+    periodic_city_splits: tuple[CitySplit, ...] = (
+        CitySplit.TRAIN,
+        CitySplit.HELD_OUT,
+        CitySplit.EVALUATION_ONLY,
+    )
+    checkpoint_selection_split: CitySplit = CitySplit.HELD_OUT
+
+    @model_validator(mode='after')
+    def validate_periodic_city_splits(self) -> 'ExperimentEvaluationConfiguration':
+        if len(set(self.periodic_city_splits)) != len(self.periodic_city_splits):
+            raise ValueError('evaluation.periodic_city_splits must not contain duplicates')
+        if self.checkpoint_selection_split not in self.periodic_city_splits:
+            raise ValueError('evaluation.checkpoint_selection_split must be included in periodic_city_splits')
+        return self
 
 
 class ExperimentConfiguration(BaseModel):

@@ -19,7 +19,7 @@ from src.movement.evaluation.multi_city import (
     MultiCityEvaluationAggregate,
     MultiCityEvaluationRunRequest,
 )
-from src.movement.experiment_config import CitySplit
+from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.types import MovementILTrainingConfig
 from src.movement.training.normalizer_state import NormalizerState
@@ -33,6 +33,8 @@ from src.movement.training.ppo.batch import normalize_update_advantages, ppo_bat
 from src.movement.training.ppo.evaluation import (
     checkpoint_selection_score,
     held_out_learned_checkpoint_score,
+    learned_checkpoint_score,
+    periodic_evaluation_configuration,
     single_city_evaluation_requests,
 )
 from src.movement.training.ppo.reward import (
@@ -463,6 +465,94 @@ def test_held_out_learned_score_ignores_train_city_aggregates() -> None:
     )
 
     assert score == pytest.approx(checkpoint_selection_score(metrics=held_out_metrics, evaluation_steps=600))
+
+
+def test_learned_checkpoint_score_can_select_train_split() -> None:
+    train_metrics = _evaluation_metrics(completed_vehicles=9, departed_vehicles=10, average_time_loss_s=12.0)
+    held_out_metrics = _evaluation_metrics(completed_vehicles=4, departed_vehicles=10, average_time_loss_s=90.0)
+
+    score = learned_checkpoint_score(
+        aggregates=(
+            _evaluation_aggregate(
+                city_name='karlsruhe_oststadt',
+                city_split=CitySplit.TRAIN,
+                policy=EvaluationPolicy.LEARNED.value,
+                metrics=train_metrics,
+            ),
+            _evaluation_aggregate(
+                city_name='stuttgart_mitte',
+                city_split=CitySplit.EVALUATION_ONLY,
+                policy=EvaluationPolicy.LEARNED.value,
+                metrics=held_out_metrics,
+            ),
+        ),
+        evaluation_steps=600,
+        city_split=CitySplit.TRAIN,
+    )
+
+    assert score == pytest.approx(checkpoint_selection_score(metrics=train_metrics, evaluation_steps=600))
+
+
+def test_periodic_evaluation_configuration_excludes_hidden_city() -> None:
+    configuration = ExperimentConfiguration.model_validate(
+        {
+            'name': 'hidden_holdout',
+            'cities': [
+                {
+                    'name': 'karlsruhe_oststadt',
+                    'split': 'train',
+                    'sumo_config': 'karlsruhe.sumocfg',
+                    'rollout_jobs_per_iteration': 1,
+                },
+                {
+                    'name': 'stuttgart_mitte',
+                    'split': 'evaluation_only',
+                    'sumo_config': 'stuttgart.sumocfg',
+                    'rollout_jobs_per_iteration': 0,
+                },
+            ],
+            'simulation': {
+                'decision_interval': 5,
+                'time_to_teleport': -1,
+                'yellow_duration': 3,
+                'min_green_steps': 1,
+                'initial_occupancy_min': 0.06,
+                'initial_occupancy_max': 0.08,
+            },
+            'demand': {
+                'train_scale_min': 0.8,
+                'train_scale_max': 1.2,
+                'eval_scales': [1.0],
+            },
+            'imitation_learning': {
+                'samples_per_city': 1,
+                'samples_per_simulation': 1,
+                'collection_workers': 1,
+                'epochs': 1,
+                'samples_per_batch': 1,
+                'phase_loss_coefficient': 1.0,
+            },
+            'ppo': {
+                'iterations': 1,
+                'steps_per_rollout': 1,
+                'rollouts_per_update': 1,
+                'rollout_workers': 1,
+                'eval_every_iterations': 1,
+                'save_every_iterations': 1,
+            },
+            'evaluation': {
+                'policies': ['learned'],
+                'seeds': [1],
+                'steps': 1,
+                'periodic_city_splits': ['train'],
+                'checkpoint_selection_split': 'train',
+            },
+        }
+    )
+
+    periodic_configuration = periodic_evaluation_configuration(configuration)
+
+    assert tuple(city.name for city in periodic_configuration.cities) == ('karlsruhe_oststadt',)
 
 
 def test_file_cached_episode_runner_caches_baselines_only(tmp_path: Path) -> None:

@@ -1,0 +1,103 @@
+name: city_stuttgart_hidden_local_reward_2hop_30
+
+# Balance each rollout city at approximately 120,000 junction/action samples
+# per iteration. Stuttgart is excluded from rollout generation, periodic
+# evaluation, and checkpoint selection until the frozen final evaluation.
+cities:
+  - name: karlsruhe_oststadt
+    split: train
+    sumo_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.sumocfg
+    build_config: configs/karlsruhe_oststadt/karlsruhe_oststadt.build.yaml
+    rollout_jobs_per_iteration: 14
+    rollout_priority: 2
+  - name: mannheim_innenstadt
+    split: train
+    sumo_config: configs/mannheim_innenstadt/mannheim_innenstadt.sumocfg
+    build_config: configs/mannheim_innenstadt/mannheim_innenstadt.build.yaml
+    rollout_jobs_per_iteration: 7
+    rollout_priority: 4
+    train_scale_min: 0.8
+    train_scale_max: 1.05
+  - name: stuttgart_mitte
+    split: evaluation_only
+    sumo_config: configs/stuttgart_mitte/stuttgart_mitte.sumocfg
+    build_config: configs/stuttgart_mitte/stuttgart_mitte.build.yaml
+    rollout_jobs_per_iteration: 0
+    rollout_priority: 0
+  - name: heidelberg_bergheim
+    split: train
+    sumo_config: configs/heidelberg_bergheim/heidelberg_bergheim.sumocfg
+    build_config: configs/heidelberg_bergheim/heidelberg_bergheim.build.yaml
+    rollout_jobs_per_iteration: 11
+    rollout_priority: 3
+  - name: freiburg_altstadt
+    split: train
+    sumo_config: configs/freiburg_altstadt/freiburg_altstadt.sumocfg
+    build_config: configs/freiburg_altstadt/freiburg_altstadt.build.yaml
+    rollout_jobs_per_iteration: 10
+    rollout_priority: 5
+    train_scale_min: 0.8
+    train_scale_max: 1.05
+
+simulation:
+  decision_interval: 5
+  time_to_teleport: -1
+  yellow_duration: 3
+  yellow_start_delay: 0
+  min_green_steps: 1
+  initial_occupancy_min: 0.06
+  initial_occupancy_max: 0.08
+  warmup_steps: 15
+
+demand:
+  train_scale_min: 0.8
+  train_scale_max: 1.2
+  eval_scales: [1.0]
+
+imitation_learning:
+  samples_per_city: 9600
+  samples_per_simulation: 80
+  collection_workers: 4
+  epochs: 20
+  samples_per_batch: 128
+  phase_loss_coefficient: 1.0
+
+ppo:
+  iterations: 30
+  steps_per_rollout: 200
+  rollouts_per_update: 42
+  rollout_workers: 24
+  update_epochs: 4
+  value_warmup_iterations: 0
+  warmup_epochs: 4
+  transitions_per_batch: 2048
+  action_samples_per_batch: 32768
+  update_batch_workers: 0
+  reward_sample_interval: 5
+  reward_mode: throughput
+  reward_objective: maximize
+  global_reward_weight: 0.0
+  flow_reward_weight: 0.0
+  throughput_reward_weight: 0.0
+  progress_reward_weight: 1.0
+  discharge_reward_weight: 10.0
+  gridlock_penalty_weight: 0.02
+  speed_change_weight: 10.0
+  speed_change_mode: braking
+  switch_penalty_weight: 0.0
+  entropy_coefficient: 0.001
+  eval_every_iterations: 5
+  eval_workers: 12
+  eval_learned_device: cpu
+  eval_learned_action_mode: sample
+  eval_learned_temperature: 1.0
+  save_every_iterations: 1
+
+evaluation:
+  policies: [learned, learned-greedy, max-pressure, queue, uniform-random, fixed-time]
+  seeds: [9501, 9502, 9503]
+  steps: 1200
+  fixed_time_phase_duration: 10
+  queue_pressure_phase_duration: 10
+  periodic_city_splits: [train]
+  checkpoint_selection_split: train

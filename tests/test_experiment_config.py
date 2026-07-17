@@ -47,6 +47,28 @@ def test_valid_city_first_pass_config_loads() -> None:
     assert configuration.proximal_policy_optimization.evaluation_learned_temperature == 1.0
 
 
+def test_stuttgart_hidden_city_config_loads() -> None:
+    configuration_path = ROOT / 'configs' / 'training' / 'city_stuttgart_hidden_local_reward_2hop_30.yaml'
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=ROOT,
+    )
+
+    assert tuple(city.name for city in configuration.train_cities) == (
+        'karlsruhe_oststadt',
+        'mannheim_innenstadt',
+        'heidelberg_bergheim',
+        'freiburg_altstadt',
+    )
+    stuttgart = next(city for city in configuration.cities if city.name == 'stuttgart_mitte')
+    assert stuttgart.split == CitySplit.EVALUATION_ONLY
+    assert stuttgart.rollout_jobs_per_iteration == 0
+    assert configuration.proximal_policy_optimization.rollouts_per_update == 42
+    assert configuration.evaluation.periodic_city_splits == (CitySplit.TRAIN,)
+    assert configuration.evaluation.checkpoint_selection_split == CitySplit.TRAIN
+
+
 def test_throughput_scratch_config_uses_sampled_learned_eval() -> None:
     configuration_path = ROOT / 'configs' / 'training' / 'city_first_pass_throughput_scratch_32_worker.yaml'
 
@@ -305,6 +327,38 @@ def test_evaluation_only_city_is_evaluated_but_never_used_for_rollouts(tmp_path:
     assert tuple(city.name for city in configuration.train_cities) == ('alpha',)
     assert configuration.held_out_city.name == 'beta'
     assert configuration.cities[2].split == CitySplit.EVALUATION_ONLY
+
+
+def test_periodic_evaluation_and_checkpoint_selection_splits_load(tmp_path: Path) -> None:
+    _write_referenced_files(project_root=tmp_path)
+    configuration_path = tmp_path / 'experiment.yaml'
+    configuration_text = _experiment_yaml(
+        city_entries="""
+  - name: alpha
+    split: train
+    sumo_config: alpha.sumocfg
+    rollout_workers: 1
+  - name: gamma
+    split: evaluation_only
+    sumo_config: gamma.sumocfg
+    rollout_workers: 0
+""",
+    )
+    configuration_path.write_text(
+        configuration_text.replace(
+            'evaluation:\n',
+            'evaluation:\n  periodic_city_splits: [train]\n  checkpoint_selection_split: train\n',
+        ),
+        encoding='utf-8',
+    )
+
+    configuration = load_experiment_configuration(
+        configuration_path=configuration_path,
+        project_root=tmp_path,
+    )
+
+    assert configuration.evaluation.periodic_city_splits == (CitySplit.TRAIN,)
+    assert configuration.evaluation.checkpoint_selection_split == CitySplit.TRAIN
 
 
 def test_city_rollout_jobs_per_iteration_field_loads(tmp_path: Path) -> None:

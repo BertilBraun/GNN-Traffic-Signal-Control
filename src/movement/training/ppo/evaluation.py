@@ -35,7 +35,7 @@ from src.movement.evaluation.multi_city import (
     write_multi_city_csv,
     write_multi_city_json,
 )
-from src.movement.experiment_config import CitySplit
+from src.movement.experiment_config import CitySplit, ExperimentConfiguration
 from src.movement.models.bipartite_gnn import MovementActorCritic
 from src.movement.sumo_backend import SumoBackendKind
 from src.movement.training.il.checkpoint import MovementCheckpointMetadata
@@ -183,8 +183,9 @@ def run_multi_city_training_evaluation(
 ) -> TrainingEvaluationResult:
     if config.experiment_configuration is None:
         raise ValueError('experiment_configuration is required for multi-city PPO evaluation')
+    periodic_configuration = periodic_evaluation_configuration(config.experiment_configuration)
     result = run_multi_city_evaluation(
-        configuration=config.experiment_configuration,
+        configuration=periodic_configuration,
         project_root=config.project_root,
         policies=config.eval_policies,
         seeds=config.eval_seeds,
@@ -210,11 +211,20 @@ def run_multi_city_training_evaluation(
     write_separated_multi_city_evaluation_outputs(output_dir=output_dir, result=result)
     print_multi_city_summary(result.aggregates)
     return TrainingEvaluationResult(
-        learned_checkpoint_score=held_out_learned_checkpoint_score(
+        learned_checkpoint_score=learned_checkpoint_score(
             aggregates=result.aggregates,
             evaluation_steps=config.eval_steps,
+            city_split=config.experiment_configuration.evaluation.checkpoint_selection_split,
         )
     )
+
+
+def periodic_evaluation_configuration(configuration: ExperimentConfiguration) -> ExperimentConfiguration:
+    periodic_splits = frozenset(configuration.evaluation.periodic_city_splits)
+    periodic_cities = tuple(city for city in configuration.cities if city.split in periodic_splits)
+    if not periodic_cities:
+        raise ValueError('periodic evaluation must include at least one city')
+    return configuration.model_copy(update={'cities': periodic_cities})
 
 
 def write_evaluation_scalars(
@@ -358,19 +368,31 @@ def held_out_learned_checkpoint_score(
     aggregates: Sequence[MultiCityEvaluationAggregate],
     evaluation_steps: int,
 ) -> float | None:
-    learned_held_out_aggregates = tuple(
+    return learned_checkpoint_score(
+        aggregates=aggregates,
+        evaluation_steps=evaluation_steps,
+        city_split=CitySplit.HELD_OUT,
+    )
+
+
+def learned_checkpoint_score(
+    aggregates: Sequence[MultiCityEvaluationAggregate],
+    evaluation_steps: int,
+    city_split: CitySplit,
+) -> float | None:
+    learned_split_aggregates = tuple(
         aggregate
         for aggregate in aggregates
-        if aggregate.policy == EvaluationPolicy.LEARNED.value and aggregate.city_split == CitySplit.HELD_OUT
+        if aggregate.policy == EvaluationPolicy.LEARNED.value and aggregate.city_split == city_split
     )
-    if not learned_held_out_aggregates:
+    if not learned_split_aggregates:
         return None
     scores = tuple(
         checkpoint_selection_score(
             metrics=aggregate.mean,
             evaluation_steps=evaluation_steps,
         )
-        for aggregate in learned_held_out_aggregates
+        for aggregate in learned_split_aggregates
     )
     return sum(scores) / len(scores)
 
