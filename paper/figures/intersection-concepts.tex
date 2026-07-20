@@ -1,0 +1,57 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  panel/.style={
+    draw=gray!35,
+    rounded corners=1.5mm,
+    fill=gray!2,
+    minimum width=3.75cm,
+    minimum height=3.35cm
+  },
+  road/.style={fill=gray!18, draw=gray!35},
+  movement/.style={->, >=Stealth, line width=2.1pt, color=orange!85!black},
+  active/.style={->, >=Stealth, line width=2.2pt, color=teal!80!black},
+  inactive/.style={->, >=Stealth, line width=1.2pt, color=gray!55},
+  label/.style={font=\small, align=center}
+]
+  \foreach \offset in {0,4.35,8.7} {
+    \begin{scope}[xshift=\offset cm]
+      \node[panel] at (0,0) {};
+      \path[road] (-1.55,-0.34) rectangle (1.55,0.34);
+      \path[road] (-0.34,-1.35) rectangle (0.34,1.35);
+      \draw[white, line width=0.6pt, dashed] (-1.5,0) -- (1.5,0);
+      \draw[white, line width=0.6pt, dashed] (0,-1.3) -- (0,1.3);
+    \end{scope}
+  }
+
+  \begin{scope}
+    \path[fill=blue!16] (-0.30,-1.30) rectangle (0.30,-0.15);
+    \path[fill=blue!16] (0.15,-0.30) rectangle (1.50,0.30);
+    \draw[movement] (0,-0.95) .. controls (0,-0.35) and (0.35,0) .. (1.02,0);
+    \node[label, text=blue!70!black] at (-0.95,-1.05) {incoming\\corridor};
+    \node[label, text=blue!70!black] at (1.05,0.73) {outgoing\\corridor};
+    \node[font=\small\bfseries] at (0,1.62) {(a) One movement};
+  \end{scope}
+
+  \begin{scope}[xshift=4.35cm]
+    \draw[movement] (-0.18,-1.05) -- (-0.18,1.02);
+    \draw[movement] (1.06,-0.16) -- (-1.02,-0.16);
+    \draw[movement] (0.18,1.05) .. controls (0.18,0.35) and (0.35,0.18) .. (1.05,0.18);
+    \node[label, fill=white, inner sep=1pt] at (-0.60,0.62) {$s_1$};
+    \node[label, fill=white, inner sep=1pt] at (0.58,-0.52) {$s_2$};
+    \node[label, fill=white, inner sep=1pt] at (0.70,0.63) {$s_3$};
+    \node[font=\small\bfseries] at (0,1.62) {(b) Score each movement};
+  \end{scope}
+
+  \begin{scope}[xshift=8.7cm]
+    \draw[active] (-0.18,-1.05) -- (-0.18,1.02);
+    \draw[active] (0.18,1.05) -- (0.18,-1.02);
+    \draw[inactive] (-1.06,0.18) -- (1.02,0.18);
+    \draw[inactive] (1.06,-0.18) -- (-1.02,-0.18);
+    \node[label, text=teal!80!black, fill=white, inner sep=1pt] at (0.78,0.74)
+      {green\\together};
+    \node[label, text=gray!80, fill=white, inner sep=1pt] at (-0.78,-0.68)
+      {held\\red};
+    \node[font=\small\bfseries] at (0,1.62) {(c) Select one phase};
+  \end{scope}
+\end{tikzpicture}
