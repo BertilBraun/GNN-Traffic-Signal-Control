@@ -34,8 +34,7 @@
 \setlength{\floatsep}{7pt plus 2pt minus 2pt}
 \setlength{\intextsep}{7pt plus 2pt minus 2pt}
 
-\newcommand{\LaneGroup}{\textsc{LaneGroup}}
-\newcommand{\Movement}{\textsc{Movement}}
+\newcommand{\LaneGroup}{\texttt{LaneGroup}}
 
 \title{\vspace{-1.8em}\textbf{A Graph-Based Control Interface for Traffic Signals\\on Heterogeneous Road Networks}}
 \author{Bertil Braun}
@@ -51,8 +50,10 @@ Each junction converts these scores into its own variable-sized set of legal sig
 Directed corridor nodes provide traffic context, while movement nodes represent controlled input-to-output paths through junctions.
 Typed mean aggregation produces one scalar per movement; phase definitions and signal timing remain outside the learned network.
 This makes graph size and junction-specific action count independent of the learned parameter shapes.
-PPO experiments provide a feasibility evaluation: three trained policies were evaluated on unseen synthetic grid sizes and aspect ratios, signal-coverage changes exposed a distribution-shift limitation, and one trained parameter instance executed on five heterogeneous city graphs.
-The evidence supports the implemented interface and reports the outcomes of the evaluated runs, rather than establishing general transfer across arbitrary road networks.
+PPO experiments evaluate the interface on unseen synthetic grid geometries, altered signal coverage, and five heterogeneous city graphs.
+The policies transferred within the synthetic grid family, while changes in signal coverage exposed a clear distribution shift.
+A single trained city-policy instance executed across all five city graphs, with heterogeneous outcomes.
+These results provide feasibility evidence rather than a general estimate of transfer to arbitrary road networks.
 \end{abstract}
 
 \section{Introduction}
@@ -65,21 +66,14 @@ We present a traffic-signal control interface in which a shared graph neural net
 Each junction converts these scores into its own variable-sized set of legal signal phases using a deterministic incidence matrix.
 The central design choice is therefore a narrow boundary: learning prioritizes comparable movement objects, while deterministic code constructs and operates each junction's valid local choices.
 
-The report makes three contributions:
-\begin{enumerate}
-  \item a reusable movement-level graph representation with directed corridor context;
-  \item deterministic construction of junction-specific action spaces and movement-to-phase mapping; and
-  \item an empirical feasibility evaluation across synthetic grids, signal-coverage conditions, and heterogeneous city simulations.
-\end{enumerate}
-
-The evaluation is organized around four research questions:
+The resulting system combines a reusable movement-level graph representation, deterministic construction of junction-specific action spaces, and a feasibility evaluation across synthetic and city simulations.
+Its variable graph and action dimensions are a structural property of the design.
+The empirical evaluation is organized around three research questions:
 \begin{description}[leftmargin=4.2em,style=nextline]
-  \item[RQ1 --- Structural applicability.] Can one learned parameterization operate on networks with different graph sizes and junction-specific phase counts?
-  \item[RQ2 --- Synthetic transfer.] How does the trained policy behave on unseen grid sizes and aspect ratios produced by the same generator?
-  \item[RQ3 --- Distribution shift.] What happens when signal coverage changes?
-  \item[RQ4 --- City feasibility.] Can the same trained policy execute on several heterogeneous city simulations, and how variable are the observed outcomes?
+  \item[RQ1 --- Synthetic transfer.] How does the trained policy behave on unseen grid sizes and aspect ratios produced by the same generator?
+  \item[RQ2 --- Distribution shift.] What happens when signal coverage changes?
+  \item[RQ3 --- City feasibility.] Can the same trained policy execute on several heterogeneous city simulations, and how variable are the observed outcomes?
 \end{description}
-RQ1 is answered primarily by the construction and verified by execution; RQ2--RQ4 require empirical evidence.
 
 Movement pressure and movement-structured control have substantial prior lineage.
 Max-pressure methods score compatible stages from constituent flows \cite{varaiya2013maxpressure}; PressLight connects pressure to learned control \cite{wei2019presslight}; and FRAP represents phase competition through movements \cite{zheng2019frap}.
@@ -88,7 +82,7 @@ The contribution here is the transparent interface between a city-level typed gr
 
 \textbf{Scope.}
 This report evaluates an implementation and architectural interface rather than proposing a new reinforcement-learning algorithm.
-The experiments test whether one parameterization can execute across heterogeneous action spaces and provide preliminary evidence of transfer within the evaluated simulation families.
+The experiments evaluate transfer within the specified simulation families and execution across heterogeneous action spaces.
 They do not establish general transfer across arbitrary road networks.
 
 \section{Movement-level control interface}
@@ -109,8 +103,8 @@ The controller chooses one phase per junction, rather than setting individual la
 
 The implementation groups consecutive directed road segments into a \LaneGroup{} when an unsignalized continuation is unambiguous.
 Opposite directions remain separate because their queues, speeds, and destinations differ.
-At a controlled junction, a legal input-to-output connection becomes a \Movement{} node.
-The junction owns its Movements and phases but is not itself a GNN node.
+At a controlled junction, a legal input-to-output connection becomes a movement node.
+The junction owns its movements and phases but is not itself a GNN node.
 
 \begin{table}[H]
   \small
@@ -121,20 +115,20 @@ The junction owns its Movements and phases but is not itself a GNN node.
     Object & Represents & Used for\\
     \midrule
     \LaneGroup & One direction of a road corridor & Queue, speed, occupancy, capacity, arrivals, departures, and downstream space\\
-    \Movement & One controlled input-to-output path & Turn-local demand, controlled-link count, and recent green state\\
-    Phase & One compatible local Movement set & A junction-specific selectable action\\
+    movement & One controlled input-to-output path & Turn-local demand, controlled-link count, and recent green state\\
+    Phase & One compatible local movement set & A junction-specific selectable action\\
     \bottomrule
   \end{tabularx}
   \label{tab:terminology}
 \end{table}
 
-At each decision, features are refreshed from SUMO, the shared GNN emits one score per Movement, and a junction-local incidence matrix converts those scores to phase logits.
+At each decision, features are refreshed from SUMO, the shared GNN emits one score per movement, and a junction-local incidence matrix converts those scores to phase logits.
 An availability mask enforces minimum green; the runtime inserts yellow when an accepted target changes.
 Only movement scoring is learned.
 
-\subsection{Typed graph and exact message passing}
+\subsection{Typed graph and message-passing architecture}
 
-Each Movement \(m\) has one input LaneGroup \(i(m)\) and one output LaneGroup \(o(m)\), giving four directed information relations:
+Each movement \(m\) has one input LaneGroup \(i(m)\) and one output LaneGroup \(o(m)\), giving four directed information relations:
 \[
 L_{\mathrm{in}}\!\rightarrow M,\quad
 L_{\mathrm{out}}\!\rightarrow M,\quad
@@ -144,47 +138,57 @@ M\!\rightarrow L_{\mathrm{out}}.
 The output-to-movement relation returns downstream storage context to a movement that would feed that corridor.
 Unsignalized pass-through connections are weighted \(L\!\rightarrow L\) edges with \(w_{ql}=\exp(-t_{\mathrm{ff}}/30\,\mathrm{s})\).
 
-Let \(\rho\) denote ReLU, \(\Vert\) concatenation, and \(x_l,x_m\) the LaneGroup and Movement feature vectors.
+Let \(\rho\) denote ReLU, \(\Vert\) concatenation, and \(x_l,x_m\) the LaneGroup and movement feature vectors.
 The implementation first creates
 \begin{align}
 h_l^{(0)} &= \rho(E_Lx_l),\\
 h_m^{(0)} &= \rho\!\left(E_M[x_m\Vert h_{i(m)}^{(0)}\Vert h_{o(m)}^{(0)}]\right).
 \end{align}
-For relation \(r\), target \(v\), and source embeddings \(z_q\), define the implemented transformed mean
+For relation \(r\), target \(v\), and source embeddings \(z_q\), define the transformed mean
 \[
 \mathcal A_r^{(k)}(v;z)=
 \frac{1}{\max(1,|\mathcal N_r(v)|)}
 \sum_{q\in\mathcal N_r(v)} w_{qv}W_r^{(k)}z_q,
 \]
-where \(w_{qv}=1\) except on unsignalized connector edges; an empty neighbourhood produces zero.
-One block updates Movements first and then LaneGroups:
+where \(w_{qv}=1\) except on unsignalized connector edges.
+The incoming and outgoing messages to movement \(m\) are
 \begin{align}
-h_m^{(k+1)}={}&\rho\!\left(U_M^{(k)}\left[
-h_m^{(k)}\Vert
-\mathcal A_{L_{\mathrm{in}}\to M}^{(k)}(m;h_L^{(k)})\Vert
-\mathcal A_{L_{\mathrm{out}}\to M}^{(k)}(m;h_L^{(k)})
-\right]\right),\label{eq:movement-update}\\
-h_l^{(k+1)}={}&\rho\!\left(U_L^{(k)}\left[
-h_l^{(k)}\Vert
-\left(\mathcal A_{M\to L_{\mathrm{in}}}^{(k)}(l;h_M^{(k+1)})+
-\mathcal A_{L\to L}^{(k)}(l;h_L^{(k)})\right)\Vert
-\mathcal A_{M\to L_{\mathrm{out}}}^{(k)}(l;h_M^{(k+1)})
-\right]\right).\label{eq:lane-update}
+a_{\mathrm{in},m}^{(k)}&=\mathcal A_{L_{\mathrm{in}}\to M}^{(k)}(m;h_L^{(k)}),&
+a_{\mathrm{out},m}^{(k)}&=\mathcal A_{L_{\mathrm{out}}\to M}^{(k)}(m;h_L^{(k)}).
 \end{align}
-Thus every relation has its own linear map, aggregation is a mean rather than attention, and reverse Movement messages use the just-updated embeddings from \eqref{eq:movement-update}.
+One block first updates the movement embedding:
+\begin{align}
+h_m^{(k+1)}=\rho\!\left(U_M^{(k)}
+[h_m^{(k)}\Vert a_{\mathrm{in},m}^{(k)}\Vert a_{\mathrm{out},m}^{(k)}]\right).
+\label{eq:movement-update}
+\end{align}
+It then forms the return messages
+\begin{align}
+b_{\mathrm{in},l}^{(k)}&=\mathcal A_{M\to L_{\mathrm{in}}}^{(k)}(l;h_M^{(k+1)}),&
+b_{\mathrm{out},l}^{(k)}&=\mathcal A_{M\to L_{\mathrm{out}}}^{(k)}(l;h_M^{(k+1)}),\\
+c_l^{(k)}&=\mathcal A_{L\to L}^{(k)}(l;h_L^{(k)}),
+\end{align}
+and updates the LaneGroup embedding:
+\begin{align}
+h_l^{(k+1)}=\rho\!\left(U_L^{(k)}
+[h_l^{(k)}\Vert(b_{\mathrm{in},l}^{(k)}+c_l^{(k)})\Vert b_{\mathrm{out},l}^{(k)}]\right).
+\label{eq:lane-update}
+\end{align}
+Every relation has its own linear map, aggregation is a mean rather than attention, and return messages use the just-updated embeddings from \eqref{eq:movement-update}.
+An empty neighbourhood produces the zero vector.
 After two blocks, an MLP maps every \(h_m^{(2)}\) to one scalar \(s_m\).
-The critic mean-pools the Movement embeddings owned by each junction and returns one value per controller.
+The critic mean-pools the movement embeddings owned by each junction and returns one value per controller.
 
 \begin{figure}[H]
   \centering
   \resizebox{\linewidth}{!}{\input{figures/representation.tex}}
-  \caption{The typed representation and update order. With this order, two blocks allow information from one Movement to reach another through a shared LaneGroup. The experiments evaluate the resulting two-block architecture but do not isolate the contribution of depth.}
+  \caption{The typed representation and update order. With this order, two blocks allow information from one movement to reach another through a shared LaneGroup.}
   \label{fig:representation}
 \end{figure}
 \FloatBarrier
 
 The parameter matrices above are shared over all nodes and edges of a type.
-Their shapes depend on feature and hidden dimensions, not on node count, Movement count, or phase count.
+Their shapes depend on feature and hidden dimensions, not on node count, movement count, or phase count.
 This is an architectural property, not an empirical transfer claim.
 
 \subsection{Deterministic local action spaces}
@@ -195,7 +199,7 @@ Two groups are incompatible when SUMO reports a conflict in either direction or 
 Bron--Kerbosch enumeration \cite{bron1973cliques} produces all maximal compatible group sets, each of which becomes a selectable phase.
 Here, maximal means that no additional compatible group can be added, not that the phase has maximum size.
 
-For junction \(j\), \(A_j\in\{0,1\}^{|P_j|\times|M_j|}\) records whether phase \(p\) enables Movement \(m\).
+For junction \(j\), \(A_j\in\{0,1\}^{|P_j|\times|M_j|}\) records whether phase \(p\) enables movement \(m\).
 The local logits are
 \[
 \boldsymbol\ell_j=A_j\mathbf s_j,
@@ -222,7 +226,7 @@ A different junction may provide a \(6\times11\) matrix without changing the sco
 \end{figure}
 \FloatBarrier
 
-Sum aggregation is an additive inductive bias: when Movement scores are positive, a phase containing more Movements can receive a larger logit simply because it has more terms.
+Sum aggregation is an additive inductive bias: when movement scores are positive, a phase containing more movements can receive a larger logit simply because it has more terms.
 This phase-size effect was not evaluated separately.
 
 \section{Experimental design and reproducibility}
@@ -234,6 +238,7 @@ All reported studies use two message-passing blocks, \(5\,\mathrm{s}\) decisions
 Rollout counts are allocated to approximately balance junction/action samples across differently sized training graphs.
 
 The code assigns one reward to each junction \(j\) per decision interval \(\Delta=5\,\mathrm{s}\).
+Qualitatively, the local reward encourages vehicles to move through and leave the incoming approaches while penalizing deceleration and accumulated low-speed traffic.
 Let \(I_j\) be its unique incoming lanes, \(D_j=\sum_{l\in I_j}D_l\) their total length, \(n_l\) the vehicle count, \(\bar v_l\) mean speed, \(v_l^{\max}\) speed limit, and \(V_j(t)\) the set of vehicle IDs on those lanes.
 With \(f_l(t)=\operatorname{clip}(\bar v_l(t)/v_l^{\max},0,1)\), the implemented terms are:
 
@@ -260,7 +265,7 @@ The per-junction reward is
 r_j=\operatorname{clip}_{[-1,1]}\!\left(p_j+10d_j-10b_j-0.02q_j\right).
 \]
 Global delay, completed-network flow, direct throughput, phase switching, and teleport terms have zero weight in these runs.
-The displayed units therefore describe the normalized inputs; the weighted sum is an engineered scalar objective rather than a physical quantity.
+Because the terms have different units and are manually weighted, the final reward is a dimensionless optimization objective.
 
 \subsection{Evaluation metrics}
 
@@ -285,87 +290,80 @@ For an episode of \(T\) simulated seconds, let \(C\) be trips with a SUMO \textt
 \end{table}
 
 Wait density uses all non-internal network lanes at every simulated second and exposes queues left at the horizon; completed-trip waiting excludes unfinished vehicles.
-Grid results separate three policy-training seeds from six fresh traffic seeds.
-The city evaluation has one policy-training seed and three traffic seeds per city, so its dispersion does not estimate training-run variability.
+Grid results separate three policy-training seeds from six previously unused traffic seeds.
 
 \subsection{Baseline protocol and study matrix}
 
 All policies receive the same saved SUMO network, routes, initial-occupancy range, warm-up, episode seed, conflict-derived phase set, minimum-green rule, and yellow transition.
 The learned and uniform-random policies choose every \(5\,\mathrm{s}\); fixed time cycles through phase order every \(10\,\mathrm{s}\); max pressure and queue recompute a target every \(10\,\mathrm{s}\).
-Max pressure observes the instantaneous halting counts in the downstream detector regions of the Movement's input and output LaneGroups and scores \(n^{\mathrm{halt}}_{\mathrm{in}}-n^{\mathrm{halt}}_{\mathrm{out}}\); queue observes the input detector count only.
-Both sum Movement scores through the same \(A_j\) and retain the current phase on a tie.
+Max pressure observes the instantaneous halting counts in the downstream detector regions of the movement's input and output LaneGroups and scores \(n^{\mathrm{halt}}_{\mathrm{in}}-n^{\mathrm{halt}}_{\mathrm{out}}\); queue observes the input detector count only.
+Both sum movement scores through the same \(A_j\) and retain the current phase on a tie.
 Fixed time and uniform random use no traffic observation.
+The baselines therefore do not share the learned policy's decision frequency, and comparisons include this implementation difference.
 The \(10\,\mathrm{s}\) durations and all other baseline parameters were fixed in the experiment configurations; the records contain no baseline-tuning study.
-Max pressure is the reference for RQ2 and RQ3.
-For RQ4, city-specific comparisons also report the highest-throughput non-learned baseline: max pressure in Karlsruhe, queue in Mannheim, and fixed time in Stuttgart, Heidelberg, and Freiburg.
+Max pressure is the reference for RQ1 and RQ2.
+For RQ3, city-specific comparisons also report the highest-throughput non-learned baseline: max pressure in Karlsruhe, queue in Mannheim, and fixed time in Stuttgart, Heidelberg, and Freiburg.
 
-The evaluated designs are:
 \begin{itemize}
-  \item \textbf{RQ2:} three mixed-grid training seeds, trained on five square or rectangular geometries whose longest axis is five; final evaluation on ten geometries at demands \(0.6,0.7,0.8\), including \(6\times6\), with six fresh traffic seeds.
-  \item \textbf{RQ3:} a full-coverage-trained \(6\times6\) policy evaluated after removing signals, plus one separate training seed exposed to five \(50\%\)-coverage \(4\times4\) layouts and evaluated on fresh \(25\%\)--\(100\%\) layouts.
-  \item \textbf{RQ4:} one city policy-training seed with rollouts from Karlsruhe, Mannheim, Heidelberg, and Freiburg; Stuttgart had no rollout jobs but was visible in periodic evaluation. The fixed iteration-60 instance was evaluated for \(1200\,\mathrm{s}\) at demand scale 1.0 on three traffic seeds in all five cities.
+  \item \textbf{RQ1:} three mixed-grid training seeds, trained on five square or rectangular geometries whose longest axis is five; final evaluation on ten geometries at demands \(0.6,0.7,0.8\), including \(6\times6\), with six previously unused traffic seeds.
+  \item \textbf{RQ2:} a full-coverage-trained \(6\times6\) policy evaluated after removing signals, plus one separate training seed exposed to five \(50\%\)-coverage \(4\times4\) layouts and evaluated on previously unused \(25\%\)--\(100\%\) layouts.
+  \item \textbf{RQ3:} one city policy-training seed with rollouts from Karlsruhe, Mannheim, Heidelberg, and Freiburg; Stuttgart had no rollout jobs but was visible in periodic evaluation. The fixed iteration-60 instance was evaluated for \(1200\,\mathrm{s}\) at demand scale 1.0 on three traffic seeds in all five cities.
 \end{itemize}
 All reported comparisons use the pinned libsumo backend.
-No new experiment was run for this report revision.
 
 Sampled execution is primary because it corresponds to the stochastic policy optimized during PPO training.
 Greedy execution performed worse in the city evaluation.
 Therefore, the reported results should not be interpreted as evidence that the learned logits define an equally effective deterministic controller.
 
-\section{Results by research question}
+\section{Structural property and empirical results}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{figures/evaluation-summary.pdf}
-  \caption{Observed feasibility results. Left: sampled \(6\times6\) performance over three training seeds and six fresh traffic seeds per demand. Right: iteration-60 city outcomes relative to the highest-throughput baseline listed above, from one training run and three traffic seeds per city.}
+  \caption{Observed feasibility results. Left: sampled \(6\times6\) performance by demand. Right: iteration-60 city outcomes relative to each city's strongest non-learned throughput baseline.}
   \label{fig:results}
 \end{figure}
 \FloatBarrier
 
-\textbf{RQ1 --- structural applicability.}
-Equations~\eqref{eq:movement-update}--\eqref{eq:lane-update} use shared parameter shapes and return one scalar for every Movement presented to them.
+\textbf{Structural property --- variable graph and action dimensions.}
+Equations~\eqref{eq:movement-update}--\eqref{eq:lane-update} use shared parameter shapes and return one scalar for every movement presented to them.
 Every junction may independently provide \(A_j\) with its own numbers of rows and columns; phase construction is outside the GNN.
 This establishes variable graph and action dimensions by construction.
-Execution on graphs ranging from 41 to 84 controlled junctions and phase-count ranges of 2--12 provides an implementation check, not the basis of the property.
+Execution on graphs ranging from 41 to 84 controlled junctions and phase-count ranges of 2--12 provides implementation validation, not the basis of the property.
 
-\textbf{RQ2 --- synthetic transfer.}
+\textbf{RQ1 --- synthetic transfer.}
 On the unseen-size \(6\times6\) condition, sampled throughput was \(4344,4795,5174\) vehicles/hour at demands \(0.6,0.7,0.8\), versus \(4168,4429,4521\) for max pressure.
 Completion was higher in the evaluated runs by \(3.5,6.6,10.6\) percentage points, respectively.
-The transposed \(5\times2/2\times5\) and \(5\times3/3\times5\) pairs also had similar observed means.
+At demand 0.7, the \(5\times2\) and \(2\times5\) cases achieved 1993 and 2005 vehicles/hour with 91.9\% and 92.5\% completion; the \(5\times3\) and \(3\times5\) cases achieved 2796 and 2791 vehicles/hour with 91.2\% and 91.0\% completion.
 These findings are consistent with size and aspect-ratio reuse within the matched generator.
 
-\textbf{RQ3 --- distribution shift.}
+\textbf{RQ2 --- distribution shift.}
 The full-coverage-trained policy's throughput and completion deteriorated relative to max pressure at \(50\%\) and \(25\%\) signal coverage, despite the graph remaining structurally executable.
-In the separate one-seed \(4\times4\) study, a policy trained on \(50\%\)-coverage layouts was close to max pressure under sampled execution at fresh \(25\%\) and \(50\%\) layouts, but its observed throughput and completion were lower at \(75\%\).
+In the separate \(4\times4\) study, a policy trained on \(50\%\)-coverage layouts was close to max pressure under sampled execution at previously unused \(25\%\) and \(50\%\) layouts, but its observed throughput and completion were lower at \(75\%\).
 The result distinguishes architectural compatibility from robustness and is consistent with sensitivity to the controller-distribution shift.
 
-\textbf{RQ4 --- city feasibility.}
-The city evaluation contains one policy-training run; the following values are observations from that run, not estimates of expected cross-city performance.
-The trained parameter instance executed without architecture changes on all five city graphs.
+\textbf{RQ3 --- city feasibility.}
+The city evaluation reports one policy-training run rather than an estimate across independent training runs.
+A single trained parameterization executed without architecture changes on all five city graphs.
 Outcomes varied substantially: sampled control had higher throughput and completion than every baseline in Karlsruhe and Stuttgart, trailed queue in Mannheim, was close to fixed time in Heidelberg, and had higher throughput and completion but higher wait density than fixed time in Freiburg.
-Across the five equally weighted city means, sampled control observed \(3345.6\) vehicles/hour and \(64.93\%\) completion, versus \(3036.8\) and \(59.37\%\) for max pressure.
-This is feasibility evidence from one run.
+Figure~\ref{fig:results}b uses the strongest non-learned throughput baseline separately for each city.
+The aggregate comparison instead uses max pressure consistently: for the unweighted mean across the five city-level results, the sampled policy achieved \(3345.6\) vehicles/hour and \(64.93\%\) completion in this run, versus \(3036.8\) and \(59.37\%\) for max pressure.
 
 \section{Limitations and conclusion}
 
 \textbf{Limitations.}
 The experiments evaluate the complete implementation and do not isolate individual architectural choices.
-In particular, they do not determine the separate contributions of typed relations, two message-passing blocks, or sum-based movement-to-phase aggregation.
-The sum aggregation also introduces a phase-size-dependent inductive bias that was not evaluated independently.
+They therefore do not determine the separate contributions of typed relations, two message-passing blocks, or sum-based movement-to-phase aggregation; the latter also introduces an unevaluated phase-size bias.
 
-The synthetic-grid results concern networks generated by the same underlying process and should not be interpreted as transfer to arbitrary topology.
-The signal-coverage study shows that structural compatibility does not imply robustness to changes in the controller distribution.
+The evaluated networks belong to bounded synthetic and city simulation families rather than arbitrary topology.
+The coverage study shows sensitivity to the controller distribution, and the city study's one policy-training seed and three traffic seeds per city do not estimate variation across independent training runs.
 
-The city evaluation contains one policy-training seed and three traffic seeds per city.
-It shows that one trained parameter instance can execute on several heterogeneous graphs and records the outcomes of that run; it does not estimate expected city-transfer performance.
-Similarly, sampled execution performed materially better than greedy execution, so the reported stochastic-policy results should not be treated as evidence for an equivalent deterministic controller.
-
-Finally, the generated phase sets inherit the assumptions and fidelity of the SUMO network and implemented conflict rules.
-They are valid action sets under this construction, not formally verified real-world signal plans.
+The generated phase sets inherit the assumptions and fidelity of the SUMO network and implemented conflict rules; they are action sets accepted by the implemented construction, not formally verified real-world signal plans.
+Sampled execution outperformed greedy execution in the city study, so the stochastic results do not establish an equally effective deterministic controller.
 
 \textbf{Conclusion.}
-The implemented interface separates reusable learned scoring from local signal structure: a shared typed GNN emits one scalar per Movement, while deterministic incidence matrices translate those scores into heterogeneous phase spaces.
-That separation answers structural applicability by construction.
+The implemented interface separates reusable learned scoring from local signal structure: a shared typed GNN emits one scalar per movement, while deterministic incidence matrices translate those scores into heterogeneous phase spaces.
+That separation provides variable graph and action dimensions by construction.
 The experiments add bounded feasibility evidence within synthetic and city simulation families, while the coverage and greedy-execution results show that executable structure alone does not ensure empirical robustness.
 
 \label{lastmainpage}
@@ -402,7 +400,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
   \caption{Structural diversity of the city scenarios. Phase range is the minimum--maximum number of selectable phases per policy-controlled junction.}
   \begin{tabular}{@{}lrrrr@{}}
     \toprule
-    City & Controllers & LaneGroups & Movements & Phase range\\
+    City & Controllers & LaneGroups & movements & Phase range\\
     \midrule
     Karlsruhe & 41 & 286 & 271 & 2--10\\
     Mannheim & 84 & 708 & 467 & 2--7\\
@@ -418,7 +416,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 
 \begin{table}[H]
   \centering
-  \caption{Full-coverage \(6\times6\) result. Learned values average three training seeds and six traffic seeds; max pressure averages the six traffic seeds.}
+  \caption{Full-coverage \(6\times6\) result. Learned values average three training seeds and six previously unused traffic seeds; max pressure averages the six traffic seeds.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     Demand & Policy & Throughput/h & Completion & Wait density\\
@@ -437,7 +435,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 \clearpage
 \begin{table}[H]
   \centering
-  \caption{Iteration-60 city means over three traffic seeds in the single training run. The baseline has the highest throughput among non-learned policies in that city. Wait density is in seconds per metre.}
+  \caption{Iteration-60 city means over three traffic seeds. The baseline has the highest throughput among non-learned policies in that city. Wait density is in seconds per metre.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     City & Policy & Throughput/h & Completion & Wait density\\
@@ -458,17 +456,11 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 \end{table}
 
 \paragraph{Sampled versus greedy.}
-Across the five equally weighted city means, greedy execution observed \(3182.6\) vehicles/hour, \(61.89\%\) completion, and \(0.980\,\mathrm{s/m}\) wait density, compared with \(3345.6\), \(64.93\%\), and \(0.613\,\mathrm{s/m}\) for sampled execution.
-These are descriptive results from the same single training run.
+Across the unweighted mean of the five city-level results, greedy execution achieved \(3182.6\) vehicles/hour, \(61.89\%\) completion, and \(0.980\,\mathrm{s/m}\) wait density, compared with \(3345.6\), \(64.93\%\), and \(0.613\,\mathrm{s/m}\) for sampled execution.
 
 \paragraph{Coverage study.}
-The \(50\%\)-coverage training study used one policy-training seed, five training layouts, and three fresh traffic seeds on each of five fresh layouts at \(25\%\), \(50\%\), and \(75\%\) coverage.
+The \(50\%\)-coverage training study used five training layouts and three previously unused traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage.
 For sampled execution, PPO-minus-max-pressure throughput differences were \(+5.7\), \(-28.9\), and \(-104.3\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), and \(-2.99\) percentage points.
 The first two conditions were close in the reported runs; the \(75\%\) observed means were lower.
-
-\paragraph{Evidence granularity.}
-Grid means distinguish independent policy-training seeds from traffic seeds.
-City and \(4\times4\) coverage results each contain one policy-training seed.
-Traffic episodes are therefore repeated simulation observations, not independent learned-policy replications.
 
 \end{document}
