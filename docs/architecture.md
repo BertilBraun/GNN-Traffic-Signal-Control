@@ -58,7 +58,7 @@ exp(-connector_freeflow_time / 30 seconds)
 
 This lets information cross unsignalized branches without pretending that the policy selects an action there. Signalized junctions never receive these bypass edges: information must pass through their explicit movement nodes.
 
-One macro-hop updates movements from their input/output lane groups, then updates lane groups from movements and unsignalized lane connectors. It lets a movement observe immediately adjacent traffic context while preserving the distinction between controlled and uncontrolled junctions. The reference checkpoint uses one macro-hop.
+One macro-hop updates movements from their input/output lane groups, then updates lane groups from movements and unsignalized lane connectors. It lets a movement observe immediately adjacent traffic context while preserving the distinction between controlled and uncontrolled junctions. The final anchored grid and city policies use two macro-hops. Two hops are the selected implementation configuration, not an ablation-backed optimum.
 
 ## Phase scoring
 

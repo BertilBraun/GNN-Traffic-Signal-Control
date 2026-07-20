@@ -1,211 +1,123 @@
-# Movement-Scoring Graph Policies for Traffic Signal Control Across Heterogeneous City Networks
+# A Graph-Based Control Interface for Traffic Signals on Heterogeneous Road Networks
 
-> **Complete first draft.** Repository-derived methods, structural statistics, iteration-85 results, figures, and the bounded sensitivity check have been integrated and checked against the maintained documentation, archived evidence, and sensitivity outputs. Citation entries and related-work claims marked **[CITATION TO VERIFY]** still require comparison against the original publications before archival release.
+> **Draft status.** Architecture-first technical-report draft. The method description reflects the final two-hop, five-second controller. Evaluation plots and the short related-work section still require a final source/artifact audit before submission.
 
 ## Abstract
 
-Traffic-signal policies are difficult to reuse across road networks because intersections expose different movements and different numbers and definitions of legal phases. A conventional neural policy with a fixed phase-action head therefore binds learned output parameters to a particular action schema. We present a movement-level graph representation and control interface that separates network state, learned prioritization, and local action construction. Directed **LaneGroup** nodes encode traffic corridors, while **Movement** nodes encode legal signal-controlled turns between upstream and downstream LaneGroups. A shared typed graph neural network produces one scalar score per Movement. At each junction, a binary phase-incidence matrix sums the scores of Movements enabled by each locally synthesized phase, after which a runtime availability mask excludes temporarily unavailable actions. The selectable phases themselves are derived from SUMO controlled links and conflict information rather than assumed from a universal template. We trained the shared policy from scratch with PPO rollouts from four OSM-derived city scenarios and evaluated the final reported iteration-85 checkpoint on those cities and Freiburg, which was held out from PPO rollouts. The learned controller was competitive with deterministic max-pressure and queue baselines in several PPO-rollout cities, exceeded both in Heidelberg, and achieved 2,941 vehicles/h in Freiburg compared with 2,521 and 2,377 vehicles/h for the baselines. These results are preliminary: they come from one training run, fixed development seeds, synthetic demand, and a validation city visible during development. The study therefore supports the feasibility of the representation and control interface rather than a conclusive generalization or state-of-the-art claim.
+Traffic-signal controllers must choose among phase sets that differ with junction geometry, lane connectivity, and signal design. A neural policy with a fixed phase-index output is therefore difficult to reuse across arbitrary road networks. This report describes a movement-centric control interface that separates road-network representation, learned prioritization, and local action construction. Directed LaneGroup nodes represent corridor traffic state, while Movement nodes represent legal controlled turns between LaneGroups. A shared typed graph neural network exchanges upstream, downstream, and neighbouring control information and produces one scalar score per Movement. At each junction, a non-learned binary incidence matrix aggregates these scores into logits for the locally available phases. The phase sets themselves are generated automatically from SUMO controlled links, activation constraints, and conflict rules by enumerating maximal compatible Movement groups. The resulting learned parameter shapes are independent of network size and local phase count. PPO experiments on synthetic grids and five OSM-derived city scenarios demonstrate that the interface can learn useful control, reuse one policy on different graph and action-space sizes, and transfer across several grid shapes. Performance on sparse signal coverage and across cities is heterogeneous, exposing limits from observation and training-distribution shift. The report presents these experiments as an evaluation of the representation and implementation rather than a claim of universal traffic-control generalization.
 
 ## 1. Introduction
 
-Traffic-signal control is naturally a structured decision problem. A controller must respond to queues, arrivals, downstream storage, and interactions between nearby junctions, but it cannot select arbitrary combinations of green signals. Each junction has its own set of physically and operationally compatible movements. Consequently, a phase index does not have a stable meaning across intersections: action 0 at one junction may serve a pair of opposing through movements, whereas action 0 elsewhere may serve a protected turn. The number of valid actions can also change with junction geometry and phase construction.
+The action space of a traffic signal is local. A three-arm junction, a regular four-arm intersection, and a junction with shared or dedicated turn lanes need not expose the same number or composition of phases. Phase index 2 at one signal has no inherent relationship to phase index 2 at another. A learned controller whose output weights correspond directly to fixed phase indices consequently embeds assumptions about a particular intersection schema.
 
-This heterogeneity creates a basic obstacle for a generalist learned controller. A fixed neural output layer assigns separate learned weights to a fixed set of action indices. Applying that layer to a junction with a different number or definition of phases requires padding, canonical remapping, architectural modification, or a separately parameterized head. Such solutions can be appropriate, but they make the action representation—not only the observed traffic state—part of the transfer problem.
+This work uses traffic Movements as the interface between shared learning and local signal operation. A Movement is a legal controlled turn from an incoming directed corridor to an outgoing directed corridor. Movements have comparable semantics across networks even when their number and compatible combinations differ. The learned model therefore produces a variable-length set of Movement scores rather than a fixed vector of phase values. Each junction then converts its local scores into phase logits using a phase-incidence matrix constructed from its own signal program.
 
-We instead treat movements as the shared control vocabulary. Across different junctions, a movement consistently means a legal signal-controlled turn from an incoming directed corridor to an outgoing directed corridor. The policy learns how desirable it is to release each movement, while the network definition determines which compatible movements can be served together. The resulting hierarchy is
+The implementation has three layers:
 
 \[
-\text{corridor state}
-\;\longrightarrow\;
-\text{movement priority}
-\;\longrightarrow\;
-\text{compatible phase score}.
+\text{road state}
+\longrightarrow
+\text{Movement priorities}
+\longrightarrow
+\text{locally selectable phase}.
 \]
 
-The first step is represented by a heterogeneous city graph. Directed **LaneGroup** nodes carry upstream demand, queue, flow, speed, and storage information. **Movement** nodes represent signal-controlled input-to-output turns and connect the state of the incoming corridor to the supply of the outgoing corridor. Typed graph messages propagate information through controlled movements and through weighted connectors at unsignalized junctions. A shared graph neural network (GNN) then produces one scalar score for every Movement in the current graph.
+First, an OSM/SUMO network is converted into a graph of directed LaneGroups and controlled Movements. Second, a shared typed graph neural network communicates traffic context and scores every Movement. Third, a deterministic control layer maps scores to conflict-derived phases and executes signal transitions.
 
-The second step is deliberately simple. Each controllable junction supplies a binary matrix indicating which local Movements are enabled by each synthesized selectable phase. Multiplying this matrix by the local movement-score vector yields one logit per phase. Thus, the learned parameter shapes do not depend on city size, local movement count, or local phase count. Runtime state supplies a second Boolean mask that removes actions unavailable because a minimum-green constraint has not elapsed or a transition is in progress.
+This report makes an implementation and representation contribution:
 
-The local phase sets are not read directly from OpenStreetMap (OSM) signal tags. A reproducible construction workflow shapes an OSM extract and uses SUMO `netconvert` to derive lane-to-lane connections, controlled-link indices, request indices, and request-conflict information. Controlled links that must activate together become atomic groups. A compatibility graph is then constructed, and all maximal compatible sets are enumerated as selectable green phases. This connects the generic learned movement scores to the legal action space of each actual SUMO junction.
+1. a city-level graph with directed LaneGroup and Movement node types;
+2. typed communication that distinguishes upstream demand, downstream supply, and pass-through context at unsignalized junctions;
+3. a shared Movement-scoring GNN coupled to variable local phase spaces through fixed incidence matrices;
+4. automatic construction of selectable phases from SUMO controlled-link and conflict information; and
+5. an end-to-end OSM/SUMO, PPO-training, and evaluation workflow.
 
-We study the following question:
+Movement-based traffic representation, Movement pressure, and additive Movement-to-phase scoring have prior lineage and are not claimed as independently novel. The contribution is the particular integration of the city-level typed graph, learned Movement scorer, automatic phase construction, and reusable local action interface.
 
-> **Can a traffic-signal policy operate across road networks with different topology and phase structure by learning shared movement scores instead of network-specific phase actions?**
+![Architecture of the movement-centric control interface](assets/movement-policy-architecture-generated-v2.png)
 
-Our contributions are:
+**Figure 1.** Method overview. Differently structured networks produce differently sized LaneGroup/Movement graphs. The same two-hop GNN produces one score per Movement. Junction-local phase incidence and runtime availability map those scores to a selectable phase. The lower strip summarizes offline phase construction. This generated raster is a design candidate; small arrows and matrix labels must be checked at final print scale.
 
-1. A city-level LaneGroup/Movement graph that separates directed corridor state from controllable turns and distinguishes signalized from unsignalized information paths.
-2. A transparent structured policy interface in which a shared GNN ends at scalar Movement scores and non-learned local incidence matrices convert those scores into variable-size phase-action spaces.
-3. An OSM-to-SUMO workflow that derives the Movement graph and selectable phases from controlled links and implemented conflict rules.
-4. A preliminary multi-city experiment in which a scratch-trained PPO policy uses rollout data from Karlsruhe, Mannheim, Stuttgart, and Heidelberg and is additionally evaluated on Freiburg, which is held out from PPO rollouts.
+## 2. Related design lineage
 
-The experiment is intended to demonstrate that this representation is operational and useful, not that it universally dominates strong traffic-control heuristics. At the final reported checkpoint, learned throughput exceeded both baselines in Heidelberg and Freiburg, was close to the strongest baseline in Karlsruhe and Stuttgart, and remained weaker in Mannheim. Freiburg is encouraging evidence from a city held out from PPO rollouts, but it was periodically evaluated during development and is not an untouched final test network.
+Max-pressure control provides the clearest lineage for additive stage scoring. It assigns pressure-like priorities to traffic flows from upstream demand and downstream supply, then selects a compatible stage from the priorities it serves [1]. PressLight incorporated pressure into reinforcement-learning traffic-signal control [2]. FRAP instead organizes a learned controller around traffic Movements, phase demand, and competition between phases, with a symmetry-oriented parameterization [3].
 
-![Overview of the shared movement-scoring policy](assets/movement-scoring-generalist-policy.svg)
+The paper *Expression Might Be Enough* is especially close to the literal aggregation used here: it defines a phase pressure as the sum of the efficient pressures of the Movements forming that phase [4]. The present controller replaces the analytic Movement-pressure expression with scores produced by a city-level GNN, but retains a transparent additive Movement-to-phase interface.
 
-**Figure 1: Shared movement-scoring control across heterogeneous networks.** Different city graphs contain different numbers of LaneGroups, Movements, and locally synthesized phases. The same parameterized GNN \(f_\theta\) produces one score per Movement. Junction-local incidence matrices aggregate these scores into differently sized phase-logit vectors, and runtime availability masks restrict selection to currently available phases. Karlsruhe, Mannheim, Stuttgart, and Heidelberg generate PPO rollouts; Freiburg is held out from PPO rollouts.
+TransferLight is the closest identified architectural comparison [5]. It constructs hierarchical segment-to-Movement-to-phase representations and learns phase energies for transfer between road networks. The implementation described here stops shared learning at scalar Movement scores. Its phase mapping is a fixed incidence sum, and its selectable phases come from a separate SUMO-based construction pipeline. The two approaches therefore share Movement-to-phase structure but apply it differently.
 
-## 2. Related work
+This section deliberately remains narrow. A final version should verify each method description from the primary publication and establish which source originally inspired the implementation. Repository history alone does not resolve whether the remembered source was *Expression Might Be Enough*, TransferLight, or another Movement-structured controller.
 
-### 2.1 Movement pressure and additive phase scoring
+## 3. Network representation
 
-The closest conceptual lineage for additive Movement-to-phase scoring is max-pressure control. Max-pressure methods form movement or link priorities from an imbalance between upstream demand and downstream supply, then select a compatible stage that maximizes the aggregate pressure it serves. Varaiya established network-level stability properties for max-pressure control under the assumptions of the analyzed traffic model (Varaiya, 2013). PressLight translated max-pressure ideas into a reinforcement-learning formulation and emphasized pressure as a state or reward signal for coordinated traffic control (Wei et al., 2019a).
+### 3.1 LaneGroups
 
-Our phase reduction follows the same broad compositional idea—score primitive traffic movements, then add the scores of movements served together—but replaces the hand-designed movement pressure with a score learned from a typed city graph. We do not claim that additive movement-to-phase aggregation is novel. The contribution is the particular representation and interface by which a shared GNN generates those scores for heterogeneous OSM-derived networks.
+A LaneGroup is a directed road corridor between controller-relevant endpoints. Opposite travel directions are separate LaneGroups because their traffic state, capacity, queues, and destinations differ. Unambiguous corridors through unsignalized junctions may be contracted, while contraction stops before branches that would introduce false reachability.
 
-The deterministic max-pressure baseline in this study should also not be conflated with every controller covered by max-pressure theory. It is the repository's concrete heuristic operating over the same synthesized phase sets and runtime constraints as the learned controller. The theoretical guarantees of classical max pressure depend on traffic-model, observation, and control assumptions that are not established for these finite-horizon synthetic SUMO scenarios.
+LaneGroup features describe both current traffic and static scale. Dynamic categories include vehicle and queue counts, occupancy, speed, detector saturation, available storage, arrival and departure rates, moving vehicles approaching the queue tail, and queue-tail arrival-time estimates. Static categories include corridor length, detector length, effective lane count, and speed limit. Detector-local counts are normalized by detector capacity; they describe the observed detector region rather than pretending to measure an unobserved full-road queue.
 
-### 2.2 Movement- and phase-structured learned controllers
+### 3.2 Movements
 
-FRAP represents traffic demand through movements and models competition between phases in a symmetry-aware architecture (Zheng et al., 2019). It is especially relevant because it avoids treating phases as unrelated labels: phase demand is built from constituent movement features, and pairwise phase competition provides a structured inductive bias. Advanced-XLight later argued that expressive traffic-state representations, including pressure-oriented representations, can account for much of the performance attributed to increasingly elaborate reinforcement-learning designs (Zhang et al., 2022). These works reinforce the importance of choosing the state and action primitives carefully.
+A Movement is a legal signal-controlled turn from one input LaneGroup to one output LaneGroup through a particular traffic light. It is the natural point at which upstream demand and downstream supply meet. Movement features contain turn-local information such as demand, turn class, controlled-link count, and recent green state.
 
-Our controller differs from a junction-local phase-value architecture in two ways. First, its message graph spans a city network and explicitly includes both controlled Movement nodes and unsignalized LaneGroup connectors. Second, the learned actor stops before a phase representation: it emits scalar Movement scores, and a fixed binary incidence operation constructs local phase logits. This makes the learned output independent of the number of phases without learning phase-specific embeddings or output weights.
+Junctions are not GNN nodes. They own Movements and local phase sets, and their coordinates are useful for visualization, but message passing occurs through LaneGroups, Movements, and explicit unsignalized connectors.
 
-CoLight uses graph attention to communicate among intersection agents and is an important example of network-level graph-based coordination (Wei et al., 2019b). Toward a Thousand Lights/MPLight studies parameter sharing and scalable decentralized control across large collections of traffic lights (Chen et al., 2020). These systems primarily motivate shared network control and learned communication. Our graph uses a finer LaneGroup/Movement representation: junctions own actions but are not themselves GNN nodes.
+### 3.3 Controlled and uncontrolled transitions
 
-### 2.3 Transfer, adaptation, and scenario-agnostic policies
+At a signalized junction, traffic context passes through explicit Movement nodes. At a suitable unsignalized junction, each legal pass-through connection becomes a directed LaneGroup-to-LaneGroup message edge. Its weight is
 
-Several traffic-signal studies address reuse across tasks. MetaLight uses meta-reinforcement learning to adapt rapidly to new intersections or traffic conditions (Zang et al., 2020). AttendLight develops a universal attention-based controller intended to handle varying numbers of phases (Oroojlooy et al., 2020). GESA targets scenario-agnostic control by constructing unified state and action representations for irregular intersections (Jiang et al., 2024). Model-based graph reinforcement learning for inductive traffic-signal control investigates graph-based transfer to previously unseen road networks (Devailly et al., year **[CITATION TO VERIFY]**). These works distinguish several meanings of “general”: sharing parameters across agents, supporting heterogeneous phase counts, adapting rapidly, or operating zero-shot on a different network.
+\[
+w=\exp\left(-\frac{t_{\mathrm{ff}}}{30\ \mathrm{s}}\right),
+\]
 
-The present study concerns architectural reuse and preliminary transfer without target-city PPO rollouts. It does not test rapid adaptation, nor does it establish broad zero-shot performance across a randomized benchmark distribution. Freiburg is held out from PPO rollouts but visible through periodic evaluation.
+where \(t_{\mathrm{ff}}\) is the connector’s free-flow travel time. This allows information to cross uncontrolled parts of the road network without creating a policy action there. Signalized junctions never receive bypass connectors.
 
-### 2.4 Closest comparison: TransferLight
+![LaneGroup and Movement graph on a synthetic grid](assets/movement-graph-3x3.png)
 
-TransferLight is the closest identified prior work (Schmidt et al., 2024 **[PUBLICATION STATUS/YEAR TO VERIFY]**). It also uses movements as an intermediate abstraction and is designed for zero-shot traffic-signal control across road networks. TransferLight builds hierarchical local graphs connecting lane segments, movements, and phases; applies learned attention with weight sharing; and produces learned phase energies. Its experiments use randomized training networks and evaluate zero-shot transfer to unseen road-network benchmarks **[METHOD AND BENCHMARK DETAILS TO VERIFY AGAINST FINAL PRIMARY VERSION]**.
+**Figure 2.** Full graph extracted from a \(3\times3\) road layout. LaneGroups are directed corridor nodes, red points are controlled Movement nodes, and green curves are pass-through connectors at unsignalized junctions. Junction symbols provide spatial context and are not GNN nodes. A cropped local version should replace this dense full-network view in the main report.
 
-Our design makes a different factorization. It constructs one city-level LaneGroup/Movement message graph, including weighted LaneGroup-to-LaneGroup connections through unsignalized junctions. The learned actor produces only a scalar per Movement. Phases are not learned graph nodes or embeddings: the local phase score is the unparameterized sum of the scores of its enabled Movements. The phase set is derived from the controlled links and conflict information of the OSM-derived SUMO network, and runtime constraints are applied as an explicit mask.
+## 4. Typed message passing
 
-Conceptually,
+For every controlled Movement \(m\) with input LaneGroup \(l_\mathrm{in}\) and output LaneGroup \(l_\mathrm{out}\), the graph contains four directed relations:
 
 \[
 \begin{aligned}
-\text{TransferLight: }&
-\text{segments}\rightarrow\text{movements}\rightarrow
-\text{learned phase representation}\rightarrow\text{phase energy},\\
-\text{this work: }&
-\text{city graph}\rightarrow\text{movement scores}\rightarrow
-\text{fixed incidence sum}\rightarrow\text{masked phase logits}.
+l_\mathrm{in}&\rightarrow m, &
+l_\mathrm{out}&\rightarrow m,\\
+m&\rightarrow l_\mathrm{in}, &
+m&\rightarrow l_\mathrm{out}.
 \end{aligned}
 \]
 
-TransferLight presents a stronger generalization protocol than the single-run validation experiment reported here. Our narrower emphasis is a simple and inspectable control interface integrated with an explicit OSM/SUMO construction pipeline. Table 1 is a conceptual comparison only; it does not compare implementations or performance across incompatible benchmarks.
+Message direction represents information flow, not vehicle travel. In particular, \(l_\mathrm{out}\rightarrow m\) carries downstream storage and spillback information back to the turn that would feed that corridor.
 
-| Method | Traffic representation | Agent scope | Action construction | Varying phase sets | Sharing / transfer evidence |
-|---|---|---|---|---|---|
-| Max pressure | Movement/link pressure from upstream and downstream traffic | Usually junction-local with network coupling through pressure | Sum pressure over served movements and maximize | Yes, given a supplied phase set | Analytic controller, not learned transfer |
-| PressLight | Pressure-oriented traffic state and reward | Intersection agents | Learned action values over supplied phases | Configuration-dependent **[VERIFY]** | Parameter-sharing/evaluation scope **[VERIFY]** |
-| FRAP | Movement features and pairwise phase competition | Junction-local | Learned phase values from structured phase demand | Supports multiple intersection structures **[VERIFY EXACT SCOPE]** | Symmetry-oriented sharing; transfer protocol **[VERIFY]** |
-| GESA | Canonically unified irregular-intersection representation | Shared intersection policy | Unified action representation | Yes through scenario mapping **[VERIFY]** | Cross-scenario experiments **[VERIFY]** |
-| TransferLight | Hierarchical segment–Movement–phase graph | Weight-tied intersection agents **[VERIFY WORDING]** | Learned phase energies | Yes | Randomized-network training and zero-shot evaluation **[VERIFY]** |
-| This work | City-level LaneGroup–Movement graph | Shared GNN; one decision per controllable junction | Fixed incidence sum of learned Movement scores, then runtime availability mask | Yes, from synthesized local phase sets | Four PPO-rollout cities; Freiburg is held out from PPO rollouts |
+LaneGroup features are first encoded into a shared hidden dimension. Each Movement is initialized from its own features together with its input and output LaneGroup embeddings. One macro-hop then:
 
-**Table 1: Conceptual relationship to representative prior methods.** Entries marked for verification must be checked against the original papers before publication. No cross-paper performance comparison is implied.
+1. mean-aggregates separately transformed input- and output-LaneGroup messages into each Movement;
+2. updates each Movement embedding;
+3. mean-aggregates separately transformed Movement messages back into LaneGroups;
+4. adds weighted LaneGroup-to-LaneGroup messages from unsignalized connectors; and
+5. updates each LaneGroup embedding.
 
-## 3. Problem formulation
-
-Consider a set of city traffic environments \(\mathcal{C}\). A city \(c\in\mathcal{C}\) contains a set of controllable signalized junctions \(\mathcal{J}_c\). Each junction \(j\) owns a local set of controlled Movements \(M_j\) and a set of synthesized selectable green phases \(P_j\). Both cardinalities may differ between junctions and cities.
-
-At decision time \(t\), the environment supplies graph features \(X_t\) and runtime control state. Every ten simulated seconds, the policy chooses one target phase for each controllable junction. The action at junction \(j\) must belong to the intersection between its synthesized phase set and its currently available phases. A continued target remains green; a changed target may require a deterministic yellow transition. Yellow states are execution states and are not actions exposed to the policy.
-
-We seek a shared parameter set \(\theta\) that can be applied without changing learned tensor shapes when \(|V_c|\), \(|M_j|\), or \(|P_j|\) changes. PPO optimizes the expected return over rollout environments, while all junction actions are produced by the same actor parameters.
-
-Terminology requires care because SUMO uses “phase” for a state in a traffic-light program. Here, a **selectable phase** is a synthesized green signal-state string associated with a maximal compatible set of atomic controlled-link groups. The runtime can insert yellow transition states between selectable phases, but the policy never generates raw red/yellow/green strings.
-
-## 4. Movement-level graph policy
-
-### 4.1 Heterogeneous graph
-
-For each city, the controller constructs a directed heterogeneous graph
+The final policy repeats this macro-hop twice. Two hops are the selected configuration used by the anchored experiments, not a demonstrated optimum. After the second hop, a shared multilayer head maps every Movement embedding to one scalar:
 
 \[
-G=(V_L\cup V_M,E),
+\mathbf{s}=f_\theta(G,X),\qquad s_m\in\mathbb{R}.
 \]
 
-where \(V_L\) is the set of LaneGroup nodes, \(V_M\) the set of Movement nodes, and \(E\) contains typed LaneGroup–Movement relations and LaneGroup connectors. Traffic-light junctions are not nodes in this GNN. They own subsets of Movements and local phase-incidence matrices and appear in visualizations only as spatial anchors.
+The actor parameters \(\theta\) are shared across all networks. The critic mean-pools the Movement embeddings owned by each traffic light and produces one value estimate per controlled junction.
 
-![LaneGroup and Movement graph](assets/movement-graph-3x3.png)
+## 5. From Movement scores to local actions
 
-**Figure 2: LaneGroup/Movement graph for a generated 3×3 example.** LaneGroups are directed corridor nodes. At controllable signals, information passes through explicit Movement nodes using input and output relations. At unsignalized junctions, directed weighted LaneGroup-to-LaneGroup connectors carry messages without creating policy actions. Junction markers provide spatial context but are not GNN nodes.
+### 5.1 Phase incidence
 
-### 4.2 LaneGroups: directed corridor state
-
-A LaneGroup is a directed road corridor between controller-relevant endpoints. Opposite directions are represented by different nodes. The graph builder may contract an unambiguous corridor through unsignalized junctions, but contraction stops where continuing would introduce a branch-dependent reachability shortcut. This construction provides a larger spatial unit than an individual lane while retaining direction and stopping at control-relevant topology.
-
-The reference feature vector contains 29 LaneGroup features. Seven static quantities describe corridor and detector geometry: corridor length, detector length, lane count, speed limit, free-flow travel time, estimated storage capacity, and a short-link indicator. Twenty-two serialized dynamic quantities describe detector vehicle and moving counts; queue length; occupancy; speed; density; available storage; short- and long-window arrival and departure rates; detector saturation; normalized counts and queue length; vehicles approaching the queue tail; queue-tail arrival-time estimates; and predicted near-term arrivals. Counts are normalized by estimated detector capacity where appropriate. Although the feature-frame dataclass also retains a halting count, that field is not one of the 29 serialized model inputs. The detector represents its observed terminal region before the downstream junction, not an assumed full-corridor queue.
-
-This design makes a LaneGroup answer a state question: **what is the traffic condition on this directed corridor?** In particular, the outgoing LaneGroup of a turn provides an explicit representation of downstream supply and possible spillback.
-
-### 4.3 Movements: shared control primitives
-
-A Movement is a legal signal-controlled turn through one traffic light from an input LaneGroup to an output LaneGroup. Several underlying SUMO controlled-link connections can map to the same graph Movement when they share the same traffic light and input/output edge pair. Each graph Movement stores the associated controlled-link indices so that the graph representation and signal program remain aligned.
-
-The reference Movement feature vector has exactly four serialized entries: the number of underlying controlled links, oracle movement demand, demand normalized by estimated input capacity, and an indicator of whether the Movement was green at the previous decision. The feature-frame dataclass also retains a turn-type label and saturation-flow estimate, but those fields are not serialized into the four-dimensional checkpoint input.
-
-A Movement answers the control question: **how valuable is it to release traffic from this input corridor into this output corridor?** Its location between two LaneGroups exposes both upstream demand and downstream supply to a shared scorer.
-
-### 4.4 Typed message passing
-
-Every Movement has four directed message relations:
-
-\[
-\begin{array}{lll}
-\text{input LaneGroup} &\rightarrow& \text{Movement},\\
-\text{output LaneGroup} &\rightarrow& \text{Movement},\\
-\text{Movement} &\rightarrow& \text{input LaneGroup},\\
-\text{Movement} &\rightarrow& \text{output LaneGroup}.
-\end{array}
-\]
-
-Message direction is not identical to vehicle direction. In particular, the output-LaneGroup-to-Movement relation propagates downstream storage and congestion back to the turn that would feed that corridor.
-
-Let \(h_l^{(k)}\) and \(h_m^{(k)}\) denote hidden LaneGroup and Movement embeddings. The implementation uses learned linear transformations, mean aggregation, concatenation, and ReLU updates. Suppressing biases for readability, a macro-hop can be summarized as
-
-\[
-\hat h_m^{(k)}=
-\phi_M\!\left(
-h_m^{(k)},
-\operatorname{mean}_{l\in\operatorname{in}(m)}W_{L_i}h_l^{(k)},
-\operatorname{mean}_{l\in\operatorname{out}(m)}W_{L_o}h_l^{(k)}
-\right),
-\]
-
-followed by
-
-\[
-h_l^{(k+1)}=
-\phi_L\!\left(
-h_l^{(k)},
-\operatorname{mean}_{m\rightarrow l,\,\mathrm{input}}W_{M_i}\hat h_m^{(k)}
-+\operatorname{mean}_{l'\rightarrow l}w_{l'l}W_Uh_{l'}^{(k)},
-\operatorname{mean}_{m\rightarrow l,\,\mathrm{output}}W_{M_o}\hat h_m^{(k)}
-\right).
-\]
-
-The graph uses a single endpoint edge of each input and output type per Movement, while multiple Movement messages may aggregate at a LaneGroup. At non-controllable junctions, each legal pass-through connection creates a directed LaneGroup-to-LaneGroup edge. Its message weight decays with connector free-flow time:
-
-\[
-w_{l'l}=\exp\!\left(-\frac{t^{\mathrm{ff}}_{l'l}}{30\ \mathrm{s}}\right).
-\]
-
-No such bypass connector is added across a controllable signalized junction; information must pass through its explicit Movement nodes. The reference checkpoint uses one macro-hop and a hidden dimension of 64.
-
-Before message passing, LaneGroup features are encoded by a linear layer and ReLU. The initial Movement embedding concatenates its four features with the encoded input- and output-LaneGroup embeddings. After the configured macro-hops, a two-layer scalar head produces one score per Movement:
-
-\[
-s_m=f_\theta(G,X)_m.
-\]
-
-Because \(f_\theta\) is applied over nodes and typed edges, the number of output scores follows the current graph rather than a fixed city-specific dimension.
-
-### 4.5 Junction-local phase aggregation
-
-For junction \(j\), let its local Movement set be \(M_j\), its selectable phases be \(P_j\), and
+Let \(M_j\) be the Movements owned by junction \(j\), and let \(P_j\) be its selectable green phases. A binary incidence matrix
 
 \[
 A_j\in\{0,1\}^{|P_j|\times |M_j|}
 \]
 
-be the phase-incidence matrix, where \(A_{j,p,m}=1\) if phase \(p\) enables Movement \(m\). Given the local score vector \(\mathbf{s}_j\), phase logits are
+records whether each phase enables each Movement. The phase logits are
 
 \[
 \boldsymbol{\ell}_j=A_j\mathbf{s}_j,
@@ -213,475 +125,112 @@ be the phase-incidence matrix, where \(A_{j,p,m}=1\) if phase \(p\) enables Move
 \ell_{j,p}=\sum_{m\in M_j}A_{j,p,m}s_m.
 \]
 
-The sum is an intentional inductive bias. A phase that simultaneously serves several positively scored compatible Movements accumulates their priorities, reflecting a potentially larger discharge opportunity. Normalizing by phase size would remove this particular advantage. We have not ablated sum aggregation against a mean, maximum, attention, or saturation-weighted alternative, so this rationale is a design choice rather than an empirical claim of optimality.
+This sum is an intentional inductive bias: a phase accumulates the learned priorities of the compatible Movements it serves. It also makes the learned output independent of the number of phases. The report does not claim that addition is always preferable to normalized or learned phase aggregation.
 
-As a small example, suppose a junction has four Movements with
+### 5.2 Runtime availability
 
-\[
-\mathbf{s}_j=
-\begin{bmatrix}1.2&0.4&-0.3&0.9\end{bmatrix}^{\!\top}
-\]
+The offline phase set describes selectable compatible green states. A separate Boolean mask removes actions that are temporarily unavailable because of controller state. A masked logit is replaced by \(-\infty\), after which PPO defines one categorical distribution per junction.
 
-and three phases with incidence
+Training rollouts and the primary evaluation sample from this distribution. Greedy evaluation selects the highest-logit available phase and is reported as a secondary diagnostic. When a switch is accepted, the controller immediately inserts a deterministic three-second yellow transition before the target green. Continuing the current phase introduces no transition. The anchored configuration makes decisions every five seconds and requires one decision of minimum green.
 
-\[
-A_j=
-\begin{bmatrix}
-1&1&0&0\\
-0&0&1&1\\
-1&0&0&1
-\end{bmatrix}.
-\]
+## 6. Automatic phase construction
 
-The phase logits are
+OSM signal tags do not directly provide the local action spaces used by the policy. The build pipeline first uses SUMO `netconvert` to derive lane-to-lane connections, controlled-link indices, request indices, and the request-conflict (`foes`) relation.
 
-\[
-A_j\mathbf{s}_j=
-\begin{bmatrix}
-1.6\\0.6\\2.1
-\end{bmatrix}.
-\]
+Some controlled links must activate together because they share signal indices, lane constraints, or equivalent activation requirements. The builder therefore forms atomic activation groups before constructing phases. An internally conflicting atomic group is rejected.
 
-The matrix is junction data, not a learned parameter. Another junction can have six Movements and five phases while using the same \(f_\theta\).
+Two atomic groups are considered incompatible when:
 
-### 4.6 Runtime availability mask and phase transitions
+1. SUMO marks either request as a foe of the other; or
+2. Movements from different incoming approaches merge into the same outgoing edge.
 
-The selectable phase set excludes incompatible controlled-link combinations, but not every selectable phase is available at every decision. Let
+The compatible atomic groups form an undirected graph. Every maximal clique is enumerated with the Bron–Kerbosch algorithm, deduplicated, and converted into a selectable green state. *Maximal* is not the same as *maximum*: a smaller protected-turn set remains a valid action when no additional compatible group can be added to it. Enumeration fails explicitly above 128 maximal phases rather than silently truncating a complex junction.
 
-\[
-q_{j,t}\in\{0,1\}^{|P_j|}
-\]
+![Conflict-derived phase construction](assets/phase-synthesis-pipeline.svg)
 
-be the runtime availability mask. Masked logits are
+**Figure 3.** Offline construction of conflict-derived selectable phases. The compatibility claim is bounded by SUMO request-conflict data and the added merge rule; it is not formal verification of real-world signal safety.
 
-\[
-\tilde\ell_{j,p}=
-\begin{cases}
-\ell_{j,p}, & q_{j,t,p}=1,\\
--\infty, & q_{j,t,p}=0.
-\end{cases}
-\]
+## 7. Training configuration
 
-The categorical policy is
+PPO is used as an optimization method rather than as a contribution. The final anchored configuration uses:
 
-\[
-\pi_\theta(a_{j,t}=p\mid G_t,X_t)
-=\operatorname{softmax}(\tilde{\boldsymbol\ell}_j)_p.
-\]
+| setting | value |
+|---|---:|
+| policy decision interval | 5 s |
+| yellow transition | immediate, 3 s |
+| minimum green | 1 decision |
+| message-passing macro-hops | 2 |
+| rollout length | 200 decisions |
+| PPO epochs per update | 4 |
+| entropy coefficient | 0.001 |
+| progress reward weight | 1 |
+| discharge reward weight | 10 |
+| braking-only penalty weight | 10 |
+| local gridlock penalty weight | 0.02 |
+| global/flow/throughput/direct-switch rewards | 0 |
 
-For the worked example, if phase 3 is unavailable because the minimum green of the current phase has not elapsed, its 2.1 logit becomes \(-\infty\), and selection occurs between logits 1.6 and 0.6. Training rollouts and the reported evaluation sample from this categorical distribution.
+Mixed-grid training balances the number of junction/action samples contributed by different graph shapes. This matters because a larger or more highly signalized graph otherwise supplies more local decisions per rollout and can dominate the shared PPO update. Sample-count balancing is an implementation measure for a mixed variable-size training distribution, not a new learning algorithm.
 
-The runtime requires the configured minimum green before switching. Continuing the current phase inserts no transition; switching may insert a deterministic yellow transition before the new green. A runtime assertion checks that an action admitted by the PPO mask is accepted by the controller. Decisions with only one legal action still train the critic but are excluded from actor and entropy loss, since they contain no policy choice.
+## 8. Evaluation
 
-### 4.7 Critic
+The evaluation asks whether the constructed interface can learn and execute across variable graph and action sizes, and where that reuse fails. Results are descriptive unless the replication level supports a stronger analysis.
 
-PPO uses an actor-critic extension of the same Movement encoder. For each traffic light, the critic mean-pools the embeddings of its local Movements and applies a layer-normalized multilayer value head to produce one value estimate. The actor remains the scalar Movement head described above. This local pooling preserves a variable number of Movements per traffic light.
+### 8.1 Synthetic size and shape reuse
 
-## 5. Conflict-derived phase synthesis
+The synthetic study trained three independent mixed-grid policies on square and non-square grids up to \(5\times5\), with balanced local sample counts. Six fresh evaluation seeds were then used on training-like and larger/differently shaped networks up to \(6\times6\).
 
-### 5.1 From OSM geometry to controlled links
+The learned policies improved substantially during training and generally retained useful zero-shot throughput and completion performance on the larger and differently shaped grids. This is the clearest evidence that the variable-size representation and local action interface work as intended. The \(6\times6\) target was visible in checkpoint selection, so “zero-shot” here means execution without further optimization, not an untouched final-test protocol.
 
-Selectable phases are not inferred directly from OSM traffic-signal tags. The construction pipeline begins with a cached OSM extract and a saved build recipe. Manual but replayable pruning and shaping decisions remove unsupported or misleading topology. SUMO `netconvert` then converts road geometry, permissions, priorities, and junction structure into a simulation network. The resulting network supplies lane-to-lane connections, traffic-light controlled-link indices, junction request indices, and request-conflict or “foes” information (SUMO documentation, **[CITATION TO VERIFY]**).
+The final figure should show raw training-seed means or seed points rather than treating every training-seed/evaluation-seed combination as an independent replicate. Waiting-density effects are less uniform than throughput and completion and should remain a secondary result.
 
-Each signal-controlled connection becomes a link specification containing its traffic-light link index, request index, incoming and outgoing lanes, and outgoing edge. A junction with no controlled links is skipped. The current representation also rejects synthesized control when several connections reuse one signal index, because it requires an unambiguous mapping from signal index to Movement state.
+### 8.2 Signal coverage
 
-### 5.2 Atomic activation groups
+Coverage experiments changed which otherwise eligible grid junctions were signalized. A policy trained only with dense signal coverage transferred poorly to sparse control. Training around 50% coverage and a later three-hop attempt clarified the failure but did not produce uniformly convincing sparse-coverage performance.
 
-The synthesizer first joins controlled links that must activate together. Two links enter the same transitive atomic group when they share an incoming lane, or when parallel lanes from the same incoming edge reach the same outgoing destination. The latter uses the outgoing lane when available and otherwise the outgoing edge. This prevents a phase from activating only part of a shared lane-level choice or arbitrarily separating equivalent parallel connections.
+This is a useful negative result. Changing coverage alters both the observation graph and the division of control between learned signals and unsignalized priority rules. Message passing does not remove this distribution shift. The result should appear as a compact limitation panel or appendix study, not as a principal success claim.
 
-An atomic group is retained only if its internal link pairs are compatible under the implemented conflict rules. An internally conflicting group indicates a junction requiring inspection rather than a usable phase component.
+### 8.3 Heterogeneous city scenarios
 
-### 5.3 Compatibility graph and maximal phases
+The city workflow was exercised on OSM-derived scenarios for Karlsruhe, Mannheim, Heidelberg, Freiburg, and Stuttgart. Their extracted graphs differ substantially in controller count, LaneGroup count, Movement count, and local phase cardinality. The final run trained from Karlsruhe, Mannheim, Heidelberg, and Freiburg rollouts. Stuttgart produced zero rollout jobs and was excluded from train-only checkpoint selection, but it was evaluated during development and is therefore visible validation rather than an untouched test city.
 
-Two different atomic groups are compatible only if every pair of constituent links passes two tests:
+At iteration 60, the selected sampled policy averaged 3345.6 vehicles/hour, 64.93% completion, and 0.613 s/m wait density over the five scenarios. The strongest aggregate baseline values were 3036.8 vehicles/hour and 59.37% completion for max pressure, while fixed time had the lowest listed aggregate wait density at 0.526 s/m. These macro averages conceal important city differences:
 
-1. SUMO does not mark their request indices as foes in either direction.
-2. They do not enter the same outgoing edge from different incoming approaches.
+- Karlsruhe is a clear learned-policy win.
+- Mannheim regressed by iteration 60, and queue control can be better.
+- Stuttgart is a convincing visible-validation throughput/completion result: sampled control achieved 4216 vehicles/hour and 50.93% completion, compared with 3661 and 43.97% for fixed time and 3459 and 41.78% for max pressure.
+- Heidelberg is competitive, with fixed time slightly better.
+- Freiburg is positive under sampled control, while greedy control is closer to fixed time.
 
-The second rule conservatively treats competing merges as conflicts even when the SUMO request matrix does not. Multiple lanes from the same incoming approach may enter the same outgoing edge together.
+Sampled execution is the principal learned result because it matches the stochastic policy optimized by PPO. Greedy execution is less stable and often has higher wait density. The city study has one training seed and supports a feasibility case study, not a multi-seed or universal city-generalization claim.
 
-The compatible atomic groups form an undirected graph \(H=(U,F)\): each vertex \(u\in U\) is an atomic group, and an edge indicates mutual compatibility. The synthesizer enumerates every maximal clique using the Bron–Kerbosch algorithm (Bron and Kerbosch, 1973). Each clique is converted into a signal state in which its controlled-link indices receive `G` and every other controlled link receives `r`.
+## 9. Discussion and limitations
 
-“Maximal” is essential here and does not mean “maximum.” A maximum clique has the largest cardinality in the graph. A maximal clique cannot accept any additional compatible vertex, but may be smaller than the maximum. Retaining all maximal cliques preserves protected phases that cannot be extended even when they serve fewer movements. Duplicate states are removed; phases are ordered deterministically with larger sets first. Construction fails rather than truncating the action space if a junction produces more than 128 maximal phases.
+The central result is architectural. The controller can ingest different network graphs, produce different numbers of Movement scores, and act through different local phase spaces without changing its learned parameter dimensions. The synthetic experiments show that this property can translate into useful size/shape reuse, while the city experiments show that the complete pipeline operates on heterogeneous OSM-derived networks.
 
-![Conflict-derived phase synthesis](assets/phase-synthesis-pipeline.svg)
+Several boundaries remain:
 
-**Figure 3: Conflict-derived phase synthesis.** Controlled links are joined into atomic activation groups, incompatible group pairs are excluded, and all maximal cliques of the resulting compatibility graph become selectable green phases. The smaller protected phase illustrates why the algorithm retains every maximal compatible set rather than only maximum-cardinality sets.
+- Additive phase logits assume that Movement utilities combine linearly and structurally favour phases serving more positively scored Movements.
+- The phase constructor is only as reliable as the imported SUMO link and conflict data plus the implemented merge rule.
+- Detector-local features cannot observe queues beyond their sensing region.
+- Sparse signal coverage changes the graph and control distribution and is not handled uniformly.
+- City demand, geometry, and baseline behaviour differ; one city training seed cannot establish broad transfer reliability.
+- Sampled and greedy execution are not interchangeable. The deterministic argmax policy may expose brittle score calibration hidden by stochastic sampling.
+- Baseline controller timings must be disclosed where they differ from the learned controller’s five-second decisions.
 
-For a standalone generated SUMO program, every selectable green is followed by a three-second yellow and a two-second all-red state. During learned control, only the synthesized greens are policy actions; runtime transition logic mediates switches.
+These limitations do not invalidate the representation objective. They specify what the current implementation supports by construction and what still depends on training distribution and empirical calibration.
 
-The safety claim is deliberately bounded. The resulting states are conflict-compatible under the implemented SUMO-derived foes rule and the additional outgoing-edge merge rule. This is not formal verification of a deployable real-world signal plan, and it does not account for every jurisdictional or operational constraint.
+## 10. Conclusion
 
-## 6. OSM-derived city workflow
+This report presented a reusable graph-based traffic-signal control interface built around directed corridor state, controlled Movements, and local conflict-derived phase sets. A shared typed GNN communicates traffic context and scores Movements, while deterministic incidence matrices and runtime masks translate those scores into variable-size junction actions. Automatic phase construction connects the learned interface to heterogeneous SUMO networks without a universal phase template.
 
-Each city scenario stores three reproducibility inputs: a build YAML file, a cached OSM source, and a JSON file of replayable pruning decisions. The workbench regenerates the SUMO network, route definitions, traffic-light program, additional files, SUMO configuration, inspection summaries, and movement-graph reports. Rebuilding therefore does not depend on undocumented edits to generated XML.
+Synthetic grids provide the clearest evidence that the representation can support learning and zero-shot execution across different network sizes and shapes. Sparse-coverage and city evaluations show that architectural size independence is not the same as guaranteed distributional generalization. The resulting system is best understood as a transparent, scalable implementation whose shared learned vocabulary is the Movement, while valid phase combinations remain local to each junction.
 
-The workflow is more than an OSM import. Raw map topology may contain malformed connectors, disconnected fragments, infeasible routes, over-joined signals, or geometry that cannot be mapped reliably to supported Movements. The shaping process removes or isolates such cases. Corridor contraction proceeds only through unambiguous unsignalized continuation. Traffic lights whose controlled links cannot be mapped consistently remain pass-through, are excluded from policy decisions, or are removed during shaping.
-
-Demand is synthetic and configured per city. Build recipes define base demand, route generation, initial occupancy, and calibration settings. This is appropriate for an initial representation study, but an OSM-derived geometry does not by itself constitute a calibrated urban traffic benchmark. Manual shaping and synthetic demand are part of the scenario definition and limit claims about real-world performance.
-
-Table 2 quantifies the heterogeneity represented by the shared policy. Mannheim has the largest saved network by junction and graph-node count, whereas Stuttgart has the most Movement nodes and Movement–LaneGroup edges. The number of policy controllers ranges from 41 to 84 and the largest local synthesized action space ranges from 7 phases in Mannheim to 12 in Stuttgart. Freiburg is not merely a copy of one PPO-rollout graph: its 425 LaneGroups, 416 Movements, 58 policy controllers, and phase-count range of 2--11 define a distinct graph and collection of local action spaces.
-
-| City | Role | Junctions | Signalized nodes | Policy controllers | LaneGroups | Movements | Unsignalized connectors | Selectable phases | Phases/controller (mean; range) | Movement–LaneGroup edges | Lane length (km) |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Karlsruhe | PPO rollout | 141 | 42 | 41 | 286 | 271 | 319 | 136 | 3.32; 2--10 | 1,084 | 100.39 |
-| Mannheim | PPO rollout | 417 | 100 | 84 | 708 | 467 | 993 | 254 | 3.02; 2--7 | 1,868 | 134.08 |
-| Stuttgart | PPO rollout | 290 | 71 | 69 | 519 | 508 | 721 | 238 | 3.45; 2--12 | 2,032 | 131.54 |
-| Heidelberg | PPO rollout | 244 | 55 | 56 | 408 | 365 | 460 | 177 | 3.16; 2--10 | 1,460 | 86.84 |
-| Freiburg | Held out from PPO rollouts | 231 | 63 | 58 | 425 | 416 | 585 | 205 | 3.53; 2--11 | 1,664 | 109.47 |
-
-**Table 2: Structural statistics for the saved OSM-derived city scenarios.** Junctions exclude SUMO internal junctions. Signalized nodes count junction types beginning with `traffic_light`; policy controllers count extracted programs with more than one selectable phase. These counts can differ because SUMO may cluster or join junctions. Lane length is the sum over lanes on non-internal edges and is therefore lane-kilometres, not centreline road length. Each Movement contributes one edge to each of the four typed Movement–LaneGroup relations shown in the table; unsignalized LaneGroup-to-LaneGroup connectors are counted separately and are not included in that column. Values are reproducibly extracted by `scripts/analyze_city_structure.py`; full-precision and unsupported/pass-through counts are stored in `docs/results/city_structure_statistics.csv`.
-
-## 7. PPO training
-
-### 7.1 Shared multi-city actor-critic
-
-The reported policy and critic were initialized from random weights. Thirty-two persistent `libsumo` workers collected variable-size graph trajectories from Karlsruhe, Mannheim, Stuttgart, and Heidelberg. Each PPO update used 40 rollout jobs—ten per rollout city—with 350 policy decisions per job. At each decision, the shared model computed all Movement scores in that city graph, constructed ragged phase-logit vectors, and sampled one legal categorical action independently for every controllable junction.
-
-Generalized advantage estimation produces per-decision advantages and bootstrapped return targets (Schulman et al., 2017). PPO optimizes the clipped surrogate
-
-\[
-r_t(\theta)=
-\exp\!\left(
-\log\pi_\theta(a_t\mid s_t)-
-\log\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)
-\right),
-\]
-
-\[
-L^{\mathrm{clip}}(\theta)=
-\mathbb{E}_t\left[
-\min\left(
-r_t(\theta)\hat A_t,
-\operatorname{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\hat A_t
-\right)
-\right].
-\]
-
-The implementation adds a squared value loss and an entropy bonus over non-forced legal actions. It performs two PPO update epochs. Fixed-length segments bootstrap from the next critic state when SUMO has not terminated; only genuine termination uses a zero final value. There is no value-head warm-up in this scratch run.
-
-The optimized reward emphasizes local throughput. It combines local throughput with a global reward component, vehicle progress, a gridlock penalty, and a speed-change term. The exact weights are given in Appendix A. These components shape learning but are not claimed to be optimal; they are an important subject for later sensitivity analysis.
-
-### 7.2 Training and evaluation split
-
-Karlsruhe, Mannheim, Stuttgart, and Heidelberg each generated ten PPO rollout jobs per update. Freiburg was configured with zero rollout jobs. It was nevertheless included in periodic evaluation every five iterations and therefore visible during development. We call Freiburg a held-out evaluation or validation city, not an untouched test set.
-
-The experiment used the generic YAML launch target of 1,000 iterations. According to the author, the run was manually stopped after completing iteration 85; the archived console contains the completed `iter=85` update and corresponding multi-city evaluation, with no later update recorded. We therefore report the final available checkpoint, not a per-city peak or a checkpoint selected by maximizing Freiburg performance.
-
-![Training and evaluation protocol](assets/training-evaluation-protocol.svg)
-
-**Figure 4: Multi-city training and evaluation protocol.** Four OSM-derived cities contribute 40 PPO rollout jobs per update, while Freiburg is held out from PPO rollouts and evaluated periodically. The generic configuration allowed 1,000 iterations; according to the author, the run was manually stopped after completing iteration 85, which is the final reported checkpoint rather than a model-selected peak. The city-map thumbnails are schematic and are not renderings of the saved OSM networks.
-
-## 8. Experimental protocol
-
-The frozen iteration-85 policy was evaluated with sampled legal actions at categorical temperature 1.0. Evaluation used seeds 100–105, demand scale 1.0, and a horizon of 1,200 simulated seconds. The ten-second decision interval produces 120 policy decision opportunities. SUMO gridlock teleporting was disabled, and the reported evaluation recorded zero teleports for every policy and city.
-
-We compare against deterministic max-pressure and longest-queue controllers. Both baselines operate over the same synthesized selectable phases and runtime constraints as the learned controller. They differ only in the hand-designed criterion used to score legal phases and select the maximum. A fixed seed therefore determines their actions, while learned evaluation additionally contains categorical action-sampling variability.
-
-Our principal metric is throughput,
-
-\[
-T=\frac{N_{\mathrm{completed}}}{H/3600},
-\]
-
-where \(H\) is the simulated horizon in seconds. Completion is
-
-\[
-C=\frac{N_{\mathrm{completed}}}{N_{\mathrm{departed}}}.
-\]
-
-The repository reports wait density as the interval-average accumulated waiting seconds per incoming lane metre. Completed-trip waiting, travel time, and time loss are calculated only over vehicles that finish during the horizon. These conditional averages can appear favorable when difficult trips remain unfinished, so throughput results are interpreted jointly with completion and wait density.
-
-## 9. Results
-
-### 9.1 Iteration-85 throughput
-
-Table 3 reports means over the six fixed evaluation seeds. The learned controller did not dominate every city. Its performance was close to the strongest baseline in Karlsruhe and Stuttgart, materially weaker in Mannheim, and stronger than both baselines in Heidelberg and Freiburg.
-
-| City | Split | Policy | Throughput (veh/h) | Completion | Wait density (s/m) | Completed-trip waiting (s) |
-|---|---|---|---:|---:|---:|---:|
-| Karlsruhe | PPO rollout | learned | **2,837.5** | 80.6% | 0.435 | 163.9 |
-|  |  | max pressure | 2,870.0 | 81.8% | 0.388 | 119.5 |
-|  |  | queue | 2,714.5 | 77.7% | 0.535 | 125.5 |
-| Mannheim | PPO rollout | learned | **2,987.5** | 51.9% | 0.656 | 195.9 |
-|  |  | max pressure | 3,260.5 | 55.9% | 1.053 | 117.8 |
-|  |  | queue | 3,294.0 | 56.5% | 1.012 | 122.6 |
-| Stuttgart | PPO rollout | learned | **3,871.5** | 48.0% | 1.178 | 181.2 |
-|  |  | max pressure | 3,911.0 | 48.9% | 1.206 | 144.5 |
-|  |  | queue | 3,870.5 | 48.0% | 1.183 | 136.9 |
-| Heidelberg | PPO rollout | learned | **3,141.5** | 78.3% | 0.166 | 163.9 |
-|  |  | max pressure | 3,026.5 | 75.7% | 0.435 | 90.5 |
-|  |  | queue | 2,684.5 | 67.8% | 0.872 | 77.8 |
-| Freiburg | held out from PPO rollouts | learned | **2,941.0** | **54.1%** | **0.673** | 214.9 |
-|  |  | max pressure | 2,521.0 | 47.0% | 1.122 | 157.5 |
-|  |  | queue | 2,377.0 | 44.7% | 1.300 | 149.6 |
-
-**Table 3: Iteration-85 evaluation means over seeds 100–105.** Throughput is completed vehicles per simulated hour. Completed-trip waiting excludes unfinished vehicles and must be read with completion and wait density. No significance test is implied.
-
-In Karlsruhe, learned throughput was 1.1% below max pressure and 4.5% above queue. Completion and wait density followed the same broad ranking, with max pressure strongest and queue weakest. In Mannheim, learned throughput was 9.3% below the stronger queue baseline and completion was lower than both baselines. Interestingly, learned wait density was also lower, while completed-trip waiting was higher. This mixed outcome illustrates why the finite-horizon metrics cannot be collapsed into a single universal ranking.
-
-In Stuttgart, learned throughput differed by only 0.03% from queue and was 1.0% below max pressure. Completion and wait density were likewise close. In Heidelberg, learned throughput exceeded max pressure by 3.8% and queue by 17.0%; it also achieved higher completion and substantially lower wait density, although its completed-trip waiting time was longer. The latter metric is conditional on completion and should not override the broader network-state measures.
-
-Freiburg produced the clearest advantage: learned throughput was 2,941.0 vehicles/h, 16.7% above max pressure and 23.7% above queue. Learned completion was 54.1%, compared with 47.0% and 44.7%, while wait density was 0.673 s/m compared with 1.122 and 1.300 s/m. Thus the throughput advantage was accompanied by more completed trips and lower network congestion under the repository metric. Absolute completion remained low, however, so the scenario was congested and the 1,200-second horizon censored many trips.
-
-![Iteration-85 throughput comparison](results/assets/iteration-0085-throughput-comparison.png)
-
-**Figure 5: Iteration-85 throughput by city and policy.** Small points show the six seed-level observations; larger points and error bars show the mean plus or minus one sample standard deviation. These are dispersion summaries, not confidence intervals. Freiburg is visually separated because it was held out from PPO rollouts. The learned controller is strongest in Heidelberg and Freiburg, near the strongest baseline in Karlsruhe and Stuttgart, and weaker in Mannheim.
-
-### 9.2 Training and held-out evaluation trajectories
-
-Learned throughput improved over the 85 reported PPO iterations, with the most visible gains in Stuttgart and Freiburg. Freiburg increased from approximately 2,100 vehicles/h at initialization to 2,941 vehicles/h. Over the same trajectory, completion increased from 38.6% to 54.1% and wait density decreased from 1.049 to 0.673. This improvement occurred while Freiburg was held out from PPO rollouts, suggesting that updates from the four PPO-rollout cities transferred usefully to its representation. Because Freiburg was repeatedly observed, the trajectory is supporting development evidence rather than a blind test.
-
-![Learned throughput through iteration 85](results/assets/learned-throughput-through-iteration-0085.png)
-
-**Figure 6: Learned-policy throughput during the reported run.** City-colored trajectories show periodic sampled evaluation through iteration 85. Freiburg is held out from PPO rollouts. The plot demonstrates training dynamics but reuses fixed development seeds and should not be interpreted as an independent statistical evaluation.
-
-![Freiburg validation trajectory through iteration 85](results/assets/freiburg-validation-through-iteration-0085.png)
-
-**Figure 7: Freiburg trajectory while held out from PPO rollouts.** Throughput and completion rise while wait density falls through the reported endpoint. Freiburg was periodically monitored and is therefore a validation city rather than an untouched test city.
-
-The PPO diagnostics are consistent with continued stochastic behavior rather than collapse to one action. Explained variance rose from approximately zero to above 0.85, while entropy remained high at the endpoint. These optimization diagnostics indicate that the critic learned a useful return signal and that the categorical actor remained exploratory; they do not themselves establish traffic-control quality.
-
-![PPO diagnostics through iteration 85](results/assets/ppo-training-diagnostics-through-iteration-0085.png)
-
-**Figure 8: PPO training diagnostics (candidate appendix figure).** Explained variance, entropy, losses, and related optimization quantities through iteration 85.
-
-### 9.3 Interpretation
-
-The results support three limited conclusions. First, one learned parameter set can be executed without architectural modification across all five graph and phase structures. This is guaranteed by the representation and demonstrated operationally by evaluation. Second, the resulting policy is not merely executable: it reaches throughput near strong heuristics in two PPO-rollout cities and exceeds both in another. Third, useful improvement transfers to Freiburg while it is held out from PPO rollouts.
-
-The results do not identify which component caused the observed performance. The LaneGroup construction, downstream messages, Movement features, sum aggregation, phase synthesizer, reward, and PPO training were evaluated as one system. Nor do they establish that the policy transfers across arbitrary cities. A single city held out from PPO rollouts and a single development run are sufficient for a concise feasibility study, but not for a broad generalization claim.
-
-### 9.4 Bounded sensitivity check
-
-As a secondary check, we froze the iteration-85 checkpoint and ran one fresh scenario seed (200) at demand scales 0.8 and 1.2 for all five cities, using the same 1,200-second horizon and sampled learned actions. We also ran Freiburg at demand 1.0 for 2,400 seconds. This bounded protocol was intended to expose obvious dependence on the archived seeds and standard demand, not to estimate uncertainty.
-
-The outcomes were mixed. Learned control retained the highest throughput in Freiburg at both added demand scales and remained ahead of both heuristics in the longer Freiburg run. It also led at low-demand Karlsruhe, but trailed both heuristics at high-demand Karlsruhe. Mannheim remained weak; Stuttgart and Heidelberg trailed both heuristics at both added demand scales. In particular, the favorable archived Heidelberg ordering did not persist under this combined seed-and-demand change. Exact throughput, completion, and wait-density values are reported in Appendix C.
-
-Each added condition contains only one episode, and the learned policy remains stochastic. No confidence interval, significance statement, causal demand effect, or general robustness claim follows from these checks. One max-pressure Heidelberg episode at demand 0.8 recorded one teleport; all other added episodes recorded none.
-
-## 10. Discussion
-
-### 10.1 A shared learned vocabulary with local action semantics
-
-The main representational choice is to stop shared learning at Movement scores. Movements have common semantics across heterogeneous intersections: each joins an upstream directed corridor to a downstream directed corridor through a controlled turn. A phase, by contrast, is a local combination whose index and composition need not correspond across junctions.
-
-The incidence matrix makes this distinction explicit. It is not a padding trick or a learned city-specific output head. It is structured metadata generated with the network. As a result, adding a city changes graph tensors and ragged local matrices but does not change the scorer's weights. This is architectural support for heterogeneous graphs and phase counts. Whether the learned features transfer well remains an empirical question, and the mixed city results show that architectural compatibility alone is not enough.
-
-### 10.2 Demand and supply at movement level
-
-The LaneGroup/Movement distinction also gives an interpretable route for traffic information. The input LaneGroup describes demand approaching a turn; the output LaneGroup describes the storage and congestion into which it would discharge. Movement nodes combine these endpoint embeddings with turn-local features. Typed messages then allow adjacent Movements and unsignalized corridors to influence those embeddings. This resembles the demand–supply intuition behind pressure control while letting the GNN learn the scoring function from a richer graph state.
-
-The implementation uses only one macro-hop, so its receptive field remains local. This may be beneficial for parameter sharing and computational simplicity, but it limits anticipation of congestion farther through the network. It is plausible—not proven—that this local, semantically typed structure helped the policy learn across cities in only 85 iterations.
-
-### 10.3 Separating policy learning from compatible action construction
-
-Phase synthesis assigns responsibility for movement compatibility to the network-building pipeline rather than to reinforcement learning. The policy is never rewarded for discovering that a physically conflicting combination is undesirable, because that combination is absent from the action set. Runtime masking similarly removes temporarily unavailable targets rather than penalizing illegal attempts. This produces a cleaner learning problem and a more inspectable deployment boundary.
-
-The boundary has limits. SUMO conflicts and the additional merge rule are simulation-derived abstractions. Real deployments require pedestrian stages, intergreens, local regulations, controller hardware constraints, fail-safe behavior, and engineering validation. The present synthesizer supports the research scenarios; it is not a substitute for certified signal design.
-
-### 10.4 Relation to TransferLight
-
-Both this work and TransferLight use movements to bridge traffic state and phases. The important difference is not that one uses movements and the other does not. It is where learned representation ends. TransferLight learns hierarchical phase representations or energies from local segment and Movement structure, whereas our actor outputs scalar Movement priorities and uses a fixed incidence sum. Our city graph also carries information through unsignalized connectors, while phase availability comes from the actual synthesized SUMO program.
-
-This simplicity makes the computation easy to state and inspect:
-
-\[
-\text{one shared }f_\theta
-+\text{local }A_j
-+\text{runtime }q_{j,t}.
-\]
-
-It may also impose limitations. Additive scoring assumes that movement utilities combine linearly within a phase and structurally favors phases that serve more positively scored Movements. TransferLight's learned phase representation can in principle model richer interactions. Our experiment does not compare these approaches on a common implementation or benchmark, so the distinction is conceptual rather than evidence of superiority.
-
-## 11. Limitations
-
-This study has several concrete limitations.
-
-- **Single training run.** The reported trajectory comes from one random initialization and one sequence of PPO rollouts. Training variance is unknown.
-- **One reported endpoint.** Results describe iteration 85 of the archived run. They do not characterize convergence or robustness to stopping time.
-- **Primary evaluation uses fixed development seeds.** The same six scenario seeds were used for periodic evaluation, preventing the main result from serving as a fresh final protocol. The secondary sensitivity check adds only one fresh seed per condition and cannot estimate uncertainty.
-- **Visible validation city.** Freiburg was held out from PPO rollouts, but its metrics were observed every five iterations during development. It is not an untouched test city.
-- **Stochastic learned evaluation.** Learned results combine scenario-seed variation with action-sampling variation, whereas baselines are deterministic for a fixed scenario.
-- **Synthetic scenarios.** OSM geometry was manually shaped, and demand was synthetically generated and calibrated for the experiment rather than inferred from measured origin–destination flows.
-- **Finite-horizon censoring.** Completion was below 60% for several city-policy combinations. Completed-trip averages omit unfinished vehicles.
-- **Mixed performance.** Mannheim learned throughput remained materially below both baselines. Karlsruhe and Stuttgart do not demonstrate superiority, and Heidelberg's favorable archived ordering reversed in the single-seed sensitivity conditions.
-- **No modern learned generalist baseline.** TransferLight, GESA, and related systems were not reimplemented. Cross-paper benchmark values would not constitute a controlled comparison.
-- **No causal ablations.** The experiment does not isolate the effects of the LaneGroup/Movement encoding, typed messages, unsignalized connectors, feature schema, reward terms, phase aggregation, or phase synthesis.
-- **Bounded compatibility model.** Synthesized phases are compatible under implemented SUMO-derived and merge rules, not formally verified for field control.
-
-These limitations are consistent with the purpose of a short representation paper: the evidence shows a coherent system operating competitively across heterogeneous scenarios, but it does not support a state-of-the-art or universal-generalization claim.
-
-## 12. Future work
-
-### 12.1 Stronger generalization protocol
-
-The first priority is to separate training variance, scenario variance, and development selection. Independent training runs should use several initialization and rollout seeds. A frozen protocol should then evaluate each policy on fresh scenario seeds with paired comparisons and uncertainty intervals. At least one additional OSM city should be excluded not only from PPO rollouts but also from periodic monitoring, architecture decisions, reward tuning, and checkpoint decisions. This would support a genuine unseen-city claim.
-
-The city distribution should also broaden beyond five manually shaped German scenarios. Future experiments should stratify networks by junction density, signal coverage, corridor structure, irregular geometry, and phase complexity. Demand should vary independently from topology. Replicated sweeps over longer horizons and demand regimes—from undersaturated to oversaturated—would reveal whether transfer depends on the amount and spatial pattern of congestion beyond what the bounded single-seed check can show. Reporting the distribution of graph size, controllable junctions, phase counts, and lane length is necessary to define what “different topology” means empirically.
-
-### 12.2 Representation and communication ablations
-
-The cleanest representation test would compare the current typed GNN with a zero-hop local Movement scorer while keeping features, phase incidence, PPO, reward, and evaluation fixed. This would determine whether learned communication adds value beyond the structured action head. More targeted variants could remove downstream-supply messages, remove unsignalized connector edges, or change message directions. Comparing one macro-hop with deeper propagation would measure whether additional network context improves anticipation or instead harms transfer through oversmoothing and optimization difficulty.
-
-LaneGroup construction also deserves study. Alternative corridor-contraction rules could preserve more individual road segments or contract longer unambiguous chains. Detector extent, capacity normalization, arrival windows, and queue-tail prediction features could be varied systematically. These experiments would clarify which aspects of the encoding provide transferable semantics rather than city-specific shortcuts.
-
-### 12.3 Reward and phase-interface studies
-
-The current reward combines local throughput, a global term, progress, gridlock, and speed-change shaping. Component-removal experiments and weight sweeps would show whether the policy depends on a delicate reward balance. Particularly useful comparisons include local versus global throughput, progress shaping under sparse completions, and gridlock penalties under oversaturated demand. Reward analysis should report not only optimized return but also throughput, completion, wait density, stability, and teleports.
-
-The phase interface offers a compact family of alternatives:
-
-\[
-\ell_p^{\mathrm{sum}}=\sum_{m\in p}s_m,
-\qquad
-\ell_p^{\mathrm{mean}}=\frac{1}{|p|}\sum_{m\in p}s_m,
-\qquad
-\ell_p^{\mathrm{max}}=\max_{m\in p}s_m.
-\]
-
-Other variants could learn positive Movement weights, apply attention over the enabled set, normalize by saturation flow, or use a saturating nonlinear sum. The current sum deliberately rewards the simultaneous service of several positively scored compatible Movements. Future work should test when that phase-size bias improves discharge and when it suppresses smaller protected phases. Such a study would directly connect the method to its max-pressure lineage.
-
-Phase synthesis itself could be broadened. All maximal compatible sets are a principled generic starting point, but practical controllers sometimes use non-maximal operational phases, coordinated sequences, or protected/permitted distinctions. Transition-aware phase scoring could subtract switching cost or account explicitly for yellow and all-red loss. Learned duration control could be studied separately from phase choice, provided legality and safety remain external constraints.
-
-### 12.4 Operational realism
-
-Stronger transportation evidence requires calibrated origin–destination demand, time-varying flows, heterogeneous vehicle classes, pedestrians, public transport priority, and realistic turning proportions. Signal programs should incorporate jurisdiction-specific intergreens, minimum and maximum greens, coordination plans, and ring-barrier or stage constraints where applicable. Robustness tests should perturb detector counts, omit sensors, delay observations, and alter map or connection data.
-
-Finally, simulation compatibility is not field safety. Any simulation-to-field program would require validation of the movement graph against engineering plans, independent conflict and transition verification, controller-in-the-loop testing, fail-safe behavior, and conservative deployment protocols. These are downstream research directions, not capabilities claimed by the present system.
-
-## 13. Conclusion
-
-This paper presented a movement-scoring representation and control interface for applying one shared traffic-signal policy to heterogeneous OSM-derived city networks. LaneGroups encode directed corridor state, Movements encode controlled input-to-output turns, and a typed GNN produces one scalar priority per Movement. Junction-local incidence matrices then sum those priorities into locally defined phase logits, while synthesized compatibility sets and runtime availability masks constrain execution.
-
-The scratch-trained iteration-85 policy operated with one parameter set across four PPO-rollout cities and Freiburg. It reached or exceeded strong deterministic baselines in several scenarios and produced a substantial throughput, completion, and wait-density advantage in Freiburg while it was held out from PPO rollouts. The single-run development protocol and mixed city performance make this preliminary evidence, not conclusive generalization. The central result is therefore representational: **Movements can provide a shared learned vocabulary across cities while the conflict-derived phases remain local to each junction.**
-
-## Appendix A. Training and evaluation configuration
-
-| Category | Setting | Value |
-|---|---|---|
-| Model | LaneGroup feature dimension | 29 |
-|  | Movement feature dimension | 4 |
-|  | Hidden dimension | 64 |
-|  | Macro-hops | 1 |
-| Initialization | Actor and critic | Random scratch |
-| Rollout | Backend | `libsumo` |
-|  | Persistent workers | 32 |
-|  | Jobs per PPO update | 40 |
-|  | Jobs per rollout city | 10 |
-|  | Decisions per rollout | 350 |
-|  | Decision interval | 10 s |
-| PPO | Update epochs | 2 |
-|  | Value warm-up | 0 iterations |
-| Reward | Local throughput | 1.0 |
-|  | Global reward | 0.2 |
-|  | Vehicle progress | 0.25 |
-|  | Gridlock penalty | 0.08 |
-|  | Speed change | 0.005 |
-| Demand | General rollout scale | 0.8–1.2 |
-|  | Mannheim/Stuttgart cap | 1.05 |
-|  | Initial occupancy | 5–8% |
-| Evaluation | Frequency during training | Every 5 iterations |
-|  | Seeds | 100–105 |
-|  | Demand scale | 1.0 |
-|  | Horizon | 1,200 simulated s |
-|  | Decision opportunities | 120 |
-|  | Learned inference | Sample, temperature 1.0 |
-|  | Baselines | Max pressure, longest queue |
-
-## Appendix B. Throughput and completion
-
-![Throughput and completion at iteration 85](results/assets/iteration-0085-throughput-completion.png)
-
-**Figure B1: Joint throughput and completion view.** Each point is a city-policy mean over seeds 100--105; color identifies the city and marker shape identifies the policy. Stuttgart, Mannheim, and Freiburg remain below 60% completion for all three policies, making finite-horizon censoring especially important in those scenarios. The learned Freiburg policy improves both completion and throughput relative to the two deterministic baselines. The plot is descriptive and does not replace paired seed-level uncertainty analysis.
-
-## Appendix C. Bounded frozen-checkpoint sensitivity analysis
-
-Table C1 reports the secondary seed-200 demand check. Each cell gives throughput in vehicles/h, completion in percent, and wait density in seconds per metre as (T/C/W). These are individual episodes, not means.
-
-| City | Demand | Learned (T/C/W) | Max pressure (T/C/W) | Queue (T/C/W) |
-|---|---:|---:|---:|---:|
-| Karlsruhe | 0.8 | 2,388 / 85.1 / 0.209 | 2,361 / 84.2 / 0.230 | 2,310 / 82.4 / 0.323 |
-| Karlsruhe | 1.2 | 2,460 / 77.9 / 0.387 | 2,550 / 80.9 / 0.258 | 2,505 / 79.4 / 0.314 |
-| Mannheim | 0.8 | 2,013 / 44.3 / 1.082 | 2,967 / 64.9 / 0.524 | 3,063 / 67.0 / 0.437 |
-| Mannheim | 1.2 | 2,358 / 43.6 / 0.956 | 3,231 / 59.3 / 0.677 | 3,363 / 61.6 / 0.585 |
-| Stuttgart | 0.8 | 2,919 / 46.0 / 1.193 | 3,108 / 49.1 / 0.951 | 3,534 / 55.5 / 0.638 |
-| Stuttgart | 1.2 | 3,582 / 42.8 / 1.363 | 3,954 / 47.4 / 0.890 | 3,837 / 46.2 / 1.174 |
-| Heidelberg | 0.8 | 2,025 / 64.2 / 0.668 | 2,721 / 86.3 / 0.032* | 2,640 / 83.7 / 0.129 |
-| Heidelberg | 1.2 | 1,866 / 49.2 / 1.128 | 3,024 / 79.3 / 0.125 | 3,006 / 78.8 / 0.157 |
-| Freiburg | 0.8 | 2,463 / 57.9 / 0.579 | 2,439 / 57.5 / 0.348 | 2,091 / 49.3 / 0.697 |
-| Freiburg | 1.2 | 2,727 / 51.9 / 0.576 | 2,502 / 47.7 / 0.658 | 2,292 / 43.7 / 0.754 |
-
-**Table C1: Fresh-seed demand sensitivity at a 1,200-second horizon.** All rows use seed 200. The asterisk marks the sole added episode with a teleport: Heidelberg max pressure at demand 0.8 recorded one; every other episode in Table C1 recorded zero.
-
-The longer Freiburg check used seed 200, demand 1.0, and a 2,400-second horizon:
-
-| Policy | Throughput (veh/h) | Completion | Wait density (s/m) | Teleports |
-|---|---:|---:|---:|---:|
-| Learned | 1,762.5 | 48.9% | 2.220 | 0 |
-| Max pressure | 1,522.5 | 42.3% | 2.618 | 0 |
-| Queue | 1,257.0 | 34.8% | 4.234 | 0 |
-
-**Table C2: Longer-horizon Freiburg check.** This run changes both seed and horizon relative to the archived evaluation, so it supports a within-run policy comparison only and does not isolate a horizon effect.
-
-For reproducibility, the sensitivity runs used the existing parallel evaluator after the evaluation CLI was corrected to forward the configured worker count and accept an explicit worker override. This scheduling correction changed neither model nor traffic-control behavior; it is an execution detail, not a scientific contribution. Exact commands, restart history, and raw-output locations are recorded in `reports/iteration_0085_sensitivity_protocol.md`. The successful summaries are stored in `reports/iteration_0085_sensitivity_standard/summary.{csv,json}` and `reports/iteration_0085_sensitivity_freiburg_long/summary.{csv,json}`.
-
-## Appendix D. Remaining work before arXiv submission
-
-The first-draft implementation and evidence tasks are complete:
-
-- [x] Extract reproducible structural statistics for all five saved city scenarios.
-- [x] Replace estimated network-size placeholders with values rebuilt through the current graph extractor.
-- [x] Repair the overview graphic so its LaneGroup and Movement structures are topologically coherent and aligned.
-- [x] Add a deterministic phase-synthesis graphic distinguishing maximal from maximum compatible sets.
-- [x] Generate the grouped iteration-85 throughput plot with seed dispersion.
-- [x] Generate a compact throughput--completion view.
-- [x] Run a bounded frozen-checkpoint sensitivity check with fresh seed 200 at demand 0.8 and 1.2 and a longer Freiburg horizon, and preserve its raw summaries and protocol.
-- [x] State from author clarification that the generic run target was 1,000 iterations and the run was manually stopped after completed iteration 85; separately state what the archive records.
-
-The following publication tasks remain required:
-
-- [ ] Verify every related-work statement and complete every bibliographic record against its primary source, especially TransferLight, GESA, FRAP, PressLight, CoLight, AttendLight, and inductive graph-RL work.
-- [ ] Replace provisional author/year fields and select the exact official SUMO documentation pages supporting OSM import, request/foes semantics, controlled-link indices, and TLS state interpretation.
-- [ ] Audit all figure captions, equations, numerical tables, and claims against the archived bundle and its SHA-256 manifest after the manuscript layout is frozen.
-- [ ] Choose the archival source format and produce a rendered PDF with legibility checks for raster figures, SVGs, tables, mathematical notation, and internal cross-references.
-- [ ] Add a stable public repository release or archival identifier and state the software, scenario, checkpoint, and evidence-bundle availability precisely.
-
-The following experiments would strengthen the evidence but are optional for this representation-focused first paper:
-
-- [ ] Expand the bounded single-seed check to multiple fresh scenario and policy-sampling seeds with paired uncertainty intervals.
-- [ ] Repeat training from independent initialization and rollout seeds and report paired uncertainty intervals.
-- [ ] Evaluate at least one city excluded from rollouts, monitoring, checkpoint decisions, and method development.
-- [ ] If a stronger robustness paper is desired, test additional horizons and demand regimes with enough replicates to separate seed, demand, horizon, and learned action-sampling effects.
-- [ ] Compare reward-component choices, sum/mean/learned phase aggregation, local versus message-passing scorers, and selected phase-synthesis rules. These are new training studies, not missing validations of the current implementation.
-- [ ] Compare against a modern learned generalist controller on a shared scenario construction and evaluation protocol rather than importing incomparable published benchmark numbers.
-
-## References
-
-Bron, C., and Kerbosch, J. (1973). Algorithm 457: Finding all cliques of an undirected graph. *Communications of the ACM*, 16(9), 575–577. https://doi.org/10.1145/362342.362367
-
-Chen, C., Wei, H., Xu, N., Zheng, G., Yang, M., Xiong, Y., Xu, K., and Li, Z. (2020). Toward a thousand lights: Decentralized deep reinforcement learning for large-scale traffic signal control. *Proceedings of the AAAI Conference on Artificial Intelligence*, 34(04), 3414–3421. https://doi.org/10.1609/aaai.v34i04.5744
-
-Devailly, F.-X., Larocque, D., and Charlin, L. (year **[CITATION TO VERIFY]**). Model-based graph reinforcement learning for inductive traffic signal control. https://arxiv.org/abs/2208.00659
-
-Jiang, et al. (2024). A general scenario-agnostic reinforcement learning for traffic signal control. *IEEE Transactions on Intelligent Transportation Systems*. https://doi.org/10.1109/TITS.2024.3377106 **[AUTHOR LIST, VOLUME, AND PAGES TO VERIFY]**
-
-Oroojlooy, A., Nazari, M., Hajinezhad, D., and Silva, J. (2020). AttendLight: Universal attention-based reinforcement learning model for traffic signal control. *Advances in Neural Information Processing Systems*, 33. https://proceedings.neurips.cc/paper/2020/hash/1cf0b3b8a86807e61a9a2e5c22392b48-Abstract.html **[BIBLIOGRAPHIC DETAILS TO VERIFY]**
-
-Schmidt, et al. (2024). TransferLight: Zero-shot traffic signal control on any road-network. https://arxiv.org/abs/2412.09719 **[AUTHOR LIST AND FINAL PUBLICATION STATUS TO VERIFY]**
-
-Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017). Proximal policy optimization algorithms. arXiv:1707.06347. https://arxiv.org/abs/1707.06347
-
-Simulation of Urban MObility (SUMO). OpenStreetMap network import and traffic-light documentation. https://sumo.dlr.de/docs/Networks/Import/OpenStreetMap.html **[SELECT AND CITE EXACT OFFICIAL PAGES FOR `netconvert`, requests/foes, AND TLS STATES]**
-
-Varaiya, P. (2013). Max pressure control of a network of signalized intersections. *Transportation Research Part C: Emerging Technologies*, 36, 177–195. https://doi.org/10.1016/j.trc.2013.08.014
-
-Wei, H., Chen, C., Zheng, G., Wu, K., Gayah, V., Xu, K., and Li, Z. (2019a). PressLight: Learning max pressure control to coordinate traffic signals in arterial network. In *Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining*. https://doi.org/10.1145/3292500.3330949 **[PAGE RANGE TO VERIFY]**
-
-Wei, H., Xu, N., Zhang, H., Zheng, G., Zang, X., Chen, C., Zhang, W., Zhu, Y., Xu, K., and Li, Z. (2019b). CoLight: Learning network-level cooperation for traffic signal control. In *Proceedings of the 28th ACM International Conference on Information and Knowledge Management*. https://arxiv.org/abs/1905.05717 **[DOI AND PAGE RANGE TO VERIFY]**
-
-Zang, X., Yao, H., Zheng, G., Xu, N., Xu, K., and Li, Z. (2020). MetaLight: Value-based meta-reinforcement learning for traffic signal control. *Proceedings of the AAAI Conference on Artificial Intelligence*, 34(01), 1153–1160. https://doi.org/10.1609/aaai.v34i01.5467
-
-Zhang, et al. (2022). Expression might be enough: Representing pressure and demand for reinforcement learning based traffic signal control. In *Proceedings of the 39th International Conference on Machine Learning*, PMLR 162. https://proceedings.mlr.press/v162/zhang22ah.html **[AUTHOR LIST AND PAGE RANGE TO VERIFY]**
-
-Zheng, G., Xiong, Y., Zang, X., Feng, J., Wei, H., Zhang, H., Li, Y., Xu, K., and Li, Z. (2019). Learning phase competition for traffic signal control. In *Proceedings of the 28th ACM International Conference on Information and Knowledge Management*. https://arxiv.org/abs/1905.04722 **[DOI AND PAGE RANGE TO VERIFY]**
+## References requiring final verification
+
+1. Varaiya, P. (2013). *Max pressure control of a network of signalized intersections*. Transportation Research Part C, 36, 177–195. https://doi.org/10.1016/j.trc.2013.08.014
+2. Wei, H., et al. (2019). *PressLight: Learning max pressure control to coordinate traffic signals in arterial network*. KDD. https://doi.org/10.1145/3292500.3330949
+3. Zheng, G., et al. (2019). *Learning phase competition for traffic signal control*. https://arxiv.org/abs/1905.04722
+4. Zhang, L., et al. (2022). *Expression Might Be Enough: Representing Pressure and Demand for Reinforcement Learning Based Traffic Signal Control*. ICML. **[Verify author list and proceedings record.]**
+5. Schmidt, et al. *TransferLight: Zero-Shot Traffic Signal Control on any Road-Network*. **[Verify final author list, venue, year, and canonical URL.]**
+6. Schulman, J., et al. (2017). *Proximal Policy Optimization Algorithms*. https://arxiv.org/abs/1707.06347
+7. Bron, C., and Kerbosch, J. (1973). *Algorithm 457: Finding all cliques of an undirected graph*. Communications of the ACM, 16(9), 575–577.
