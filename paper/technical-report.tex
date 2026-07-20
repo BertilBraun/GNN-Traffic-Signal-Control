@@ -97,7 +97,7 @@ The controller chooses one phase per junction, rather than setting individual la
 
 \begin{figure}[H]
   \centering
-  \resizebox{\reportcontentwidth}{!}{\input{figures/intersection-concepts.tex}}
+  \resizebox{0.73\linewidth}{!}{\input{figures/intersection-concepts.tex}}
   \caption{The control vocabulary. The shared model scores movements individually; each junction supplies its own compatible phase sets. The phase shown is illustrative, not a universal template.}
   \label{fig:concepts}
 \end{figure}
@@ -183,7 +183,7 @@ The critic mean-pools the movement embeddings owned by each junction and returns
 
 \begin{figure}[H]
   \centering
-  \resizebox{\reportcontentwidth}{!}{\input{figures/representation.tex}}
+  \resizebox{0.64\linewidth}{!}{\input{figures/representation.tex}}
   \caption{The typed representation and update order. With this order, two blocks allow information from one movement to reach another through a shared LaneGroup.}
   \label{fig:representation}
 \end{figure}
@@ -222,7 +222,7 @@ A different junction may provide a \(6\times11\) matrix without changing the sco
 
 \begin{figure}[H]
   \centering
-  \resizebox{\reportcontentwidth}{!}{\input{figures/phase-interface.tex}}
+  \resizebox{0.78\linewidth}{!}{\input{figures/phase-interface.tex}}
   \caption{Offline phase construction and online action selection. The fixed incidence matrix changes with each junction; the learned scorer does not.}
   \label{fig:phase-interface}
 \end{figure}
@@ -320,7 +320,7 @@ The sampled results therefore do not imply equivalent performance under determin
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\reportcontentwidth]{figures/evaluation-summary.pdf}
+  \includegraphics[width=0.88\linewidth]{figures/evaluation-summary.pdf}
   \caption{Observed feasibility results. Left: sampled \(6\times6\) performance by demand. Right: iteration-60 city outcomes relative to each city's strongest non-learned throughput baseline.}
   \label{fig:results}
 \end{figure}
