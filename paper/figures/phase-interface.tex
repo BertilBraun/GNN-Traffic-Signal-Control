@@ -1,0 +1,29 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  box/.style={draw=gray!55, rounded corners=1.5mm, fill=gray!4, minimum height=9mm, align=center, font=\small},
+  arrow/.style={->, >=Stealth, line width=0.9pt, color=gray!75},
+  learned/.style={draw=teal!70!black, fill=teal!8},
+  fixed/.style={draw=blue!60!black, fill=blue!7}
+]
+  \node[box] (links) at (0,1.2) {SUMO controlled\\links and conflicts};
+  \node[box] (groups) at (3.0,1.2) {atomic activation\\groups};
+  \node[box] (cliques) at (6.0,1.2) {maximal compatible\\sets};
+  \node[box, fixed] (incidence) at (9.0,1.2) {local incidence\\matrix $A_j$};
+  \draw[arrow] (links) -- (groups);
+  \draw[arrow] (groups) -- (cliques);
+  \draw[arrow] (cliques) -- (incidence);
+  \node[font=\small\itshape, text=gray!70!black] at (4.5,2.0) {offline, deterministic construction};
+
+  \node[box, learned] (scores) at (0,-0.5) {GNN Movement\\scores $\mathbf{s}_j$};
+  \node[font=\Large] at (2.15,-0.5) {$\times$};
+  \node[box, fixed] (matrixcopy) at (3.4,-0.5) {$A_j$};
+  \node[font=\Large] at (4.7,-0.5) {$=$};
+  \node[box] (logits) at (6.0,-0.5) {phase logits\\$\boldsymbol{\ell}_j=A_j\mathbf{s}_j$};
+  \node[box] (mask) at (8.55,-0.5) {availability\\mask};
+  \node[box, learned] (action) at (11.0,-0.5) {sample one\\available phase};
+  \draw[arrow] (logits) -- (mask);
+  \draw[arrow] (mask) -- (action);
+  \draw[arrow, dashed] (incidence.south) -- (matrixcopy.north);
+  \node[font=\small\itshape, text=gray!70!black] at (8.45,-1.35) {online, once per five-second decision};
+\end{tikzpicture}

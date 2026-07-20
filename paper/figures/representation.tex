@@ -1,0 +1,39 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  lane/.style={circle, draw=blue!65!black, fill=blue!12, minimum size=9mm, inner sep=0pt},
+  movement/.style={circle, draw=orange!75!black, fill=orange!22, minimum size=8mm, inner sep=0pt},
+  relation/.style={<->, >=Stealth, line width=0.8pt, color=gray!75},
+  influence/.style={->, >=Stealth, line width=1.5pt, color=teal!75!black},
+  block/.style={
+    draw=gray!45,
+    rounded corners=1.5mm,
+    fill=gray!5,
+    text width=4.2cm,
+    minimum height=10mm,
+    font=\small,
+    align=center
+  },
+  note/.style={font=\small, align=center}
+]
+  \node[lane] (l0) at (0,0) {$L_0$};
+  \node[movement] (m0) at (1.8,0) {$M_0$};
+  \node[lane] (l1) at (3.6,0) {$L_1$};
+  \node[movement] (m1) at (5.4,0) {$M_1$};
+  \node[lane] (l2) at (7.2,0) {$L_2$};
+
+  \draw[relation] (l0) -- (m0);
+  \draw[relation] (m0) -- (l1);
+  \draw[relation] (l1) -- (m1);
+  \draw[relation] (m1) -- (l2);
+
+  \draw[influence, bend left=31] (m0.north) to
+    node[above, note] {neighbour context reaches $M_1$ in block 2}
+    (m1.north);
+
+  \node[block] (block1) at (2.15,-1.25)
+    {\textbf{Block 1}\\LaneGroups $\rightarrow$ Movements\\$\rightarrow$ LaneGroups};
+  \node[block] (block2) at (7.65,-1.25)
+    {\textbf{Block 2}\\repeat using updated context};
+  \draw[influence] (block1.east) -- (block2.west);
+\end{tikzpicture}
