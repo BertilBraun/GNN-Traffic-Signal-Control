@@ -399,7 +399,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
   \caption{Structural diversity of the city scenarios. Phase range is the minimum--maximum number of selectable phases per policy-controlled junction.}
   \begin{tabular}{@{}lrrrr@{}}
     \toprule
-    City & Controllers & Lane Groups & Movements & Phase Range\\
+    City & Controllers & LaneGroups & Movements & Phase Range\\
     \midrule
     Karlsruhe & 41 & 286 & 271 & 2--10\\
     Mannheim & 84 & 708 & 467 & 2--7\\
@@ -415,7 +415,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 
 \begin{table}[H]
   \centering
-  \caption{Full-coverage \(6\times6\) result. Learned values average three training seeds and six held-out traffic seeds; max pressure averages the six traffic seeds.}
+  \caption{Full-coverage \(6 \times 6\) result. Learned values average three training seeds and six held-out traffic seeds; max pressure averages the six traffic seeds.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     Demand & Policy & Throughput/h & Completion & Wait density\\
@@ -459,6 +459,6 @@ For the unweighted mean across cities, greedy execution achieved \(3182.6\) vehi
 
 \paragraph{Coverage study.}
 The \(50\%\)-coverage training study used five training layouts and three held-out traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage; the \(100\%\) condition used one layout and the same three seeds.
-For sampled execution, PPO-minus-max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
+For sampled execution, PPO \( - \) max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
 
 \end{document}
