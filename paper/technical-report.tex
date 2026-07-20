@@ -51,7 +51,7 @@ Directed corridor nodes provide traffic context, while movement nodes represent 
 Typed mean aggregation produces one scalar per movement; phase definitions and signal timing remain outside the learned network.
 This makes graph size and junction-specific action count independent of the learned parameter shapes.
 PPO experiments evaluate the interface on unseen synthetic grid geometries, altered signal coverage, and five heterogeneous city graphs.
-The policies transferred within the synthetic grid family, while changes in signal coverage exposed a clear distribution shift.
+The policies retained performance across unseen geometries within the synthetic grid family, while changes in signal coverage exposed a clear distribution shift.
 A single trained city-policy instance executed across all five city graphs, with heterogeneous outcomes.
 These results provide feasibility evidence rather than a general estimate of transfer to arbitrary road networks.
 \end{abstract}
@@ -114,9 +114,9 @@ The junction owns its movements and phases but is not itself a GNN node.
     \toprule
     Object & Represents & Used for\\
     \midrule
-    \LaneGroup & One direction of a road corridor & Queue, speed, occupancy, capacity, arrivals, departures, and downstream space\\
+    lane group & One direction of a road corridor & Queue, speed, occupancy, capacity, arrivals, departures, and downstream space\\
     movement & One controlled input-to-output path & Turn-local demand, controlled-link count, and recent green state\\
-    Phase & One compatible local movement set & A junction-specific selectable action\\
+    phase & One compatible local movement set & A junction-specific selectable action\\
     \bottomrule
   \end{tabularx}
   \label{tab:terminology}
@@ -188,8 +188,8 @@ The critic mean-pools the movement embeddings owned by each junction and returns
 \FloatBarrier
 
 The parameter matrices above are shared over all nodes and edges of a type.
-Their shapes depend on feature and hidden dimensions, not on node count, movement count, or phase count.
-This is an architectural property, not an empirical transfer claim.
+Their shapes depend only on feature and hidden dimensions.
+The parameter shapes are therefore independent of graph and action-space size.
 
 \subsection{Deterministic local action spaces}
 
@@ -215,7 +215,7 @@ A_j=
 A_j\mathbf s_j=
 \begin{bmatrix}1.9&0.2\end{bmatrix}^{\mathsf T}.
 \]
-The first phase receives the larger logit; masking and categorical sampling follow before the runtime applies any signal transition.
+The resulting logits favor the first phase; masking and categorical sampling follow before the runtime applies any signal transition.
 A different junction may provide a \(6\times11\) matrix without changing the scorer.
 
 \begin{figure}[H]
@@ -282,15 +282,14 @@ For an episode of \(T\) simulated seconds, let \(C\) be trips with a SUMO \textt
     \midrule
     Throughput & \(C/(T/3600)\) & veh/h\\
     Completion & \(C/D\); vehicles still active at the horizon remain incomplete & fraction or \%\\
-    Completed-trip wait & Mean SUMO \texttt{waitingTime} over the \(C\) completed trips & s\\
     Wait density & Time mean of \(\sum_l W_l(t)/\sum_l D_l\), where \(W_l\) is SUMO's total waiting time of vehicles currently on lane \(l\) & s/m\\
     \bottomrule
   \end{tabularx}
   \label{tab:metrics}
 \end{table}
 
-Wait density uses all non-internal network lanes at every simulated second and exposes queues left at the horizon; completed-trip waiting excludes unfinished vehicles.
-Grid results separate three policy-training seeds from six previously unused traffic seeds.
+Wait density uses all non-internal network lanes at every simulated second and exposes queues left at the horizon.
+Grid results separate three policy-training seeds from six held-out traffic seeds.
 
 \subsection{Baseline protocol and study matrix}
 
@@ -305,15 +304,15 @@ Max pressure is the reference for RQ1 and RQ2.
 For RQ3, city-specific comparisons also report the highest-throughput non-learned baseline: max pressure in Karlsruhe, queue in Mannheim, and fixed time in Stuttgart, Heidelberg, and Freiburg.
 
 \begin{itemize}
-  \item \textbf{RQ1:} three mixed-grid training seeds, trained on five square or rectangular geometries whose longest axis is five; final evaluation on ten geometries at demands \(0.6,0.7,0.8\), including \(6\times6\), with six previously unused traffic seeds.
-  \item \textbf{RQ2:} a full-coverage-trained \(6\times6\) policy evaluated after removing signals, plus one separate training seed exposed to five \(50\%\)-coverage \(4\times4\) layouts and evaluated on previously unused \(25\%\)--\(100\%\) layouts.
-  \item \textbf{RQ3:} one city policy-training seed with rollouts from Karlsruhe, Mannheim, Heidelberg, and Freiburg; Stuttgart had no rollout jobs but was visible in periodic evaluation. The fixed iteration-60 instance was evaluated for \(1200\,\mathrm{s}\) at demand scale 1.0 on three traffic seeds in all five cities.
+  \item \textbf{RQ1:} three mixed-grid training seeds, trained on five square or rectangular geometries whose longest axis is five; final evaluation on ten geometries at demands \(0.6,0.7,0.8\), including \(6\times6\), with six held-out traffic seeds.
+  \item \textbf{RQ2:} a full-coverage-trained \(6\times6\) policy evaluated after removing signals, plus one separate training seed exposed to five \(50\%\)-coverage \(4\times4\) layouts and evaluated on held-out \(25\%\)--\(100\%\) layouts.
+  \item \textbf{RQ3:} one city policy-training seed with rollouts from Karlsruhe, Mannheim, Heidelberg, and Freiburg. Stuttgart contributed no training rollouts. Although periodic Stuttgart evaluations were available, the reported iteration-60 checkpoint was the fixed terminal checkpoint rather than one selected using Stuttgart performance. It was evaluated for \(1200\,\mathrm{s}\) at demand scale 1.0 on three traffic seeds in all five cities.
 \end{itemize}
 All reported comparisons use the pinned libsumo backend.
 
 Sampled execution is primary because it corresponds to the stochastic policy optimized during PPO training.
 Greedy execution performed worse in the city evaluation.
-Therefore, the reported results should not be interpreted as evidence that the learned logits define an equally effective deterministic controller.
+The sampled results therefore do not imply equivalent performance under deterministic argmax execution.
 
 \section{Structural property and empirical results}
 
@@ -329,7 +328,7 @@ Therefore, the reported results should not be interpreted as evidence that the l
 Equations~\eqref{eq:movement-update}--\eqref{eq:lane-update} use shared parameter shapes and return one scalar for every movement presented to them.
 Every junction may independently provide \(A_j\) with its own numbers of rows and columns; phase construction is outside the GNN.
 This establishes variable graph and action dimensions by construction.
-Execution on graphs ranging from 41 to 84 controlled junctions and phase-count ranges of 2--12 provides implementation validation, not the basis of the property.
+Execution on graphs ranging from 41 to 84 controlled junctions and phase-count ranges of 2--12 validates that the implementation supports the stated structural range.
 
 \textbf{RQ1 --- synthetic transfer.}
 On the unseen-size \(6\times6\) condition, sampled throughput was \(4344,4795,5174\) vehicles/hour at demands \(0.6,0.7,0.8\), versus \(4168,4429,4521\) for max pressure.
@@ -339,7 +338,7 @@ These findings are consistent with size and aspect-ratio reuse within the matche
 
 \textbf{RQ2 --- distribution shift.}
 The full-coverage-trained policy's throughput and completion deteriorated relative to max pressure at \(50\%\) and \(25\%\) signal coverage, despite the graph remaining structurally executable.
-In the separate \(4\times4\) study, a policy trained on \(50\%\)-coverage layouts was close to max pressure under sampled execution at previously unused \(25\%\) and \(50\%\) layouts, but its observed throughput and completion were lower at \(75\%\).
+In the separate \(4\times4\) study, sampled throughput differed from max pressure by \(+5.7\) and \(-28.9\) vehicles/hour on held-out \(25\%\)- and \(50\%\)-coverage layouts, respectively; the differences were \(-104.3\) and \(-108.0\) at \(75\%\) and \(100\%\).
 The result distinguishes architectural compatibility from robustness and is consistent with sensitivity to the controller-distribution shift.
 
 \textbf{RQ3 --- city feasibility.}
@@ -347,7 +346,7 @@ The city evaluation reports one policy-training run rather than an estimate acro
 A single trained parameterization executed without architecture changes on all five city graphs.
 Outcomes varied substantially: sampled control had higher throughput and completion than every baseline in Karlsruhe and Stuttgart, trailed queue in Mannheim, was close to fixed time in Heidelberg, and had higher throughput and completion but higher wait density than fixed time in Freiburg.
 Figure~\ref{fig:results}b uses the strongest non-learned throughput baseline separately for each city.
-The aggregate comparison instead uses max pressure consistently: for the unweighted mean across the five city-level results, the sampled policy achieved \(3345.6\) vehicles/hour and \(64.93\%\) completion in this run, versus \(3036.8\) and \(59.37\%\) for max pressure.
+The aggregate comparison instead uses max pressure consistently: for the unweighted mean across cities, the sampled policy achieved \(3345.6\) vehicles/hour and \(64.93\%\) completion in this run, versus \(3036.8\) and \(59.37\%\) for max pressure.
 
 \section{Limitations and conclusion}
 
@@ -400,7 +399,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
   \caption{Structural diversity of the city scenarios. Phase range is the minimum--maximum number of selectable phases per policy-controlled junction.}
   \begin{tabular}{@{}lrrrr@{}}
     \toprule
-    City & Controllers & LaneGroups & movements & Phase range\\
+    City & Controllers & Lane Groups & Movements & Phase Range\\
     \midrule
     Karlsruhe & 41 & 286 & 271 & 2--10\\
     Mannheim & 84 & 708 & 467 & 2--7\\
@@ -416,7 +415,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 
 \begin{table}[H]
   \centering
-  \caption{Full-coverage \(6\times6\) result. Learned values average three training seeds and six previously unused traffic seeds; max pressure averages the six traffic seeds.}
+  \caption{Full-coverage \(6\times6\) result. Learned values average three training seeds and six held-out traffic seeds; max pressure averages the six traffic seeds.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     Demand & Policy & Throughput/h & Completion & Wait density\\
@@ -456,11 +455,10 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 \end{table}
 
 \paragraph{Sampled versus greedy.}
-Across the unweighted mean of the five city-level results, greedy execution achieved \(3182.6\) vehicles/hour, \(61.89\%\) completion, and \(0.980\,\mathrm{s/m}\) wait density, compared with \(3345.6\), \(64.93\%\), and \(0.613\,\mathrm{s/m}\) for sampled execution.
+For the unweighted mean across cities, greedy execution achieved \(3182.6\) vehicles/hour, \(61.89\%\) completion, and \(0.980\,\mathrm{s/m}\) wait density, compared with \(3345.6\), \(64.93\%\), and \(0.613\,\mathrm{s/m}\) for sampled execution.
 
 \paragraph{Coverage study.}
-The \(50\%\)-coverage training study used five training layouts and three previously unused traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage.
-For sampled execution, PPO-minus-max-pressure throughput differences were \(+5.7\), \(-28.9\), and \(-104.3\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), and \(-2.99\) percentage points.
-The first two conditions were close in the reported runs; the \(75\%\) observed means were lower.
+The \(50\%\)-coverage training study used five training layouts and three held-out traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage; the \(100\%\) condition used one layout and the same three seeds.
+For sampled execution, PPO-minus-max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
 
 \end{document}
