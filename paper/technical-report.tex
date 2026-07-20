@@ -35,9 +35,10 @@
 \setlength{\intextsep}{7pt plus 2pt minus 2pt}
 
 \newcommand{\LaneGroup}{\texttt{LaneGroup}}
+\newcommand{\reportcontentwidth}{0.82\linewidth}
 
 \title{\vspace{-1.8em}\textbf{A Graph-Based Control Interface for Traffic Signals\\on Heterogeneous Road Networks}}
-\author{Bertil Braun}
+\author{Bertil Braun\\{\small\href{mailto:contact@bertil-braun.de}{contact@bertil-braun.de}}}
 \date{}
 
 \begin{document}
@@ -55,6 +56,7 @@ The policies retained performance across unseen geometries within the synthetic 
 A single trained city-policy instance executed across all five city graphs, with heterogeneous outcomes.
 These results provide feasibility evidence rather than a general estimate of transfer to arbitrary road networks.
 \end{abstract}
+\small
 
 \section{Introduction}
 
@@ -95,7 +97,7 @@ The controller chooses one phase per junction, rather than setting individual la
 
 \begin{figure}[H]
   \centering
-  \resizebox{\linewidth}{!}{\input{figures/intersection-concepts.tex}}
+  \resizebox{\reportcontentwidth}{!}{\input{figures/intersection-concepts.tex}}
   \caption{The control vocabulary. The shared model scores movements individually; each junction supplies its own compatible phase sets. The phase shown is illustrative, not a universal template.}
   \label{fig:concepts}
 \end{figure}
@@ -110,7 +112,7 @@ The junction owns its movements and phases but is not itself a GNN node.
   \small
   \centering
   \caption{Roles in the representation and action interface.}
-  \begin{tabularx}{\linewidth}{@{}lXX@{}}
+  \begin{tabularx}{\reportcontentwidth}{@{}lXX@{}}
     \toprule
     Object & Represents & Used for\\
     \midrule
@@ -181,7 +183,7 @@ The critic mean-pools the movement embeddings owned by each junction and returns
 
 \begin{figure}[H]
   \centering
-  \resizebox{\linewidth}{!}{\input{figures/representation.tex}}
+  \resizebox{\reportcontentwidth}{!}{\input{figures/representation.tex}}
   \caption{The typed representation and update order. With this order, two blocks allow information from one movement to reach another through a shared LaneGroup.}
   \label{fig:representation}
 \end{figure}
@@ -220,7 +222,7 @@ A different junction may provide a \(6\times11\) matrix without changing the sco
 
 \begin{figure}[H]
   \centering
-  \resizebox{\linewidth}{!}{\input{figures/phase-interface.tex}}
+  \resizebox{\reportcontentwidth}{!}{\input{figures/phase-interface.tex}}
   \caption{Offline phase construction and online action selection. The fixed incidence matrix changes with each junction; the learned scorer does not.}
   \label{fig:phase-interface}
 \end{figure}
@@ -238,7 +240,7 @@ All reported studies use two message-passing blocks, \(5\,\mathrm{s}\) decisions
 Rollout counts are allocated to approximately balance junction/action samples across differently sized training graphs.
 
 The code assigns one reward to each junction \(j\) per decision interval \(\Delta=5\,\mathrm{s}\).
-Qualitatively, the local reward encourages vehicles to move through and leave the incoming approaches while penalizing deceleration and accumulated low-speed traffic.
+Qualitatively, the local reward encourages vehicles to move through and leave the incoming approaches while penalizing deceleration and queues.
 Let \(I_j\) be its unique incoming lanes, \(D_j=\sum_{l\in I_j}D_l\) their total length, \(n_l\) the vehicle count, \(\bar v_l\) mean speed, \(v_l^{\max}\) speed limit, and \(V_j(t)\) the set of vehicle IDs on those lanes.
 With \(f_l(t)=\operatorname{clip}(\bar v_l(t)/v_l^{\max},0,1)\), the implemented terms are:
 
@@ -246,7 +248,7 @@ With \(f_l(t)=\operatorname{clip}(\bar v_l(t)/v_l^{\max},0,1)\), the implemented
   \footnotesize
   \centering
   \caption{Exact local reward terms for the reported runs. Values are sampled at decision boundaries.}
-  \begin{tabularx}{\linewidth}{@{}lXl@{}}
+  \begin{tabularx}{\reportcontentwidth}{@{}lXl@{}}
     \toprule
     Term & Definition and interpretation & Unit\\
     \midrule
@@ -276,7 +278,7 @@ For an episode of \(T\) simulated seconds, let \(C\) be trips with a SUMO \textt
   \footnotesize
   \centering
   \caption{Primary evaluation metrics and aggregation.}
-  \begin{tabularx}{\linewidth}{@{}lXl@{}}
+  \begin{tabularx}{\reportcontentwidth}{@{}lXl@{}}
     \toprule
     Metric & Implemented definition & Unit\\
     \midrule
@@ -318,7 +320,7 @@ The sampled results therefore do not imply equivalent performance under determin
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{figures/evaluation-summary.pdf}
+  \includegraphics[width=\reportcontentwidth]{figures/evaluation-summary.pdf}
   \caption{Observed feasibility results. Left: sampled \(6\times6\) performance by demand. Right: iteration-60 city outcomes relative to each city's strongest non-learned throughput baseline.}
   \label{fig:results}
 \end{figure}
