@@ -63,6 +63,7 @@ These results provide feasibility evidence rather than a general estimate of tra
 Traffic-signal action spaces are local.
 A three-arm junction, a regular four-arm junction, and a junction with protected turns need not have the same number or meaning of phases.
 Consequently, a fixed output called ``phase 2'' does not have reusable semantics across road networks.
+Padding such a head changes its tensor shape but does not give the padded phase indices shared meaning across junctions.
 
 We present a traffic-signal control interface in which a shared graph neural network assigns scores to individual traffic movements.
 Each junction converts these scores into its own variable-sized set of legal signal phases using a deterministic incidence matrix.
@@ -70,17 +71,21 @@ The central design choice is therefore a narrow boundary: learning prioritizes c
 
 The resulting system combines a reusable movement-level graph representation, deterministic construction of junction-specific action spaces, and a feasibility evaluation across synthetic and city simulations.
 Its variable graph and action dimensions are a structural property of the design.
+We distinguish a structural property established by construction, implementation validation over heterogeneous graphs, and bounded empirical evidence about learned performance.
 The empirical evaluation is organized around three research questions:
 \begin{description}[leftmargin=4.2em,style=nextline]
-  \item[RQ1 --- Synthetic transfer.] How does the trained policy behave on unseen grid sizes and aspect ratios produced by the same generator?
+  \item[RQ1 --- Transfer within the synthetic generator family.] How does the trained policy behave on unseen grid sizes and aspect ratios produced by the same generator?
   \item[RQ2 --- Distribution shift.] What happens when signal coverage changes?
   \item[RQ3 --- City feasibility.] Can the same trained policy execute on several heterogeneous city simulations, and how variable are the observed outcomes?
 \end{description}
 
 Movement pressure and movement-structured control have substantial prior lineage.
-Max-pressure methods score compatible stages from constituent flows \cite{varaiya2013maxpressure}; PressLight connects pressure to learned control \cite{wei2019presslight}; and FRAP represents phase competition through movements \cite{zheng2019frap}.
-TransferLight also maps movement representations to variable phase spaces, using a learned hierarchical phase encoder \cite{schmidt2024transferlight}.
-The contribution here is the transparent interface between a city-level typed graph, scalar movement scores, and conflict-derived local matrices.
+Max-pressure methods score compatible stages from constituent flows \cite{varaiya2013maxpressure}, while PressLight connects pressure to learned control \cite{wei2019presslight}.
+FRAP learns phase demand and pairwise phase competition from movement features, explicitly structuring the learned phase values around conflict and symmetry \cite{zheng2019frap}.
+TransferLight is the closest architectural comparison: its learned directed hierarchy aggregates lane segments into movement representations, movements into phase representations, and interactions among phases before producing phase energies \cite{schmidt2024transferlight}.
+It also uses weight-tied decentralized agents, domain-randomized training networks, and learned movement-to-phase semantics.
+In contrast, our learned actor operates on a city-level LaneGroup/Movement context graph and stops at one scalar per movement; phase membership, phase enumeration, incidence summation, and timing remain deterministic.
+The narrower contribution is this transparent boundary between shared movement scoring and automatically constructed local action spaces, rather than movement-based control itself or a broader transfer claim.
 
 \textbf{Scope.}
 This report evaluates an implementation and architectural interface rather than proposing a new reinforcement-learning algorithm.
@@ -179,7 +184,8 @@ h_l^{(k+1)}=\rho\!\left(U_L^{(k)}
 Every relation has its own linear map, aggregation is a mean rather than attention, and return messages use the just-updated embeddings from \eqref{eq:movement-update}.
 An empty neighbourhood produces the zero vector.
 After two blocks, an MLP maps every \(h_m^{(2)}\) to one scalar \(s_m\).
-The critic mean-pools the movement embeddings owned by each junction and returns one value per controller.
+Each junction is treated as a parameter-sharing local agent: the critic mean-pools that junction's movement embeddings, returns one value, and its local reward and value sequence produce a separate temporal GAE stream.
+For PPO updates, variable-size state graphs are concatenated as disconnected packed graphs; junctions with matching local movement and phase dimensions are grouped for batched value and incidence operations, and minibatches are budgeted by junction/action samples rather than padded to a universal graph or action size.
 
 \begin{figure}[H]
   \centering
@@ -228,8 +234,9 @@ A different junction may provide a \(6\times11\) matrix without changing the sco
 \end{figure}
 \FloatBarrier
 
-Sum aggregation is an additive inductive bias: when movement scores are positive, a phase containing more movements can receive a larger logit simply because it has more terms.
-This phase-size effect was not evaluated separately.
+Sum aggregation intentionally restricts the policy class: a phase logit is the additive utility of its enabled movements, so the actor cannot directly represent arbitrary within-phase interactions.
+Phases sharing movements also have correlated logits, and when scores are positive a larger phase can receive a higher logit simply because it has more terms.
+The restriction keeps the learned/local interface transparent, but neither its phase-size effect nor alternatives such as normalized or learned phase aggregation were evaluated separately.
 
 \section{Experimental design and reproducibility}
 
@@ -268,6 +275,7 @@ r_j=\operatorname{clip}_{[-1,1]}\!\left(p_j+10d_j-10b_j-0.02q_j\right).
 \]
 Global delay, completed-network flow, direct throughput, phase switching, and teleport terms have zero weight in these runs.
 Because the terms have different units and are manually weighted, the final reward is a dimensionless optimization objective.
+It is a local surrogate, not a guarantee of improvement in network-level throughput, completion, or wait density: for example, discharge from one junction can move vehicles into a congested downstream region.
 
 \subsection{Evaluation metrics}
 
@@ -297,10 +305,10 @@ Grid results separate three policy-training seeds from six held-out traffic seed
 
 All policies receive the same saved SUMO network, routes, initial-occupancy range, warm-up, episode seed, conflict-derived phase set, minimum-green rule, and yellow transition.
 The learned and uniform-random policies choose every \(5\,\mathrm{s}\); fixed time cycles through phase order every \(10\,\mathrm{s}\); max pressure and queue recompute a target every \(10\,\mathrm{s}\).
+This mismatch is a timing confound: the comparisons evaluate the recorded controller implementations and do not isolate learning or policy architecture from control frequency.
 Max pressure observes the instantaneous halting counts in the downstream detector regions of the movement's input and output LaneGroups and scores \(n^{\mathrm{halt}}_{\mathrm{in}}-n^{\mathrm{halt}}_{\mathrm{out}}\); queue observes the input detector count only.
 Both sum movement scores through the same \(A_j\) and retain the current phase on a tie.
 Fixed time and uniform random use no traffic observation.
-The baselines therefore do not share the learned policy's decision frequency, and comparisons include this implementation difference.
 The \(10\,\mathrm{s}\) durations and all other baseline parameters were fixed in the experiment configurations; the records contain no baseline-tuning study.
 Max pressure is the reference for RQ1 and RQ2.
 For RQ3, city-specific comparisons also report the highest-throughput non-learned baseline: max pressure in Karlsruhe, queue in Mannheim, and fixed time in Stuttgart, Heidelberg, and Freiburg.
@@ -315,13 +323,14 @@ All reported comparisons use the pinned libsumo backend.
 Sampled execution is primary because it corresponds to the stochastic policy optimized during PPO training.
 Greedy execution performed worse in the city evaluation.
 The sampled results therefore do not imply equivalent performance under deterministic argmax execution.
+Deployment under deterministic action selection would require separate validation.
 
 \section{Structural property and empirical results}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.88\linewidth]{figures/evaluation-summary.pdf}
-  \caption{Observed feasibility results. Left: sampled \(6\times6\) performance by demand. Right: iteration-60 city outcomes relative to each city's strongest non-learned throughput baseline.}
+  \caption{Observed feasibility results. Left: sampled \(6\times6\) performance by demand. Right: iteration-60 city outcomes; each city is normalized by its own highest-throughput non-learned baseline, so baseline identities differ across cities.}
   \label{fig:results}
 \end{figure}
 \FloatBarrier
@@ -332,8 +341,11 @@ Every junction may independently provide \(A_j\) with its own numbers of rows an
 This establishes variable graph and action dimensions by construction.
 Execution on graphs ranging from 41 to 84 controlled junctions and phase-count ranges of 2--12 validates that the implementation supports the stated structural range.
 
-\textbf{RQ1 --- synthetic transfer.}
+All learned--baseline comparisons below inherit the decision-interval confound described in Section~3: they compare the recorded implementations, not learning at a matched control frequency.
+
+\textbf{RQ1 --- transfer within the synthetic generator family.}
 On the unseen-size \(6\times6\) condition, sampled throughput was \(4344,4795,5174\) vehicles/hour at demands \(0.6,0.7,0.8\), versus \(4168,4429,4521\) for max pressure.
+Across the three trained-policy means, the corresponding throughput standard deviations were \(13,9,23\) vehicles/hour; traffic-seed variability is reported separately in Appendix~B.
 Completion was higher in the evaluated runs by \(3.5,6.6,10.6\) percentage points, respectively.
 At demand 0.7, the \(5\times2\) and \(2\times5\) cases achieved 1993 and 2005 vehicles/hour with 91.9\% and 92.5\% completion; the \(5\times3\) and \(3\times5\) cases achieved 2796 and 2791 vehicles/hour with 91.2\% and 91.0\% completion.
 These findings are consistent with size and aspect-ratio reuse within the matched generator.
@@ -346,7 +358,7 @@ The result distinguishes architectural compatibility from robustness and is cons
 \textbf{RQ3 --- city feasibility.}
 The city evaluation reports one policy-training run rather than an estimate across independent training runs.
 A single trained parameterization executed without architecture changes on all five city graphs.
-Outcomes varied substantially: sampled control had higher throughput and completion than every baseline in Karlsruhe and Stuttgart, trailed queue in Mannheim, was close to fixed time in Heidelberg, and had higher throughput and completion but higher wait density than fixed time in Freiburg.
+Outcomes varied substantially: sampled control had higher throughput and completion than every baseline in Karlsruhe and Stuttgart, trailed queue in Mannheim, was close to fixed time in Heidelberg, and had higher throughput and completion but higher wait density than fixed time in Freiburg; across each city's three traffic seeds, learned-throughput standard deviations ranged from \(127\) to \(563\) vehicles/hour.
 Figure~\ref{fig:results}b uses the strongest non-learned throughput baseline separately for each city.
 The aggregate comparison instead uses max pressure consistently: for the unweighted mean across cities, the sampled policy achieved \(3345.6\) vehicles/hour and \(64.93\%\) completion in this run, versus \(3036.8\) and \(59.37\%\) for max pressure.
 
@@ -355,6 +367,8 @@ The aggregate comparison instead uses max pressure consistently: for the unweigh
 \textbf{Limitations.}
 The experiments evaluate the complete implementation and do not isolate individual architectural choices.
 They therefore do not determine the separate contributions of typed relations, two message-passing blocks, or sum-based movement-to-phase aggregation; the latter also introduces an unevaluated phase-size bias.
+Because only maximal compatible movement sets are enumerated, a compatible strict subset is unavailable whenever another compatible atomic group can be added.
+This is a deliberate restriction of the selectable policy space and may prevent a controller from withholding green from an otherwise compatible movement.
 
 The evaluated networks belong to bounded synthetic and city simulation families rather than arbitrary topology.
 The coverage study shows sensitivity to the controller distribution, and the city study's one policy-training seed and three traffic seeds per city do not estimate variation across independent training runs.
@@ -364,7 +378,6 @@ Sampled execution outperformed greedy execution in the city study, so the stocha
 
 \textbf{Conclusion.}
 The implemented interface separates reusable learned scoring from local signal structure: a shared typed GNN emits one scalar per movement, while deterministic incidence matrices translate those scores into heterogeneous phase spaces.
-That separation provides variable graph and action dimensions by construction.
 The experiments add bounded feasibility evidence within synthetic and city simulation families, while the coverage and greedy-execution results show that executable structure alone does not ensure empirical robustness.
 
 \label{lastmainpage}
@@ -416,41 +429,46 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 \section{Detailed evaluation}
 
 \begin{table}[H]
+  \footnotesize
   \centering
-  \caption{Full-coverage \(6 \times 6\) result. Learned values average three training seeds and six held-out traffic seeds; max pressure averages the six traffic seeds.}
+  \caption{Full-coverage \(6 \times 6\) means \(\pm\) SD. For learned control, SD is across three trained-policy means, each formed over six held-out traffic seeds. For max pressure, SD is across the six traffic seeds.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     Demand & Policy & Throughput/h & Completion & Wait density\\
     \midrule
-    0.6 & learned sampled & 4344 & 87.2\% & 0.077\\
-        & max pressure & 4168 & 83.6\% & 0.082\\
-    0.7 & learned sampled & 4795 & 84.8\% & 0.114\\
-        & max pressure & 4429 & 78.2\% & 0.119\\
-    0.8 & learned sampled & 5174 & 82.2\% & 0.175\\
-        & max pressure & 4521 & 71.5\% & 0.131\\
+    0.6 & learned sampled & \(4344\pm13\) & \(87.2\pm0.3\)\% & \(0.077\pm0.008\)\\
+        & max pressure & \(4168\pm126\) & \(83.6\pm1.3\)\% & \(0.082\pm0.062\)\\
+    0.7 & learned sampled & \(4795\pm9\) & \(84.8\pm0.1\)\% & \(0.114\pm0.009\)\\
+        & max pressure & \(4429\pm157\) & \(78.2\pm1.8\)\% & \(0.119\pm0.120\)\\
+    0.8 & learned sampled & \(5174\pm23\) & \(82.2\pm0.5\)\% & \(0.175\pm0.018\)\\
+        & max pressure & \(4521\pm164\) & \(71.5\pm2.5\)\% & \(0.131\pm0.022\)\\
     \bottomrule
   \end{tabular}
   \label{tab:grid-detail}
 \end{table}
 
+Within each trained policy, traffic-seed SDs ranged from \(121\) to \(168\) vehicles/hour for throughput, \(0.4\) to \(2.0\) percentage points for completion, and \(0.007\) to \(0.024\,\mathrm{s/m}\) for wait density across the three demands.
+Thus the small between-policy SDs in Table~\ref{tab:grid-detail} should not be read as episode-level variability.
+
 \clearpage
 \begin{table}[H]
+  \footnotesize
   \centering
-  \caption{Iteration-60 city means over three traffic seeds. The baseline has the highest throughput among non-learned policies in that city. Wait density is in seconds per metre.}
+  \caption{Iteration-60 city means \(\pm\) traffic-seed SD over three seeds. The baseline has the highest mean throughput among non-learned policies in that city. Wait density is in seconds per metre; these SDs do not include trained-policy variability.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     City & Policy & Throughput/h & Completion & Wait density\\
     \midrule
-    Karlsruhe & learned sampled & 3452 & 93.86\% & 0.075\\
-               & max pressure & 3105 & 84.77\% & 0.243\\
-    Mannheim & learned sampled & 3200 & 53.78\% & 0.796\\
-              & queue & 3394 & 56.78\% & 1.019\\
-    Stuttgart & learned sampled & 4216 & 50.93\% & 0.907\\
-               & fixed time & 3661 & 43.97\% & 0.741\\
-    Heidelberg & learned sampled & 3190 & 77.69\% & 0.181\\
-                & fixed time & 3250 & 79.16\% & 0.127\\
-    Freiburg & learned sampled & 2670 & 48.39\% & 1.108\\
-              & fixed time & 2547 & 45.92\% & 0.934\\
+    Karlsruhe & learned sampled & \(3452\pm314\) & \(93.86\pm0.34\)\% & \(0.075\pm0.034\)\\
+               & max pressure & \(3105\pm241\) & \(84.77\pm8.12\)\% & \(0.243\pm0.226\)\\
+    Mannheim & learned sampled & \(3200\pm563\) & \(53.78\pm13.46\)\% & \(0.796\pm0.418\)\\
+              & queue & \(3394\pm562\) & \(56.78\pm11.96\)\% & \(1.019\pm0.563\)\\
+    Stuttgart & learned sampled & \(4216\pm528\) & \(50.93\pm9.13\)\% & \(0.907\pm0.597\)\\
+               & fixed time & \(3661\pm154\) & \(43.97\pm1.18\)\% & \(0.741\pm0.227\)\\
+    Heidelberg & learned sampled & \(3190\pm127\) & \(77.69\pm1.53\)\% & \(0.181\pm0.055\)\\
+                & fixed time & \(3250\pm134\) & \(79.16\pm2.19\)\% & \(0.127\pm0.044\)\\
+    Freiburg & learned sampled & \(2670\pm225\) & \(48.39\pm6.77\)\% & \(1.108\pm0.449\)\\
+              & fixed time & \(2547\pm35\) & \(45.92\pm2.67\)\% & \(0.934\pm0.242\)\\
     \bottomrule
   \end{tabular}
   \label{tab:city-detail}
@@ -462,5 +480,6 @@ For the unweighted mean across cities, greedy execution achieved \(3182.6\) vehi
 \paragraph{Coverage study.}
 The \(50\%\)-coverage training study used five training layouts and three held-out traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage; the \(100\%\) condition used one layout and the same three seeds.
 For sampled execution, PPO \( - \) max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
+Paired 95\% Student-\(t\) interval half-widths for throughput were \(52.5,54.1,41.3,345.2\) vehicles/hour, respectively, pairing layout and traffic seed; the \(100\%\) condition has only three traffic-seed pairs and consequently a very wide interval.
 
 \end{document}
