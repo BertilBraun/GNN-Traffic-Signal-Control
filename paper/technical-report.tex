@@ -347,7 +347,7 @@ All learned--baseline comparisons below inherit the decision-interval confound d
 On the unseen-size \(6\times6\) condition, sampled throughput was \(4344,4795,5174\) vehicles/hour at demands \(0.6,0.7,0.8\), versus \(4168,4429,4521\) for max pressure.
 Across the three trained-policy means, the corresponding throughput standard deviations were \(13,9,23\) vehicles/hour; traffic-seed variability is reported separately in Appendix~B.
 Completion was higher in the evaluated runs by \(3.5,6.6,10.6\) percentage points, respectively.
-At demand 0.7, the \(5\times2\) and \(2\times5\) cases achieved 1993 and 2005 vehicles/hour with 91.9\% and 92.5\% completion; the \(5\times3\) and \(3\times5\) cases achieved 2796 and 2791 vehicles/hour with 91.2\% and 91.0\% completion.
+Orientation-swapped rectangular grids produced closely matched throughput and completion.
 These findings are consistent with size and aspect-ratio reuse within the matched generator.
 
 \textbf{RQ2 --- distribution shift.}
@@ -431,7 +431,7 @@ The experiments add bounded feasibility evidence within synthetic and city simul
 \begin{table}[H]
   \footnotesize
   \centering
-  \caption{Full-coverage \(6 \times 6\) means \(\pm\) SD. For learned control, SD is across three trained-policy means, each formed over six held-out traffic seeds. For max pressure, SD is across the six traffic seeds.}
+  \caption{Full-coverage \(6 \times 6\) means \(\pm\) SD. Learned SD measures between-policy variation after averaging each of three trained policies over six traffic seeds; max-pressure SD measures variation across the six traffic seeds. The two SDs describe different variance sources.}
   \begin{tabular}{@{}llrrr@{}}
     \toprule
     Demand & Policy & Throughput/h & Completion & Wait density\\
@@ -479,7 +479,8 @@ For the unweighted mean across cities, greedy execution achieved \(3182.6\) vehi
 
 \paragraph{Coverage study.}
 The \(50\%\)-coverage training study used five training layouts and three held-out traffic seeds on each of five evaluation layouts at \(25\%\), \(50\%\), and \(75\%\) coverage; the \(100\%\) condition used one layout and the same three seeds.
+Each paired observational unit is one evaluation layout--traffic-seed combination: \(n=15\) at each partial-coverage condition and \(n=3\) at \(100\%\) coverage.
 For sampled execution, PPO \( - \) max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
-Paired 95\% Student-\(t\) interval half-widths for throughput were \(52.5,54.1,41.3,345.2\) vehicles/hour, respectively, pairing layout and traffic seed; the \(100\%\) condition has only three traffic-seed pairs and consequently a very wide interval.
+Paired 95\% Student-\(t\) interval half-widths for throughput were \(52.5,54.1,41.3,345.2\) vehicles/hour, respectively; the \(100\%\) condition consequently has a very wide interval.
 
 \end{document}
