@@ -11,6 +11,15 @@ uv run python scripts/plot_technical_report_results.py `
   --output 'paper\figures\evaluation-summary.pdf'
 ```
 
+Build the appendix graph figure from the data embedded in the interactive HTML:
+
+```powershell
+uv run python scripts\plot_movement_graph_examples.py `
+  --grid-report docs\assets\movement-graph-3x3.html `
+  --output-dir docs\assets `
+  --paper-output paper\figures\movement-graph-3x3.pdf
+```
+
 Compile from WSL with a TeX Live installation:
 
 ```powershell

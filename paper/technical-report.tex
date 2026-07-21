@@ -501,4 +501,14 @@ Each paired observational unit is one evaluation layout--traffic-seed combinatio
 For sampled execution, PPO \( - \) max-pressure throughput differences at \(25\%\), \(50\%\), \(75\%\), and \(100\%\) coverage were \(+5.7\), \(-28.9\), \(-104.3\), and \(-108.0\) vehicles/hour; completion differences were \(+0.24\), \(-0.66\), \(-2.99\), and \(-3.14\) percentage points.
 Paired 95\% Student-\(t\) interval half-widths for throughput were \(52.5,54.1,41.3,345.2\) vehicles/hour, respectively; the \(100\%\) condition consequently has a very wide interval.
 
+\clearpage
+\section{Concrete graph example}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/movement-graph-3x3.pdf}
+  \caption{Complete \(3\times3\) synthetic road layout represented as the controller graph. LaneGroup nodes follow directed corridors; Movement nodes encode legal input-to-output paths at signalized junctions. Cyan and amber edges are the typed LaneGroup-to-Movement and Movement-to-LaneGroup relations, while green edges propagate LaneGroup context through unsignalized junctions. Junction markers provide spatial context only and are not GNN nodes. Positions are generated from the same embedded graph data used by the interactive HTML visualization.}
+  \label{fig:full-movement-graph}
+\end{figure}
+
 \end{document}

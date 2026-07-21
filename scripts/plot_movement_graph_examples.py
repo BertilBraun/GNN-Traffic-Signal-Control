@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GRID_REPORT = PROJECT_ROOT / 'reports' / 'movement_graph_3x3.html'
 DEFAULT_OUTPUT_DIRECTORY = PROJECT_ROOT / 'docs' / 'assets'
+DEFAULT_PAPER_OUTPUT = PROJECT_ROOT / 'paper' / 'figures' / 'movement-graph-3x3.pdf'
 GRAPH_DATA_PATTERN = re.compile(r'<script id="graph-data" type="application/json">(.*?)</script>', re.DOTALL)
 
 
@@ -81,6 +82,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--grid-report', type=Path, default=DEFAULT_GRID_REPORT)
     parser.add_argument('--output-dir', type=Path, default=DEFAULT_OUTPUT_DIRECTORY)
+    parser.add_argument('--paper-output', type=Path, default=DEFAULT_PAPER_OUTPUT)
     return parser.parse_args()
 
 
@@ -117,8 +119,8 @@ def positions_by_lane_group(
                 direction_y = end[1] - start[1]
                 normalizer = max(1.0, segment_length)
                 positions[lane_group.lane_group_id] = (
-                    start[0] + direction_x * ratio - direction_y / normalizer * 5.0,
-                    start[1] + direction_y * ratio + direction_x / normalizer * 5.0,
+                    start[0] + direction_x * ratio - direction_y / normalizer,
+                    start[1] + direction_y * ratio + direction_x / normalizer,
                 )
                 break
             travelled += segment_length
@@ -131,7 +133,6 @@ def positions_by_movement(
     movements: tuple[Movement, ...],
     junction_positions: dict[str, tuple[float, float]],
     lane_positions: dict[int, tuple[float, float]],
-    radius: float,
 ) -> dict[int, tuple[float, float]]:
     positions: dict[int, tuple[float, float]] = {}
     traffic_light_ids = tuple(dict.fromkeys(movement.traffic_light_id for movement in movements))
@@ -160,7 +161,8 @@ def positions_by_movement(
                 )
             )
             for index, movement in enumerate(ordered_movements):
-                tangent_offset = (index - (len(same_input) - 1) / 2) * 8.0
+                tangent_offset = (index - (len(same_input) - 1) / 2) * 5.0
+                radius = 18.0 if len(same_input) > 3 else 15.0
                 positions[movement.movement_id] = (
                     center_x + unit_x * radius - unit_y * tangent_offset,
                     center_y + unit_y * radius + unit_x * tangent_offset,
@@ -215,13 +217,12 @@ def draw_graph(
     report: MovementGraphReport,
     movements: tuple[Movement, ...],
     lane_group_ids: frozenset[int],
-    movement_radius: float,
     show_all_junctions: bool,
     context_junction_ids: frozenset[str] | None,
 ) -> None:
     junction_positions = positions_by_junction(report)
     lane_positions = positions_by_lane_group(report, junction_positions)
-    movement_positions = positions_by_movement(movements, junction_positions, lane_positions, movement_radius)
+    movement_positions = positions_by_movement(movements, junction_positions, lane_positions)
     visible_roads = (
         report.roads
         if context_junction_ids is None
@@ -320,7 +321,7 @@ def draw_graph(
         spine.set_visible(False)
 
 
-def plot_grid(report: MovementGraphReport, output_directory: Path) -> None:
+def plot_grid(report: MovementGraphReport, output_directory: Path, paper_output: Path) -> None:
     figure, axis = plt.subplots(figsize=(10.5, 8.3))
     movements = report.movements
     lane_group_ids = frozenset(lane_group.lane_group_id for lane_group in report.lane_groups)
@@ -329,21 +330,31 @@ def plot_grid(report: MovementGraphReport, output_directory: Path) -> None:
         report,
         movements,
         lane_group_ids,
-        movement_radius=28.0,
         show_all_junctions=True,
         context_junction_ids=None,
     )
-    axis.set_title('3x3 road layout as a LaneGroup / Movement graph')
     handles, labels = axis.get_legend_handles_labels()
+    input_handle = Line2D((), (), color='#42A5C6', linewidth=1.6)
+    output_handle = Line2D((), (), color='#D99A37', linewidth=1.6)
     connector_handle = Line2D((), (), color='#58A66C', linewidth=2.0)
     axis.legend(
-        (connector_handle, *handles),
-        ('Unsignalized LaneGroup connector', *labels),
+        (handles[0], handles[1], input_handle, output_handle, connector_handle, *handles[2:]),
+        (
+            labels[0],
+            labels[1],
+            r'LaneGroup $\rightarrow$ Movement',
+            r'Movement $\rightarrow$ LaneGroup',
+            r'Unsignalized LaneGroup $\rightarrow$ LaneGroup',
+            *labels[2:],
+        ),
         loc='lower center',
         ncols=3,
         frameon=False,
+        fontsize=8.5,
     )
     figure.savefig(output_directory / 'movement-graph-3x3.png', bbox_inches='tight')
+    paper_output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(paper_output, bbox_inches='tight')
     plt.close(figure)
 
 
@@ -352,8 +363,8 @@ def main() -> None:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     configure_style()
     grid_report = load_report(arguments.grid_report)
-    plot_grid(grid_report, arguments.output_dir)
-    print(f'Wrote movement-graph figures to {arguments.output_dir}')
+    plot_grid(grid_report, arguments.output_dir, arguments.paper_output)
+    print(f'Wrote movement-graph figures to {arguments.output_dir} and {arguments.paper_output}')
 
 
 if __name__ == '__main__':
